@@ -1,0 +1,58 @@
+services:
+  # Backend FastAPI (process persistant : WebSocket de kick-out, tâches
+  # de fond d'import massif). Les fichiers d'épreuves vivent dans
+  # Cloudflare R2 (STORAGE_BACKEND=r2) — le disque éphémère du service
+  # n'héberge plus de données persistantes.
+  - type: web
+    name: bacprep-web
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # chaîne Supabase PostgreSQL (voir DEPLOIEMENT.md)
+      - key: STORAGE_BACKEND
+        value: r2
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: ADMIN_EMAILS
+        value: admin@example.com
+      - key: AUTH_MODE
+        value: mock
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: LLM_CONCURRENCY_LIMIT
+        value: "5"
+      - key: CORS_ORIGINS
+        value: https://bacprep-frontend.onrender.com
+
+  # Frontend React/Vite déployé comme site statique — communique avec le
+  # backend via HTTPS (architecture technique).
+  - type: web
+    name: bacprep-frontend
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://bacprep-web.onrender.com
+    routes:
+      # SPA : toute route inconnue renvoie index.html (navigation client).
+      - type: rewrite
+        source: /*
+        destination: /index.html

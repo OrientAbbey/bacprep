@@ -1,0 +1,430 @@
+import { BookOpen, Calendar, GraduationCap, Layers } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { ComponentType } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { api } from "../api/client";
+import { EpreuveListItem, Filtres } from "../api/types";
+import { Combobox } from "../components/Combobox";
+import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
+import { foldText } from "../lib/text";
+
+type Scope = "epreuve" | "matiere_annee" | "matiere" | "annee" | "filiere";
+
+interface Pricing {
+  pricing: Record<Scope, number>;
+  labels: Record<Scope, string>;
+  duree_jours: number;
+}
+
+const SCOPES: Scope[] = ["epreuve", "matiere_annee", "matiere", "annee", "filiere"];
+const PROVIDERS = [
+  { value: "orange", label: "Orange Money" },
+  { value: "mtn", label: "MTN Mobile Money" },
+];
+
+/**
+ * Page de souscription. Le type d'abonnement (scope) se choisit en
+ * premier ; la classe (requise pour toute portée autre que "épreuve
+ * précise" — un abonnement est acheté dans le cadre d'une classe), la
+ * série, et le cas échéant matière/année en découlent.
+ *
+ * Deux garde-fous empêchent de proposer un paiement pour un contenu déjà
+ * accessible :
+ * - les épreuves déjà gratuites sont retirées de la liste "Épreuve
+ *   précise" (s'y abonner n'apporterait rien) ;
+ * - à chaque changement de sélection, `GET /api/subscriptions/deja-couvert`
+ *   est interrogé ; s'il répond `true`, le moyen de paiement est masqué et
+ *   remplacé par un message explicite (garde-fou dupliqué côté serveur).
+ */
+export function SubscribePage() {
+  const [searchParams] = useSearchParams();
+  const [pricing, setPricing] = useState<Pricing | null>(null);
+  const [filtres, setFiltres] = useState<Filtres>({ filieres: [], matieres: [], annees: [], evaluations: [] });
+  const [epreuves, setEpreuves] = useState<EpreuveListItem[]>([]);
+
+  const [scope, setScope] = useState<Scope>("epreuve");
+  const [classe, setClasse] = useState("");
+  const [filiere, setFiliere] = useState("");
+  const [matiere, setMatiere] = useState("");
+  const [annee, setAnnee] = useState("");
+  const [epreuveId, setEpreuveId] = useState("");
+  const [epreuveSearch, setEpreuveSearch] = useState("");
+  const [provider, setProvider] = useState("orange");
+  const [count, setCount] = useState<number | null>(null);
+  const [dejaCouvert, setDejaCouvert] = useState(false);
+  const [step, setStep] = useState<"form" | "pending" | "confirmed">("form");
+  const [reference, setReference] = useState<string | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<Pricing>("/api/pricing").then(setPricing);
+    api.get<EpreuveListItem[]>("/api/epreuves").then(setEpreuves);
+
+    // Préremplissage depuis le catalogue (clic sur une épreuve verrouillée)
+    const pre = searchParams.get("epreuve_id");
+    if (pre) {
+      setScope("epreuve");
+      setEpreuveId(pre);
+    }
+  }, [searchParams]);
+
+  // Filtres dynamiques dans le cadre de la classe choisie.
+  useEffect(() => {
+    const params = classe ? `?classe=${encodeURIComponent(classe)}` : "";
+    api.get<Filtres>(`/api/epreuves/filtres${params}`).then(setFiltres).catch(() => {});
+  }, [classe]);
+
+  const selectedEpreuve = epreuves.find((e) => e.id === epreuveId);
+
+  /** Épreuves proposables à l'abonnement "épreuve précise" : on retire
+   * celles déjà gratuites (s'y abonner ne débloquerait rien de plus) et on
+   * applique la recherche tapée par l'utilisateur. */
+  const epreuvesFiltrees = useMemo(() => {
+    const abonnables = epreuves.filter((e) => !e.gratuit);
+    if (!epreuveSearch.trim()) return abonnables;
+    const q = foldText(epreuveSearch);
+    return abonnables.filter((e) => foldText(e.matiere).includes(q) || e.annee.includes(q));
+  }, [epreuves, epreuveSearch]);
+
+  useEffect(() => {
+    async function refresh() {
+      const baseParams: Record<string, string> = {};
+      if (scope === "epreuve") {
+        if (!epreuveId) {
+          setCount(null);
+          setDejaCouvert(false);
+          return;
+        }
+        baseParams.epreuve_id = epreuveId;
+      } else {
+        // Toute portée large est achetée DANS LE CADRE D'UNE CLASSE.
+        if (!classe || !filiere) {
+          setCount(null);
+          setDejaCouvert(false);
+          return;
+        }
+        baseParams.classe = classe;
+        baseParams.filiere = filiere;
+        if (scope === "matiere_annee") {
+          if (!matiere || !annee) {
+            setCount(null);
+            setDejaCouvert(false);
+            return;
+          }
+          baseParams.matiere = matiere;
+          baseParams.annee = annee;
+        } else if (scope === "matiere") {
+          if (!matiere) {
+            setCount(null);
+            setDejaCouvert(false);
+            return;
+          }
+          baseParams.matiere = matiere;
+        } else if (scope === "annee") {
+          if (!annee) {
+            setCount(null);
+            setDejaCouvert(false);
+            return;
+          }
+          baseParams.annee = annee;
+        }
+      }
+
+      const countParams = new URLSearchParams(baseParams);
+      const countRes = await api.get<{ count: number }>(`/api/epreuves/count?${countParams.toString()}`);
+      setCount(countRes.count);
+
+      const couvertParams = new URLSearchParams({ scope, ...baseParams });
+      const couvertRes = await api.get<{ deja_couvert: boolean }>(
+        `/api/subscriptions/deja-couvert?${couvertParams.toString()}`
+      );
+      setDejaCouvert(couvertRes.deja_couvert);
+    }
+    refresh();
+  }, [scope, classe, filiere, matiere, annee, epreuveId]);
+
+  const selectionComplete =
+    scope === "epreuve"
+      ? Boolean(epreuveId)
+      : scope === "matiere_annee"
+      ? Boolean(classe && filiere && matiere && annee)
+      : scope === "matiere"
+      ? Boolean(classe && filiere && matiere)
+      : scope === "annee"
+      ? Boolean(classe && filiere && annee)
+      : Boolean(classe && filiere);
+
+  /** Phrase de synthèse en langage naturel décrivant ce que la sélection
+   * courante débloque — accompagne (sans le remplacer) le détail en
+   * tuiles ci-dessous. */
+  function summarySentence(): string {
+    if (scope === "epreuve" && selectedEpreuve) {
+      return `Débloque le sujet${selectedEpreuve.corrige_disponible ? " et le corrigé" : ""} de ${selectedEpreuve.matiere} — ${selectedEpreuve.annee}.`;
+    }
+    const ctx = classe ? ` (classe de ${classeLabel(classe)})` : "";
+    if (scope === "matiere_annee") {
+      return `Débloque toutes les épreuves de ${matiere || "…"} pour l'année ${annee || "…"}, série ${filiere || "…"}${ctx}.`;
+    }
+    if (scope === "matiere") {
+      return `Débloque toutes les épreuves de ${matiere || "…"} (toutes années), série ${filiere || "…"}${ctx}.`;
+    }
+    if (scope === "annee") {
+      return `Débloque toutes les épreuves de l'année ${annee || "…"} (toutes matières), série ${filiere || "…"}${ctx}.`;
+    }
+    return `Débloque tout le contenu de la série ${filiere || "…"} en ${classe ? classeLabel(classe) : "…"} — toutes matières, toutes années.`;
+  }
+
+  /** Lance le paiement simulé pour la sélection courante. Le backend
+   * refuse (409) si la sélection est en réalité déjà couverte. */
+  async function startCheckout() {
+    setErreur(null);
+    try {
+      const res = await api.post<{ reference_agregateur: string }>("/api/subscriptions/checkout", {
+        scope,
+        classe: scope === "epreuve" ? undefined : classe,
+        filiere: scope === "epreuve" ? undefined : filiere,
+        matiere: ["matiere_annee", "matiere"].includes(scope) ? matiere : undefined,
+        annee: ["matiere_annee", "annee"].includes(scope) ? annee : undefined,
+        epreuve_id: scope === "epreuve" ? epreuveId : undefined,
+        provider,
+      });
+      setReference(res.reference_agregateur);
+      setStep("pending");
+    } catch {
+      setErreur("Cette sélection est déjà accessible, ou une erreur est survenue — réessaie.");
+    }
+  }
+
+  async function simulatePayment() {
+    if (!reference) return;
+    await api.post("/api/payments/simulate-webhook", { reference_agregateur: reference });
+    setStep("confirmed");
+  }
+
+  if (!pricing) return <p className="text-sm text-slate">Chargement…</p>;
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <h1 className="font-serif-brand text-2xl">S'abonner</h1>
+
+      {step === "confirmed" ? (
+        <div className="space-y-4 rounded-lg border border-valide/30 bg-valide-soft p-6 text-valide">
+          <p className="font-medium">Paiement confirmé — ton abonnement est actif.</p>
+          <div className="flex flex-wrap gap-2">
+            {scope === "epreuve" && epreuveId ? (
+              <Link
+                to={`/epreuve/${epreuveId}`}
+                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-white"
+              >
+                Ouvrir l'épreuve
+              </Link>
+            ) : (
+              <Link
+                to="/catalogue"
+                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-white"
+              >
+                Voir le catalogue
+              </Link>
+            )}
+            <Link
+              to="/profil"
+              className="min-h-[40px] rounded-full border border-valide/40 px-4 py-2 text-sm font-medium text-valide"
+            >
+              Aller à mon profil
+            </Link>
+          </div>
+        </div>
+      ) : step === "pending" ? (
+        // text-ink (pas text-highlight-ink) : highlight-ink est un token
+        // FIXE pensé pour du texte sur le fond `highlight` (jaune vif) qui
+        // ne change pas de teinte — posé ici sur `highlight-soft` (qui,
+        // lui, s'assombrit fortement en mode sombre), il devenait
+        // quasiment illisible (texte très sombre sur fond très sombre).
+        <div className="space-y-4 rounded-lg border border-highlight/30 bg-highlight-soft p-6">
+          <p className="text-ink">
+            Paiement en attente — référence <span className="font-mono-tag">{reference}</span>.
+            Dans une vraie intégration, tu confirmerais via Orange Money / MTN MoMo. Ici, simule la
+            confirmation :
+          </p>
+          <button
+            onClick={simulatePayment}
+            className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper"
+          >
+            Simuler la confirmation du paiement
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Le type d'abonnement (scope) se choisit en premier */}
+          <div className="flex flex-wrap gap-2">
+            {SCOPES.map((s) => (
+              <button
+                key={s}
+                onClick={() => setScope(s)}
+                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  scope === s
+                    ? "bg-highlight text-highlight-ink"
+                    : "border border-ink-soft/25 text-ink-soft hover:border-highlight/50"
+                }`}
+              >
+                {pricing.labels[s]} — {pricing.pricing[s]} FCFA
+              </button>
+            ))}
+          </div>
+
+          {scope === "epreuve" ? (
+            <Combobox
+              label="Épreuve"
+              value={epreuveId}
+              onChange={setEpreuveId}
+              options={epreuvesFiltrees.map((e) => ({
+                value: e.id,
+                label: `${e.matiere} — ${e.annee} (${e.filieres.join(", ")})`,
+              }))}
+            />
+          ) : (
+            <div className="flex flex-wrap gap-4">
+              <Combobox
+                label="Classe"
+                value={classe}
+                onChange={setClasse}
+                options={CLASSES_SECONDAIRE.map((c) => ({ value: c.code, label: c.label }))}
+              />
+              <Combobox
+                label="Série"
+                value={filiere}
+                onChange={setFiliere}
+                options={filtres.filieres.map((f) => ({ value: f, label: f }))}
+              />
+              {["matiere_annee", "matiere"].includes(scope) && (
+                <Combobox
+                  label="Matière"
+                  value={matiere}
+                  onChange={setMatiere}
+                  options={filtres.matieres.map((m) => ({ value: m, label: m }))}
+                />
+              )}
+              {["matiere_annee", "annee"].includes(scope) && (
+                <Combobox
+                  label="Année"
+                  value={annee}
+                  onChange={setAnnee}
+                  options={filtres.annees.map((a) => ({ value: a, label: a }))}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Carte récapitulative redessinée : bandeau prix mis en avant,
+              phrase de synthèse, puis le détail en tuiles à icônes plutôt
+              qu'un simple tableau à deux colonnes. */}
+          {selectionComplete && (
+            <div className="overflow-hidden rounded-2xl border border-ink-soft/15 bg-paper-raised shadow-sm">
+              <div className="bg-highlight-soft px-6 py-5 text-center">
+                <p className="font-mono-tag text-[10px] text-ink-soft">Prix de l'abonnement</p>
+                <p className="font-serif-brand text-4xl text-ink">
+                  {pricing.pricing[scope]} <span className="text-lg font-sans font-normal text-ink-soft">FCFA</span>
+                </p>
+                <p className="text-xs text-ink-soft">valable {pricing.duree_jours} jours</p>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <p className="text-sm text-ink-soft">{summarySentence()}</p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {scope !== "epreuve" && <InfoTile icon={GraduationCap} label="Classe" value={classe ? classeLabel(classe) : "—"} />}
+                  {scope !== "epreuve" && <InfoTile icon={GraduationCap} label="Série" value={filiere || "—"} />}
+                  {scope === "epreuve" && selectedEpreuve && (
+                    <InfoTile icon={GraduationCap} label="Séries" value={selectedEpreuve.filieres.join(", ")} />
+                  )}
+                  {["matiere_annee", "matiere"].includes(scope) && (
+                    <InfoTile icon={BookOpen} label="Matière" value={matiere || "—"} />
+                  )}
+                  {scope === "epreuve" && selectedEpreuve && (
+                    <InfoTile icon={BookOpen} label="Matière" value={selectedEpreuve.matiere} />
+                  )}
+                  {["matiere_annee", "annee"].includes(scope) && (
+                    <InfoTile icon={Calendar} label="Année" value={annee || "—"} />
+                  )}
+                  {scope === "epreuve" && selectedEpreuve && (
+                    <InfoTile icon={Calendar} label="Année" value={selectedEpreuve.annee} />
+                  )}
+                  <InfoTile icon={Layers} label="Épreuves couvertes" value={String(count ?? "…")} />
+                </div>
+
+                {erreur && <p className="text-sm text-correction">{erreur}</p>}
+
+                {/* Révélation progressive : moyen de paiement uniquement si
+                    la sélection couvre au moins une épreuve ET n'est pas
+                    déjà entièrement accessible (gratuite ou déjà abonnée). */}
+                {count !== null && count > 0 && !dejaCouvert ? (
+                  <div className="space-y-3 border-t border-dashed border-ink-soft/20 pt-4">
+                    <div className="flex gap-2">
+                      {PROVIDERS.map((p) => (
+                        <button
+                          key={p.value}
+                          onClick={() => setProvider(p.value)}
+                          className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                            provider === p.value
+                              ? "border-ink"
+                              : "border-ink-soft/20 text-ink-soft hover:border-ink-soft/50"
+                          }`}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: p.value === "orange" ? "#C89B3C" : "#2F6E4F" }}
+                          />
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={startCheckout}
+                      className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper"
+                    >
+                      Continuer vers le paiement
+                    </button>
+                  </div>
+                ) : count !== null && dejaCouvert ? (
+                  <p className="border-t border-dashed border-ink-soft/20 pt-4 text-sm text-valide">
+                    Tu as déjà accès à ce contenu (gratuit ou déjà couvert par un abonnement actif) —
+                    aucun paiement nécessaire.
+                  </p>
+                ) : (
+                  count !== null && (
+                    <p className="border-t border-dashed border-ink-soft/20 pt-4 text-sm text-correction">
+                      Cette combinaison ne couvre aucune épreuve publiée pour l'instant — ajuste ta
+                      sélection.
+                    </p>
+                  )
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Tuile icône + libellé + valeur du récapitulatif d'abonnement — remplace
+ * l'ancien tableau à deux colonnes, trop dense et peu visuel. */
+function InfoTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg border border-ink-soft/15 bg-paper p-3">
+      <Icon size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-highlight" />
+      <div className="min-w-0">
+        <p className="font-mono-tag text-[9px] text-ink-soft">{label}</p>
+        <p className="truncate text-sm font-medium text-ink">{value}</p>
+      </div>
+    </div>
+  );
+}

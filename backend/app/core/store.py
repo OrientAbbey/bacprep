@@ -1,0 +1,386 @@
+from __future__ import annotations
+
+import json
+import uuid
+from typing import Optional
+
+from fastapi import WebSocket
+from sqlalchemy.orm import Session
+
+from ..db import utc_now
+from ..db_models import (
+    AIConversationORM,
+    ConsultationORM,
+    EpreuveFiliereORM,
+    EpreuveORM,
+    KickoutNoticeORM,
+    SessionORM,
+    SubscriptionORM,
+    UserORM,
+)
+from .logging_config import get_logger
+
+log = get_logger("store")
+
+MAX_CONVERSATIONS_PAR_EPREUVE = 5
+MAX_HISTORIQUE = 10
+
+# Registre en mémoire des connexions WebSocket actives : user_id -> WebSocket
+ACTIVE_WEBSOCKETS: dict[str, WebSocket] = {}
+
+
+# ---------- Utilisateurs & sessions ----------
+
+def get_or_create_user(db: Session, email: str, nom: str) -> UserORM:
+    """Retrouve l'utilisateur par email, ou le crée au premier login (nom
+    mis à jour si fourni et différent)."""
+    user = db.query(UserORM).filter(UserORM.email == email).one_or_none()
+    if user:
+        if nom and user.nom != nom:
+            user.nom = nom
+            db.commit()
+        return user
+    user = UserORM(email=email, nom=nom, consent_given_at=utc_now())
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    log.info("Nouvel utilisateur créé: %s", email)
+    return user
+
+
+async def create_session(db: Session, user_id: str, platform: str) -> tuple[str, Optional[str]]:
+    """Crée une nouvelle session, invalide l'ancienne. Retourne (token, message_kickout_ancien).
+
+    La notification de kick-out est poussée *avant* la suppression effective
+    de l'ancienne session, pour garantir sa livraison même si l'ancien
+    appareil perd immédiatement l'accès à l'API (voir CAHIER_DES_CHARGES,
+    Module 1)."""
+    kickout_message = None
+    existing = db.query(SessionORM).filter(SessionORM.user_id == user_id).one_or_none()
+    if existing:
+        kickout_message = (
+            "Votre session a été fermée car vous vous êtes connecté ailleurs."
+        )
+        await notify_kickout(db, user_id, kickout_message)
+        db.delete(existing)
+        db.flush()
+
+    token = uuid.uuid4().hex
+    db.add(SessionORM(user_id=user_id, token=token, platform=platform, issued_at=utc_now()))
+    db.commit()
+    log.info("Session créée pour user_id=%s (platform=%s)", user_id, platform)
+    return token, kickout_message
+
+
+def resolve_session(db: Session, token: str) -> Optional[UserORM]:
+    """Retrouve l'utilisateur associé à un jeton de session, ou None si le
+    jeton est absent/invalide."""
+    if not token:
+        return None
+    sess = db.query(SessionORM).filter(SessionORM.token == token).one_or_none()
+    if not sess:
+        return None
+    return db.query(UserORM).filter(UserORM.id == sess.user_id).one_or_none()
+
+
+def end_session(db: Session, token: str) -> None:
+    """Supprime la session correspondant à ce jeton (déconnexion explicite)."""
+    sess = db.query(SessionORM).filter(SessionORM.token == token).one_or_none()
+    if sess:
+        db.delete(sess)
+        db.commit()
+
+
+def pop_kickout_notice(db: Session, user_id: str) -> Optional[str]:
+    """Lit puis supprime la notification de kick-out en attente pour cet
+    utilisateur (filet de secours historique par sondage, voir
+    `GET /api/auth/kickout-notice/{user_id}` — le mécanisme principal est
+    désormais le push WebSocket, voir `notify_kickout`)."""
+    notice = db.query(KickoutNoticeORM).filter(KickoutNoticeORM.user_id == user_id).one_or_none()
+    if not notice:
+        return None
+    message = notice.message
+    db.delete(notice)
+    db.commit()
+    return message
+
+
+async def notify_kickout(db: Session, user_id: str, message: str) -> None:
+    """Pousse un message de kick-out en temps réel via WebSocket si une
+    connexion est active pour cet utilisateur. Persiste également la
+    notification dans `kickout_notices` comme filet de secours pour le
+    endpoint de sondage historique (`GET /auth/kickout-notice/{user_id}`),
+    conservé mais plus interrogé en continu par le frontend (v2.0)."""
+    ws = ACTIVE_WEBSOCKETS.get(user_id)
+    if ws is not None:
+        try:
+            await ws.send_json({"type": "kicked_out", "message": message})
+            log.info("Kick-out poussé en temps réel (WebSocket) à user_id=%s", user_id)
+        except Exception as exc:  # connexion déjà morte, on retombe sur le filet de secours
+            log.warning("Échec d'envoi WebSocket kick-out pour user_id=%s: %s", user_id, exc)
+
+    existing = db.query(KickoutNoticeORM).filter(KickoutNoticeORM.user_id == user_id).one_or_none()
+    if existing:
+        existing.message = message
+    else:
+        db.add(KickoutNoticeORM(user_id=user_id, message=message))
+    db.flush()
+
+
+# ---------- Accès ----------
+
+def is_gratuit(epreuve: EpreuveORM) -> bool:
+    """Une épreuve marquée gratuite contourne toute vérification
+    d'abonnement (contenu de découverte, voir Module 6)."""
+    return bool(epreuve.gratuit)
+
+
+def has_access(db: Session, user_id: str, epreuve: EpreuveORM) -> bool:
+    """Vrai si l'épreuve est gratuite, ou si l'utilisateur a un abonnement
+    actif la couvrant. Un abonnement couvre une épreuve quand :
+
+    - son évaluation correspond (ou joker "ALL") ;
+    - sa classe correspond (ou joker "ALL") — un abonnement est acheté dans
+      le cadre d'une classe depuis la refonte multi-classes ;
+    - sa série fait partie de celles de l'épreuve (appartenance, pas
+      égalité stricte — une épreuve peut couvrir plusieurs séries) ;
+    - matière/année correspondent (ou joker "ALL") ;
+    - ou bien il cible exactement cette épreuve (`epreuve_id`)."""
+    if is_gratuit(epreuve):
+        return True
+    now = utc_now()
+    subs = (
+        db.query(SubscriptionORM)
+        .filter(
+            SubscriptionORM.user_id == user_id,
+            SubscriptionORM.statut == "active",
+            SubscriptionORM.end_date >= now,
+        )
+        .all()
+    )
+    epreuve_filieres = set(epreuve.filieres)
+    for sub in subs:
+        # Un abonnement d'« épreuve précise » ne couvre QUE cette épreuve —
+        # jamais les autres épreuves de la même classe/série (les champs
+        # evaluation/classe/filière stockés pour l'affichage ne doivent pas
+        # élargir la couverture).
+        if sub.epreuve_id is not None:
+            if sub.epreuve_id == epreuve.id:
+                return True
+            continue
+        if sub.evaluation != "ALL" and sub.evaluation != epreuve.evaluation:
+            continue
+        if sub.classe != "ALL" and sub.classe != epreuve.classe:
+            continue
+        if sub.filiere not in epreuve_filieres:
+            continue
+        if sub.matiere != "ALL" and sub.matiere != epreuve.matiere:
+            continue
+        if sub.annee != "ALL" and sub.annee != epreuve.annee:
+            continue
+        return True
+    return False
+
+
+def matching_epreuves_count(
+    db: Session,
+    evaluation: Optional[str] = None,
+    classe: Optional[str] = None,
+    filiere: Optional[str] = None,
+    matiere: Optional[str] = None,
+    annee: Optional[str] = None,
+    epreuve_id: Optional[str] = None,
+) -> int:
+    """Nombre d'épreuves publiées correspondant à une combinaison de
+    filtres — sert à la fois au récapitulatif d'abonnement et à
+    l'enrichissement des souscriptions affichées au profil. Les compteurs
+    sont calculés dans le cadre d'une classe (le `classe` d'un abonnement
+    ne vaut jamais "ALL" pour les scopes achetés depuis la refonte)."""
+    query = db.query(EpreuveORM).filter(EpreuveORM.statut == "publie")
+    if evaluation:
+        query = query.filter(EpreuveORM.evaluation == evaluation)
+    if classe:
+        query = query.filter(EpreuveORM.classe == classe)
+    if filiere:
+        query = query.join(EpreuveFiliereORM, EpreuveFiliereORM.epreuve_id == EpreuveORM.id).filter(
+            EpreuveFiliereORM.filiere == filiere
+        )
+    if matiere:
+        query = query.filter(EpreuveORM.matiere == matiere)
+    if annee:
+        query = query.filter(EpreuveORM.annee == annee)
+    if epreuve_id:
+        query = query.filter(EpreuveORM.id == epreuve_id)
+    return query.distinct().count()
+
+
+def scope_already_covered(
+    db: Session,
+    user_id: str,
+    scope: str,
+    filiere: Optional[str] = None,
+    matiere: Optional[str] = None,
+    annee: Optional[str] = None,
+    classe: Optional[str] = None,
+    epreuve_id: Optional[str] = None,
+) -> bool:
+    """Détermine si la sélection en cours sur la page Abonnement est déjà
+    entièrement satisfaite — soit parce que l'épreuve visée est gratuite,
+    soit parce qu'un abonnement actif de l'utilisateur la couvre déjà.
+
+    Sert à éviter de proposer un paiement pour un contenu déjà accessible
+    (bug remonté : les épreuves gratuites ou déjà couvertes déclenchaient
+    quand même le flux de paiement sur la page Abonnement).
+
+    Pour scope="epreuve", réutilise directement `has_access` (déjà testé,
+    gère le cas gratuit ET le cas abonné). Pour les portées plus larges
+    (matiere_annee/matiere/annee/filiere), cherche un abonnement actif dont
+    la portée couvre déjà — au sens large, wildcard "ALL" compris — la
+    sélection demandée.
+    """
+    if scope == "epreuve":
+        if not epreuve_id:
+            return False
+        epreuve = db.query(EpreuveORM).filter(EpreuveORM.id == epreuve_id).one_or_none()
+        if not epreuve:
+            return False
+        return has_access(db, user_id, epreuve)
+
+    if not filiere or not classe:
+        return False
+
+    now = utc_now()
+    subs = (
+        db.query(SubscriptionORM)
+        .filter(
+            SubscriptionORM.user_id == user_id,
+            SubscriptionORM.statut == "active",
+            SubscriptionORM.end_date >= now,
+        )
+        .all()
+    )
+    for sub in subs:
+        if sub.classe not in ("ALL", classe) or sub.filiere != filiere:
+            continue
+        if matiere and sub.matiere != "ALL" and sub.matiere != matiere:
+            continue
+        if annee and sub.annee != "ALL" and sub.annee != annee:
+            continue
+        return True
+    return False
+
+
+# ---------- Historique de consultation ----------
+
+def record_consultation(db: Session, user_id: str, epreuve_id: str) -> None:
+    """Enregistre/rafraîchit l'horodatage de consultation d'une épreuve —
+    une ligne par (utilisateur, épreuve), mise à jour plutôt que dupliquée
+    à chaque nouvelle visite (évite une croissance illimitée de la table)."""
+    row = (
+        db.query(ConsultationORM)
+        .filter(ConsultationORM.user_id == user_id, ConsultationORM.epreuve_id == epreuve_id)
+        .one_or_none()
+    )
+    if row:
+        row.consulted_at = utc_now()
+    else:
+        db.add(ConsultationORM(user_id=user_id, epreuve_id=epreuve_id, consulted_at=utc_now()))
+    db.commit()
+
+
+def get_recent_consultations(db: Session, user_id: str, limit: int = MAX_HISTORIQUE) -> list[ConsultationORM]:
+    """Les `limit` épreuves consultées les plus récemment par cet
+    utilisateur, triées décroissant — le plafond est appliqué à la
+    lecture, jamais par suppression physique des entrées plus anciennes."""
+    return (
+        db.query(ConsultationORM)
+        .filter(ConsultationORM.user_id == user_id)
+        .order_by(ConsultationORM.consulted_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+# ---------- Conversations IA ----------
+
+def list_conversations(db: Session, user_id: str, epreuve_id: str) -> list[AIConversationORM]:
+    """Toutes les discussions (onglets) de cet utilisateur sur cette
+    épreuve, par ordre de création."""
+    return (
+        db.query(AIConversationORM)
+        .filter(AIConversationORM.user_id == user_id, AIConversationORM.epreuve_id == epreuve_id)
+        .order_by(AIConversationORM.created_at.asc())
+        .all()
+    )
+
+
+def create_conversation(
+    db: Session, user_id: str, epreuve_id: str, contexte: str, label: str
+) -> AIConversationORM:
+    """Crée une nouvelle discussion — lève ValueError si le plafond de 5
+    discussions actives par (utilisateur, épreuve) est déjà atteint
+    (l'appelant traduit ceci en 409)."""
+    count = (
+        db.query(AIConversationORM)
+        .filter(AIConversationORM.user_id == user_id, AIConversationORM.epreuve_id == epreuve_id)
+        .count()
+    )
+    if count >= MAX_CONVERSATIONS_PAR_EPREUVE:
+        raise ValueError("Limite de conversations atteinte pour cette épreuve")
+    conv = AIConversationORM(
+        user_id=user_id,
+        epreuve_id=epreuve_id,
+        label=label,
+        contexte=contexte,
+        messages_json="[]",
+    )
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    return conv
+
+
+def update_conversation(
+    db: Session,
+    conv: AIConversationORM,
+    messages: list[dict],
+    label: Optional[str] = None,
+    contexte: Optional[str] = None,
+) -> AIConversationORM:
+    """Remplace intégralement les messages d'une discussion (et son
+    libellé si fourni), sérialisés en JSON. Si `contexte` est fourni,
+    remplace aussi le passage/contenu servant de contexte à l'assistant —
+    utilisé quand l'élève sélectionne un nouveau passage alors que le
+    panneau assistant est déjà ouvert sur une discussion en cours (le
+    nouveau passage devient le contexte actif de cette discussion, plutôt
+    que d'ouvrir une nouvelle discussion à chaque sélection)."""
+    conv.messages_json = json.dumps(messages, ensure_ascii=False)
+    if label:
+        conv.label = label
+    if contexte is not None:
+        conv.contexte = contexte
+    conv.updated_at = utc_now()
+    db.commit()
+    db.refresh(conv)
+    return conv
+
+
+def delete_conversation(db: Session, conv: AIConversationORM) -> None:
+    """Ferme (supprime) une discussion — libère une place dans le plafond
+    de 5 discussions actives par épreuve."""
+    db.delete(conv)
+    db.commit()
+
+
+def conversation_to_dict(conv: AIConversationORM) -> dict:
+    """Sérialise une discussion ORM (désérialise messages_json) pour la
+    réponse API `ConversationOut`."""
+    return {
+        "id": conv.id,
+        "epreuve_id": conv.epreuve_id,
+        "label": conv.label,
+        "contexte": conv.contexte,
+        "messages": json.loads(conv.messages_json or "[]"),
+        "created_at": conv.created_at,
+        "updated_at": conv.updated_at,
+    }

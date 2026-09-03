@@ -1,0 +1,12 @@
+backend/.venv/
+backend/data/
+backend/logs/
+backend/.env
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/*.tsbuildinfo
+__pycache__/
+*.pyc
+.DS_Store
+.zcode/

@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+pydantic-settings
+httpx
+python-dotenv
+google-auth
+Pillow
+psycopg2-binary
+python-multipart
+websockets
+requests
+boto3

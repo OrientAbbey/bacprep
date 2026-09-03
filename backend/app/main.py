@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Chemin ABSOLU vers backend/.env, calculé depuis l'emplacement de ce
+# fichier — jamais relatif au répertoire de travail courant. Bug corrigé :
+# `load_dotenv()` sans argument ne trouve `.env` que si `uvicorn` est lancé
+# depuis le dossier `backend/` lui-même ; lancé depuis la racine du dépôt
+# (ou tout autre dossier), le fichier n'était pas trouvé et TOUTES les
+# variables d'environnement (ADMIN_EMAILS, ADMIN_TOKEN, clés LLM...)
+# retombaient silencieusement sur leurs valeurs par défaut. Même principe
+# que pour BASE_DIR dans db.py (voir CAHIER_DES_CHARGES, section 3).
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=_ENV_FILE)
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from .core import store
+from .core.catalogue import seed_database_if_empty
+from .core.logging_config import get_logger, setup_logging
+from .db import Base, DATABASE_URL, SessionLocal, engine
+from .routers import admin, assistant, auth, epreuves, files, me, subscriptions, ws
+
+setup_logging()
+log = get_logger("main")
+
+BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
+FRONTEND_DIST = BASE_DIR.parent / "frontend" / "dist"
+ENV_FILE_FOUND = _ENV_FILE.exists()
+if not ENV_FILE_FOUND:
+    log.warning(
+        "Aucun fichier .env trouvé à %s — copie backend/.env.example vers backend/.env "
+        "si tu veux configurer ADMIN_EMAILS, les clés LLM, etc.",
+        _ENV_FILE,
+    )
+
+MAX_CONVERSATIONS_PAR_EPREUVE = store.MAX_CONVERSATIONS_PAR_EPREUVE
+MAX_HISTORIQUE = store.MAX_HISTORIQUE
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Crée les tables au démarrage (pas de migrations dans ce prototype —
+    `Base.metadata.create_all` suffit) et importe le contenu de seed si la
+    table `epreuves` est vide."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        seed_database_if_empty(db)
+    finally:
+        db.close()
+    log.info("Démarrage backend — DATABASE_URL=%s", DATABASE_URL)
+    yield
+    log.info("Arrêt backend")
+
+
+app = FastAPI(title="Copies & Corrigés API", lifespan=lifespan)
+
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# Origines autorisées : configurable via CORS_ORIGINS (liste séparée par des
+# virgules). Défaut : le serveur de dev Vite. En production avec service
+# unifié (frontend servi par le backend), la même origine est utilisée et ce
+# réglage est sans effet.
+_cors_origins = [
+    o.strip() for o in (os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")) if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Journalise le corps brut de la requête en plus des erreurs de
+    validation (422) — essentiel pour diagnostiquer une désynchronisation
+    frontend/backend sur la forme d'une requête (voir CAHIER_DES_CHARGES,
+    section 12.1 et 12.8)."""
+    try:
+        body = await request.body()
+        body_text = body.decode("utf-8", errors="replace")
+    except Exception:
+        body_text = "<illisible>"
+    log.warning(
+        "Erreur de validation (422) sur %s %s — erreurs=%s — corps brut reçu=%s",
+        request.method,
+        request.url.path,
+        exc.errors(),
+        body_text,
+    )
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Filet de sécurité : aucune exception non gérée ne doit rester
+    silencieuse — journalise la trace complète avant de renvoyer une 500
+    générique (jamais de détail d'implémentation exposé au client)."""
+    log.exception("Exception non gérée sur %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Erreur interne du serveur"})
+
+
+app.include_router(auth.router)
+app.include_router(epreuves.router)
+app.include_router(files.router)
+app.include_router(subscriptions.router)
+app.include_router(admin.router)
+app.include_router(assistant.router)
+app.include_router(me.router)
+app.include_router(ws.router)
+
+
+@app.get("/api/health")
+def health() -> dict:
+    """Sonde de santé simple — utilisée pour vérifier que le backend a
+    démarré et pour diagnostiquer si un fichier .env a été trouvé."""
+    return {"status": "ok", "env_file_found": ENV_FILE_FOUND}
+
+
+@app.get("/api/config")
+def config() -> dict:
+    """Constantes publiques exposées au frontend (plafonds applicatifs)."""
+    return {
+        "max_conversations_par_epreuve": MAX_CONVERSATIONS_PAR_EPREUVE,
+        "max_historique": MAX_HISTORIQUE,
+    }
+
+
+if FRONTEND_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_catch_all(full_path: str):
+        """Sert `frontend/dist` (service unifié, voir DEPLOIEMENT.md) :
+        toute route qui n'est ni une API ni un fichier statique existant
+        renvoie `index.html`, laissant React Router gérer la navigation
+        côté client plutôt que de renvoyer une 404."""
+        candidate = FRONTEND_DIST / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+    log.info("Service unifié activé: frontend/dist servi par le backend")
+else:
+    log.info("frontend/dist absent — l'API tourne seule (mode développement)")

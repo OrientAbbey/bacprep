@@ -1,0 +1,44 @@
+Refonte : épreuves Markdown + images uniquement, stockage objet, import massif, navigation hiérarchique
+Périmètre
+Les épreuves sont exclusivement des fichiers Markdown accompagnés d'images. Pas de PDF, pas de HTML — ni upload, ni visionneuse, ni import. La visionneuse riche existante (rendu MD/LaTeX, filigrane, sélection → assistant IA) reste LE lecteur pour toutes les épreuves ; l'assistant IA est disponible partout, sans mode dégradé.
+
+Décisions structurantes (acquises)
+Navigation publique (accueil, classes, catalogue, recherche sans connexion) ; authentification pour ouvrir une épreuve (viewer), profil, abonnement.
+Abonnements scopés à la classe.
+Épreuves = fichiers .md (sujet + corrigé) + images d'illustration dans un stockage objet ; la BDD ne garde que métadonnées + storage_key. Colonnes contenu_markdown/corrige_markdown supprimées.
+Stockage abstrait : local (dev, backend/data/storage/) ou R2 (prod, boto3) via STORAGE_BACKEND.
+Clés : epreuves/{niveau}/{annee}/{epreuve_id}/sujet.md | corrige.md | {image}.png.
+Base de dev régénérée (data/bacprep.db supprimé, pattern create_all conservé) ; les 3 épreuves d'exemple re-seedées comme fichiers.
+1. Backend — fondations
+Référentiel (app/core/referentiel.py, nouveau) : NIVEAUX (SECONDAIRE actif, PRIMAIRE désactivé), CLASSES_SECONDAIRE ordonnées (6e→Terminale), EVALUATIONS (CEP, BEPC, PROBATOIRE, BAC, SEQUENCE 1..3, COMPOSITION_TRIMESTRIELLE, EXAMEN_BLANC, CONCOURS, AUTRE), SERIES indicatives (A, C, D, E, TI, F, G, ESP…), normalisation casse/accents.
+Stockage (app/core/storage.py, nouveau) : put_bytes/get_bytes/delete/exists/presigned_url ; backend local et R2 (URL signées ~15 min). requirements.txt : + boto3.
+Modèles (db_models.py) : EpreuveORM + niveau, classe, evaluation (remplace examen), − contenu_markdown/corrige_markdown ; nouveaux id = uuid4().hex[:8]. EpreuveFileORM nouveau (remplace epreuve_assets) : cible (sujet|corrige), format (md|image), filename, storage_key, mime, size, checksum_sha256 — un document .md par cible, N images par cible. SubscriptionORM + classe (joker ALL), examen→evaluation. ImportJobORM nouveau.
+Config : .env.example/.env + STORAGE_BACKEND, R2_*, STORAGE_LOCAL_DIR, CORS_ORIGINS, IMPORTS_DIR.
+2. Backend — API publique
+GET /api/navigation : classes + compte d'épreuves publiées (cartes désactivées si 0 ; PRIMAIRE actif:false).
+GET /api/epreuves : filtres classe, serie (alias filiere), matiere, annee, evaluation, corrige, acces_type, limit/offset ; q = recherche globale (matière/évaluation/série) qui ignore la classe.
+GET /api/epreuves/filtres : valeurs dynamiques {series, matieres, annees, evaluations} par GROUP BY, scopées à la classe.
+GET /api/epreuves/{id} (auth + contrôle d'accès) : métadonnées + contenu MD chargé du stockage + images (URLs /api/files/{id}).
+GET /api/files/{file_id} (nouveau) : vérifie l'accès ; local → streaming, R2 → 302 URL signée. Remplace le montage /media (supprimé).
+Seed (catalogue.py) : écrit les .md via le stockage + lignes epreuve_files ; frontmatter enrichi (niveau/classe/evaluation, repli SECONDAIRE/Terminale/BAC).
+3. Backend — abonnements
+has_access étendu (evaluation, classe — jokers ALL —, série ∈ séries de l'épreuve, matière/année, ou epreuve_id exact). CheckoutIn + classe (requise pour les scopes matière/année/série). pricing conservé à 5 scopes, comptages dans le cadre d'une classe. Frontend lib/access.ts synchronisé.
+
+4. Backend — admin & import massif
+CRUD : EpreuveIn/Update + niveau/classe/evaluation/series[] (validés contre le référentiel) ; contenu MD édité en textarea et sauvegardé comme fichier dans le stockage ; upload d'images (Pillow conservé) → epreuve_files format=image ; publish exige un sujet .md + ≥1 série ; DELETE fichier (stockage + ligne).
+Import massif (app/core/import_service.py) : parcours récursif tolérant de {annee}/{classe}/{matiere}/** (niveau optionnel), identification des .md (nom contenant corrige|corrigé → corrigé, sinon sujet) et des images du même dossier (illustrations, balises MD réécrites vers /api/files/{id}), série extraite au mieux (serie X, bac X), création en brouillon, upload vers les clés finales, doublons par checksum (ignorés + signalés), métadonnées insuffisantes signalées.
+CLI : python -m app.scripts.importer --dir backend/data/imports [--dry-run] (zone d'import locale).
+API admin : POST /api/admin/import (zip ≤ ~200 Mo, extraction sécurisée, ImportJob + BackgroundTasks), GET /api/admin/import/jobs[/{id}] (statut + rapport : analysées/créées/doublons/erreurs/métadonnées manquantes).
+5. Frontend
+Types : EpreuveListItem + niveau, classe, evaluation ; EpreuveFile ; NavigationOut ; filtres étendus ; types jobs d'import.
+Routes : / → HomePage publique (niveau avec Primaire désactivé, 7 cartes classes avec compteurs, recherche globale) ; /connexion → LoginPage (déplacée) ; /secondaire/:classe → catalogue public à filtres dynamiques ; /catalogue?q= → recherche globale (badge classe) ; /epreuve/:id (RequireAuth), /abonnement, /profil, /admin inchangés. Layout : recherche dans l'en-tête + bouton Connexion.
+CataloguePage : filtres dynamiques (Combobox existants), libellés « BAC {annee} » en dur → {evaluation} {annee}.
+ViewerPage : flux Markdown existant ; onglet corrigé selon les fichiers.
+AssistantPanel : la barre de défilement horizontale des onglets de discussion, aujourd'hui masquée (scrollbar-hide), apparaît au survol de la souris (CSS : barre transparente/absente par défaut, visible en :hover).
+AdminPage : onglet Épreuves (selects Classe/Évaluation, Séries multi-sélection, éditeur MD conservé, gestion images) + onglet Import massif (upload zip → polling → rapport + doc du format attendu).
+6. Docs & déploiement
+render.yaml → 2 services (static site frontend + web service backend, DATABASE_URL PostgreSQL type Supabase, R2_*, CORS_ORIGINS) ; DEPLOIEMENT.md (guide Supabase + R2, dev local) ; README.md (organisation, stockage, import, navigation publique).
+
+7. Ordre & vérification
+fondations backend → 2) API publique → 3) abonnements → 4) admin + import → 5) frontend → 6) docs → 7) py_compile + démarrage uvicorn + smoke tests curl + npm run build.
+Conservation explicite : auth mock/Google + session unique/kick-out WebSocket, verrou admin, assistant IA streaming (images multimodales adaptées au stockage), filigrane, abonnements/paiement simulé (adaptés à la classe), thème clair/sombre, toasts, pagination, historique.

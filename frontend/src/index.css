@@ -1,0 +1,312 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-serif: "Source Serif 4", ui-serif, Georgia, serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-paper: #f6f2e7;
+  --color-paper-raised: #ffffff;
+  --color-ink: #1b2a4a;
+  --color-ink-soft: #4b5a78;
+  --color-slate: #8791a3;
+  --color-highlight: #c89b3c;
+  --color-highlight-soft: #f3e7c8;
+  --color-highlight-ink: #241a02;
+  --color-correction: #b23a2e;
+  --color-correction-soft: #f1dbd7;
+  --color-valide: #2f6e4f;
+  --color-valide-soft: #dceae1;
+  --color-margin: #14213d;
+  --color-margin-soft: #1d2e52;
+  --color-margin-text: #f1efe6;
+}
+
+.dark {
+  --color-paper: #0f1626;
+  --color-paper-raised: #182236;
+  --color-ink: #ecedf2;
+  --color-ink-soft: #9ca7bf;
+  --color-slate: #6b7690;
+  --color-highlight: #d6ae55;
+  --color-highlight-soft: #3a2e12;
+  --color-correction: #e0665a;
+  --color-correction-soft: #3a211c;
+  --color-valide: #59b98a;
+  --color-valide-soft: #163828;
+  --color-margin: #070b14;
+  --color-margin-soft: #101827;
+  /* --color-highlight-ink et --color-margin-text : PAS redéfinis ici, volontairement */
+}
+
+/* Indique explicitement au navigateur que la page gère elle-même son
+   thème clair/sombre (via la classe .dark), pour éviter qu'un moteur de
+   rendu (notamment la WebView Android utilisée par Capacitor, qui peut
+   appliquer un "assombrissement forcé" heuristique aux contrôles natifs
+   comme <button>) ne réinterprète/écrase les couleurs de texte que nous
+   avons explicitement définies — en particulier sur les états :hover et
+   :focus, où ce repaint heuristique se déclenche le plus souvent et
+   rendait certains boutons illisibles au survol. */
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+/* Défense en profondeur : tout bouton/lien avec des couleurs de texte
+   fixes définies via nos tokens doit conserver EXACTEMENT la même couleur
+   de texte au survol et au focus — un style explicite sur ces états gagne
+   toujours face à un éventuel repaint heuristique du navigateur. */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Indicateur de focus clavier visible partout (bouton, lien, carte
+   cliquable, option de liste déroulante, champ...) — absent auparavant,
+   ce qui rendait la navigation au clavier difficile à suivre. On
+   n'affiche l'anneau que pour le focus clavier (:focus-visible), pas au
+   clic à la souris, pour ne pas ajouter de bruit visuel non désiré. */
+:focus-visible {
+  outline: 2px solid var(--color-highlight);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Effet de survol générique : change UNIQUEMENT l'apparence du FOND, jamais
+   la couleur du texte/icône. On utilise un box-shadow "inset" avec un
+   spread énorme (999px) plutôt que `background-color` ou `filter` :
+   - `background-color` REMPLACERAIT entièrement le fond propre à chaque
+     bouton (un bouton plein `bg-ink` deviendrait soudainement une teinte
+     translucide au survol) ;
+   - `filter: brightness()` éclaircit UNIFORMÉMENT tout le contenu peint,
+     texte et icônes compris — ce qui n'est pas souhaité ici.
+   Un box-shadow inset se peint entre le fond et le texte (respecte le
+   border-radius, reste sous les glyphes), donnant un survol perceptible
+   qui ne touche que l'arrière-plan. `:where(...)` ramène la spécificité à
+   zéro pour ne jamais entrer en conflit avec les classes hover: explicites
+   de Tailwind (ex. les boutons Assistant/Envoyer, qui gardent leur couleur
+   de fond ET de texte identiques au survol par ailleurs). */
+:where(button:not(:disabled), [role="option"], a):hover {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-ink) 8%, transparent);
+}
+.dark :where(button:not(:disabled), [role="option"], a):hover {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, white 10%, transparent);
+}
+
+/* Retour visuel au clic (:active), même logique que le survol mais une
+   teinte plus marquée — sans cette règle, cliquer un bouton ne produisait
+   aucun changement perceptible avant le résultat de l'action. */
+:where(button:not(:disabled), [role="option"], a):active {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-ink) 16%, transparent);
+  transform: scale(0.98);
+}
+.dark :where(button:not(:disabled), [role="option"], a):active {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, white 20%, transparent);
+}
+
+/* Curseur "main" explicite sur tout élément cliquable. Contrairement à une
+   idée reçue, un <button> HTML n'a PAS le curseur pointeur par défaut dans
+   la plupart des navigateurs (seuls les liens <a> l'ont) — ce qui contribue
+   à ce que certains éléments cliquables (cartes du catalogue, options de
+   liste déroulante...) ne se "sentent" pas cliquables. */
+button:not(:disabled),
+[role="option"],
+[role="button"] {
+  cursor: pointer;
+  transition: box-shadow 0.12s ease, transform 0.08s ease;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: local("Source Serif 4");
+  font-weight: 700;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.font-serif-brand {
+  font-family: var(--font-serif);
+  font-weight: 700;
+}
+
+.font-mono-tag {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.085em;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Barre de défilement révélée au survol : masquée au repos (visuellement
+   propre, surtout pour la rangée d'onglets de discussion de l'assistant),
+   elle apparaît quand le pointeur survole la zone pour indiquer qu'on
+   peut faire défiler horizontalement. */
+.scrollbar-hover {
+  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.scrollbar-hover::-webkit-scrollbar {
+  height: 6px;
+}
+.scrollbar-hover::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+}
+.scrollbar-hover:hover {
+  scrollbar-color: var(--color-ink-soft) transparent;
+}
+.scrollbar-hover:hover::-webkit-scrollbar-thumb {
+  background-color: var(--color-ink-soft);
+}
+
+/* Contenu d'épreuve : lecture seule, copie désactivée */
+/* Contenu d'épreuve : lecture seule. La sélection de texte reste
+   pleinement fonctionnelle (c'est le mécanisme même par lequel l'élève
+   déclenche une question à l'assistant sur un passage précis) — seule la
+   COPIE vers le presse-papier système est bloquée, via un gestionnaire
+   d'événement `onCopy` côté React (voir ViewerPage), pas via
+   `user-select: none` qui empêcherait la sélection elle-même. */
+.prose-exam {
+  font-family: var(--font-sans);
+  line-height: 1.75;
+  color: var(--color-ink);
+}
+.prose-exam h1,
+.prose-exam h2,
+.prose-exam h3 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  color: var(--color-ink);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.prose-exam p {
+  margin: 0.85em 0;
+}
+.prose-exam table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+.prose-exam th,
+.prose-exam td {
+  border: 1px solid color-mix(in srgb, var(--color-ink-soft) 30%, transparent);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.prose-exam img {
+  max-width: 100%;
+  border-radius: 4px;
+  margin: 1em 0;
+}
+.prose-exam code {
+  background: var(--color-highlight-soft);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* Variante compacte, copiable, pour les bulles de discussion. Le contenu
+   ne doit jamais dépasser la largeur de la bulle (formules KaTeX,
+   tableaux et blocs de code compris) : chaque élément large devient
+   scrollable horizontalement plutôt que de déborder. */
+.prose-chat {
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  font-size: 0.925rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.prose-chat p {
+  margin: 0.5em 0;
+}
+.prose-chat p:first-child {
+  margin-top: 0;
+}
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+.prose-chat ul,
+.prose-chat ol {
+  margin: 0.4em 0;
+  padding-left: 1.3em;
+}
+.prose-chat code {
+  background: rgba(127, 127, 127, 0.16);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+.prose-chat pre {
+  max-width: 100%;
+  overflow-x: auto;
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 6px;
+  padding: 0.6em 0.75em;
+}
+.prose-chat pre code {
+  background: transparent;
+  padding: 0;
+}
+.prose-chat table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  padding: 0.3em 0.55em;
+  white-space: nowrap;
+}
+.prose-chat img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+/* KaTeX : les formules trop larges (matrices, longues expressions)
+   défilent horizontalement au lieu de déborder de la bulle. */
+.prose-chat .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+.prose-chat .katex {
+  white-space: normal;
+}
+
+::selection {
+  background: var(--color-highlight);
+  color: var(--color-highlight-ink);
+}
