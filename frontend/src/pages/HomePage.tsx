@@ -1,30 +1,58 @@
-import { BookOpen, GraduationCap, Lock, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowLeft, BookOpen, ChevronRight, GraduationCap, Lock, Search } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { NavigationOut } from "../api/types";
+import { Consultation, NavigationOut, NiveauNav } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { classeLabel } from "../lib/referentiel";
+import { formatRelativeTime } from "../lib/time";
 import { Logo } from "../components/Logo";
 
 /**
- * Accueil public : sélection du niveau (seul Secondaire est actif pour
- * l'instant, Primaire est réservé), puis sélection de la classe — une
- * carte de classe sans épreuve est désactivée. Une barre de recherche
- * globale permet de chercher dans TOUT le catalogue, indépendamment de la
- * classe (prompt d'amélioration §3).
+ * Accueil public, organisé en DECK séquentiel (pas tout en même temps) :
+ * l'élève choisit d'abord un NIVEAU parmi des cartes toutes entièrement
+ * visibles (le niveau inactif — Primaire — reste visible mais verrouillé),
+ * puis la sélection des CLASSES de ce niveau apparaît. Un fil d'Ariane et
+ * le bouton retour permettent de remonter à tout moment. La recherche
+ * globale reste accessible en permanence (prompt d'amélioration §3).
  */
+
+/** Descriptif affiché sous le libellé de chaque niveau. */
+const NIVEAU_DESCRIPTIONS: Record<string, string> = {
+  SECONDAIRE: "6e → Terminale",
+  PRIMAIRE: "SIL → CM2",
+};
+
 export function HomePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [nav, setNav] = useState<NavigationOut | null>(null);
+  const [navErreur, setNavErreur] = useState(false);
   const [query, setQuery] = useState("");
+  const [niveauActif, setNiveauActif] = useState<NiveauNav | null>(null);
+  // « Consultées récemment » : réservé aux comptes connectés (l'historique
+  // est une fonctionnalité de compte — le visiteur n'en génère pas).
+  const [historique, setHistorique] = useState<Consultation[]>([]);
 
-  useEffect(() => {
-    api.get<NavigationOut>("/api/epreuves/navigation").then(setNav).catch(() => {});
+  const chargerNav = useCallback(() => {
+    setNavErreur(false);
+    api
+      .get<NavigationOut>("/api/epreuves/navigation")
+      .then(setNav)
+      .catch(() => setNavErreur(true));
   }, []);
 
-  const secondaire = nav?.niveaux.find((n) => n.code === "SECONDAIRE");
-  const primaire = nav?.niveaux.find((n) => n.code === "PRIMAIRE");
+  useEffect(() => {
+    chargerNav();
+  }, [chargerNav]);
+
+  useEffect(() => {
+    if (!user) {
+      setHistorique([]);
+      return;
+    }
+    api.get<Consultation[]>("/api/me/historique").then(setHistorique).catch(() => {});
+  }, [user]);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -79,44 +107,87 @@ export function HomePage() {
         )}
       </section>
 
-      <section>
-        <h2 className="mb-4 font-mono-tag text-xs text-ink-soft">QUE SOUHAITEZ-VOUS CONSULTER ?</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex min-h-[120px] cursor-not-allowed flex-col justify-between rounded-lg border border-ink-soft/15 bg-paper-raised p-5 opacity-50">
-            <div className="flex items-center gap-3">
-              <BookOpen size={24} strokeWidth={1.5} aria-hidden="true" className="text-ink-soft" />
-              <div>
-                <h3 className="font-serif-brand text-lg">Primaire</h3>
-                <p className="text-xs text-slate">Bientôt disponible</p>
-              </div>
-            </div>
-            <span className="flex items-center gap-1.5 font-mono-tag text-[10px] text-slate">
-              <Lock size={12} strokeWidth={2} aria-hidden="true" />
-              {primaire ? `${primaire.classes.reduce((n, c) => n + c.epreuves, 0)} épreuve(s)` : "—"}
-            </span>
+      {user && historique.length > 0 && (
+        <section aria-label="Consultées récemment">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="font-mono-tag text-xs text-ink-soft">CONSULTÉES RÉCEMMENT</h2>
+            <Link to="/profil" className="text-xs text-ink-soft underline-offset-2 hover:text-highlight hover:underline">
+              Tout voir dans ton profil
+            </Link>
           </div>
+          <div className="scrollbar-hide flex gap-3 overflow-x-auto pb-2">
+            {historique.map((h) => (
+              <Link
+                key={h.epreuve_id}
+                to={`/epreuve/${h.epreuve_id}`}
+                className="min-w-[180px] shrink-0 rounded-lg border border-ink-soft/15 bg-paper-raised p-3 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
+              >
+                <p className="font-serif-brand text-sm">{h.matiere}</p>
+                <p className="font-mono-tag text-[10px] text-slate">
+                  {h.classe ? `${classeLabel(h.classe)} · ` : ""}
+                  {h.filieres.join(",")} · {h.annee}
+                </p>
+                <p className="mt-0.5 text-xs text-slate">{formatRelativeTime(h.consulted_at)}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
-          <div className="flex min-h-[120px] flex-col justify-between rounded-lg border-2 border-highlight/40 bg-paper-raised p-5">
-            <div className="flex items-center gap-3">
-              <GraduationCap size={24} strokeWidth={1.5} aria-hidden="true" className="text-highlight" />
-              <div>
-                <h3 className="font-serif-brand text-lg">Secondaire</h3>
-                <p className="text-xs text-slate">6e → Terminale</p>
-              </div>
-            </div>
-            <span className="font-mono-tag text-[10px] text-slate">
-              {secondaire ? `${secondaire.classes.reduce((n, c) => n + c.epreuves, 0)} épreuve(s) publiée(s)` : "—"}
-            </span>
-          </div>
+      <section>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          {niveauActif ? (
+            <nav aria-label="Fil d'Ariane" className="flex min-w-0 items-center gap-1 font-mono-tag text-xs">
+              <button
+                type="button"
+                onClick={() => setNiveauActif(null)}
+                className="shrink-0 text-ink-soft underline-offset-2 hover:text-highlight hover:underline focus-visible:text-highlight"
+              >
+                Niveaux
+              </button>
+              <ChevronRight size={12} strokeWidth={2} aria-hidden="true" className="shrink-0 text-slate" />
+              <span aria-current="page" className="truncate text-ink-soft">
+                NIVEAU {niveauActif.label.toUpperCase()} — CHOISIS TA CLASSE
+              </span>
+            </nav>
+          ) : (
+            <h2 className="font-mono-tag text-xs text-ink-soft">QUE SOUHAITEZ-VOUS CONSULTER ?</h2>
+          )}
+          {niveauActif && (
+            <button
+              type="button"
+              onClick={() => setNiveauActif(null)}
+              aria-label="Revenir à la sélection des niveaux"
+              className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
+            >
+              <ArrowLeft size={14} strokeWidth={1.75} aria-hidden="true" />
+              Niveaux
+            </button>
+          )}
         </div>
-      </section>
 
-      <section>
-        <h2 className="mb-4 font-mono-tag text-xs text-ink-soft">SECONDAIRE — CHOISIS TA CLASSE</h2>
-        {!nav && <p className="text-sm text-slate">Chargement…</p>}
-        {nav && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-            {(secondaire?.classes ?? []).map((c) => {
+        {navErreur && (
+          <div className="mx-auto max-w-md rounded-lg border border-correction/30 bg-correction-soft p-5 text-center">
+            <p className="text-sm text-correction">
+              Impossible de charger les niveaux. Vérifiez votre connexion puis réessayez.
+            </p>
+            <button
+              type="button"
+              onClick={chargerNav}
+              className="mt-3 min-h-[36px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction hover:text-paper"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
+
+        {!nav && !navErreur && <DeckSkeleton />}
+        {nav && !niveauActif && (
+          <NiveauGrid niveaux={nav.niveaux} onChoose={(n) => setNiveauActif(n)} />
+        )}
+        {nav && niveauActif && (
+          <div className="fade-in grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            {(niveauActif.classes ?? []).map((c) => {
               const total = c.epreuves;
               return c.actif ? (
                 <Link
@@ -146,6 +217,72 @@ export function HomePage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Sélection de niveaux : toutes les cartes sont entièrement visibles, sans
+ * superposition. Une carte active (Secondaire) est cliquable ; un niveau
+ * inactif (Primaire) reste visible mais verrouillé.
+ */
+function NiveauGrid({ niveaux, onChoose }: { niveaux: NiveauNav[]; onChoose: (n: NiveauNav) => void }) {
+  return (
+    <div className="fade-in mx-auto grid max-w-2xl gap-4 sm:grid-cols-2">
+      {niveaux.map((n) => {
+        const description = NIVEAU_DESCRIPTIONS[n.code];
+        if (!n.actif) {
+          return (
+            <div
+              key={n.code}
+              title="Ce niveau n'est pas encore disponible"
+              aria-disabled="true"
+              className="flex min-h-[140px] cursor-not-allowed flex-col justify-between rounded-lg border border-ink-soft/10 bg-paper-raised/60 p-5 opacity-55"
+            >
+              <div className="flex items-center gap-3">
+                <BookOpen size={24} strokeWidth={1.5} aria-hidden="true" className="text-ink-soft" />
+                <div>
+                  <h3 className="font-serif-brand text-lg">{n.label}</h3>
+                  <p className="text-xs text-slate">Bientôt disponible</p>
+                </div>
+                <Lock size={14} strokeWidth={2} aria-hidden="true" className="ml-auto text-slate" />
+              </div>
+              <span className="font-mono-tag text-[10px] text-slate">
+                {n.classes.reduce((acc, c) => acc + c.epreuves, 0)} épreuve(s) publiée(s)
+              </span>
+            </div>
+          );
+        }
+        return (
+          <button
+            key={n.code}
+            type="button"
+            onClick={() => onChoose(n)}
+            aria-label={`Consulter le niveau ${n.label}`}
+            className="flex min-h-[140px] w-full flex-col justify-between rounded-lg border border-ink-soft/20 bg-paper-raised p-5 text-left transition-colors hover:border-highlight/60 hover:bg-highlight-soft/40 focus-visible:border-highlight/60"
+          >
+            <div className="flex items-center gap-3">
+              <GraduationCap size={24} strokeWidth={1.5} aria-hidden="true" className="text-highlight" />
+              <div>
+                <h3 className="font-serif-brand text-lg">{n.label}</h3>
+                <p className="text-xs text-slate">{description ?? `${n.classes.length} classes`}</p>
+              </div>
+            </div>
+            <span className="font-mono-tag text-[10px] text-slate">
+              {n.classes.reduce((acc, c) => acc + c.epreuves, 0)} épreuve(s) publiée(s)
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeckSkeleton() {
+  return (
+    <div className="mx-auto grid max-w-2xl gap-4 sm:grid-cols-2">
+      <div className="skeleton h-[140px] w-full rounded-lg" />
+      <div className="skeleton h-[140px] w-full rounded-lg opacity-70" />
     </div>
   );
 }

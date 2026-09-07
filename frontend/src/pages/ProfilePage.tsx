@@ -1,39 +1,154 @@
+import {
+  Activity,
+  Bot,
+  BookOpen,
+  Calendar,
+  CheckCircle2,
+  CreditCard,
+  Database,
+  Edit3,
+  FileText,
+  GraduationCap,
+  LogIn,
+  Pencil,
+  Plus,
+  StickyNote,
+  Trash2,
+} from "lucide-react";
+import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import { SubscriptionOut } from "../api/types";
+import type { ActiviteItem, Note, SubscriptionOut } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { NoteEditor } from "../components/NoteEditor";
+import { useToast } from "../components/Toast";
+import { CLASSES_SECONDAIRE, NIVEAUX, classeLabel } from "../lib/referentiel";
+import { formatRelativeTime } from "../lib/time";
 import { getInitials } from "../lib/initials";
 
 interface Profil {
   email: string;
   nom: string;
+  niveau: string | null;
+  classe: string | null;
+  etablissement: string | null;
   membre_depuis: string;
   abonnements: SubscriptionOut[];
   total_depense_fcfa: number;
 }
 
+const ICONE_ACTIVITE: Record<string, typeof Activity> = {
+  connexion: LogIn,
+  consultation: GraduationCap,
+  abonnement: Plus,
+  paiement: CreditCard,
+  note: StickyNote,
+  discussion_ia: Bot,
+};
+
+type OngletProfil = "abonnements" | "notes" | "activite" | "donnees";
+
 export function ProfilePage() {
   const [profil, setProfil] = useState<Profil | null>(null);
-  const { logout } = useAuth();
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [activite, setActivite] = useState<ActiviteItem[]>([]);
+  const [onglet, setOnglet] = useState<OngletProfil>("abonnements");
+  const [noteEdition, setNoteEdition] = useState<Note | null>(null);
+  // Formulaire d'infos étendues (édition locale, sauvegarde explicite).
+  const [form, setForm] = useState({ nom: "", niveau: "", classe: "", etablissement: "" });
+  const [formOuvert, setFormOuvert] = useState(false);
+  const [savingProfil, setSavingProfil] = useState(false);
+  const { logout, user, refreshConsentement } = useAuth();
+  const { showToast } = useToast();
+  // Consentement : réglages locaux, synchronisés au compte (révocables à
+  // tout moment — pratique RGPD).
+  const [consentIa, setConsentIa] = useState<boolean>(user?.consent_ia !== false);
+  const [consentNotes, setConsentNotes] = useState<boolean>(user?.consent_notes !== false);
+  const [savingConsent, setSavingConsent] = useState(false);
 
-  async function refresh() {
-    setProfil(await api.get<Profil>("/api/me/profil"));
+  function applyProfil(p: Profil) {
+    setProfil(p);
+    setForm({
+      nom: p.nom ?? "",
+      niveau: p.niveau ?? "",
+      classe: p.classe ?? "",
+      etablissement: p.etablissement ?? "",
+    });
   }
 
+  async function refresh() {
+    applyProfil(await api.get<Profil>("/api/me/profil"));
+    if (onglet === "notes") setNotes(await api.get<Note[]>("/api/me/notes"));
+    if (onglet === "activite") setActivite(await api.get<ActiviteItem[]>("/api/me/activite"));
+  }
+
+  // Charge le profil au montage, et notes/activité à chaque changement d'onglet.
   useEffect(() => {
-    refresh();
+    api.get<Profil>("/api/me/profil").then(applyProfil);
   }, []);
+
+  useEffect(() => {
+    if (onglet === "notes") api.get<Note[]>("/api/me/notes").then(setNotes).catch(() => {});
+    if (onglet === "activite") api.get<ActiviteItem[]>("/api/me/activite").then(setActivite).catch(() => {});
+  }, [onglet]);
+
+  async function saveProfil() {
+    setSavingProfil(true);
+    try {
+      await api.put("/api/me/profil", form);
+      setFormOuvert(false);
+      await api
+        .get<Profil>("/api/me/profil")
+        .then(setProfil)
+        .catch(() => {});
+    } catch {
+      // Avant : try/finally sans catch — un échec laissait la modale
+      // ouverte sans aucun retour.
+      showToast("Le profil n'a pas pu être enregistré — réessaie.", "error");
+    } finally {
+      setSavingProfil(false);
+    }
+  }
 
   async function cancel(subId: string) {
     if (!confirm("Annuler cet abonnement ? L'accès sera révoqué immédiatement.")) return;
-    await api.post(`/api/subscriptions/${subId}/cancel`);
-    refresh();
+    try {
+      await api.post(`/api/subscriptions/${subId}/cancel`);
+      refresh();
+    } catch {
+      showToast("L'annulation a échoué — réessaie.", "error");
+    }
+  }
+
+  async function deleteNote(id: string) {
+    if (!confirm("Supprimer définitivement cette note ?")) return;
+    try {
+      await api.del(`/api/me/notes/${id}`);
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+    } catch {
+      showToast("La note n'a pas pu être supprimée — réessaie.", "error");
+    }
+  }
+
+  async function saveConsentement(ia: boolean, notesOk: boolean) {
+    setSavingConsent(true);
+    try {
+      await api.put("/api/me/consentement", { partage_conversations_ia: ia, partage_notes: notesOk });
+      await refreshConsentement();
+      showToast("Choix de confidentialité mis à jour.", "success");
+    } catch {
+      showToast("Le choix n'a pas pu être enregistré — réessaie.", "error");
+    } finally {
+      setSavingConsent(false);
+    }
   }
 
   if (!profil) return <p className="text-sm text-slate">Chargement…</p>;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      {/* Carte identité + infos étendues */}
       <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-6">
         <div className="flex items-center gap-4">
           <div
@@ -42,15 +157,109 @@ export function ProfilePage() {
           >
             {getInitials(profil.nom)}
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="font-serif-brand text-2xl">{profil.nom}</h1>
             <p className="text-sm text-ink-soft">{profil.email}</p>
           </div>
         </div>
         <p className="mt-3 text-sm text-slate">
-          Membre depuis le {new Date(profil.membre_depuis).toLocaleDateString("fr-FR")}
+          Membre depuis le {new Date(profil.membre_depuis).toLocaleDateString("fr-FR")} · Total dépensé :{" "}
+          {profil.total_depense_fcfa} FCFA
         </p>
-        <p className="text-sm text-slate">Total dépensé : {profil.total_depense_fcfa} FCFA</p>
+
+        {/* Infos étendues (optionnelles) : niveau, classe, établissement. */}
+        {formOuvert ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveProfil();
+            }}
+            className="mt-4 grid grid-cols-2 gap-3"
+          >
+            <label className="block">
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Nom</span>
+              <input
+                value={form.nom}
+                onChange={(e) => setForm((f) => ({ ...f, nom: e.target.value }))}
+                className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Établissement</span>
+              <input
+                value={form.etablissement}
+                onChange={(e) => setForm((f) => ({ ...f, etablissement: e.target.value }))}
+                placeholder="ex. Collège/CUSS de Yaoundé"
+                className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Niveau</span>
+              <select
+                value={form.niveau}
+                onChange={(e) => setForm((f) => ({ ...f, niveau: e.target.value }))}
+                className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
+              >
+                <option value="">—</option>
+                {NIVEAUX.map((n) => (
+                  <option key={n.code} value={n.code}>
+                    {n.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Classe</span>
+              <select
+                value={form.classe}
+                onChange={(e) => setForm((f) => ({ ...f, classe: e.target.value }))}
+                className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
+              >
+                <option value="">—</option>
+                {CLASSES_SECONDAIRE.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="col-span-2 flex gap-2">
+              <button
+                type="submit"
+                disabled={savingProfil}
+                className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper disabled:opacity-50"
+              >
+                {savingProfil ? "Enregistrement…" : "Enregistrer"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormOuvert(false)}
+                className="min-h-[44px] rounded-full border border-ink-soft/25 px-4 text-sm text-ink-soft"
+              >
+                Annuler
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            {profil.niveau && <span className="font-mono-tag text-[10px] text-slate">NIVEAU {profil.niveau}</span>}
+            {profil.classe && (
+              <span className="rounded-full border border-ink-soft/25 px-2.5 py-1 text-xs">
+                {classeLabel(profil.classe)}
+              </span>
+            )}
+            {profil.etablissement && <span className="text-xs text-ink-soft">{profil.etablissement}</span>}
+            <button
+              type="button"
+              onClick={() => setFormOuvert(true)}
+              className="ml-auto flex items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50"
+            >
+              <Pencil size={12} strokeWidth={1.75} aria-hidden="true" />
+              {profil.classe || profil.etablissement ? "Modifier" : "Compléter mes infos"}
+            </button>
+          </div>
+        )}
+
         <button
           onClick={logout}
           className="mt-4 min-h-[44px] rounded-full border border-correction/40 px-5 text-sm font-medium text-correction"
@@ -59,61 +268,289 @@ export function ProfilePage() {
         </button>
       </div>
 
-      <div>
-        <h2 className="mb-3 font-serif-brand text-lg">Abonnements actifs</h2>
-        {profil.abonnements.length === 0 && (
-          <p className="text-sm text-slate">Aucun abonnement actif pour l'instant.</p>
-        )}
-        <div className="space-y-3">
-          {profil.abonnements.map((s) => (
-            <div key={s.id} className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
-              <p className="font-medium">{s.scope_label}</p>
-              <dl className="mt-2 space-y-1 text-sm">
-                <div className="flex justify-between border-b border-dashed border-ink-soft/15 py-1">
-                  <dt className="text-ink-soft">Filière</dt>
-                  <dd>{s.filiere}</dd>
-                </div>
-                {s.matiere !== "ALL" && (
-                  <div className="flex justify-between border-b border-dashed border-ink-soft/15 py-1">
-                    <dt className="text-ink-soft">Matière</dt>
-                    <dd>{s.matiere}</dd>
-                  </div>
-                )}
-                {s.annee !== "ALL" && (
-                  <div className="flex justify-between border-b border-dashed border-ink-soft/15 py-1">
-                    <dt className="text-ink-soft">Année</dt>
-                    <dd>{s.annee}</dd>
-                  </div>
-                )}
-                {s.epreuve_label && (
-                  <div className="flex justify-between border-b border-dashed border-ink-soft/15 py-1">
-                    <dt className="text-ink-soft">Épreuve</dt>
-                    <dd>{s.epreuve_label}</dd>
-                  </div>
-                )}
-                <div className="flex justify-between border-b border-dashed border-ink-soft/15 py-1">
-                  <dt className="text-ink-soft">Épreuves couvertes</dt>
-                  <dd>{s.epreuves_couvertes}</dd>
-                </div>
-                <div className="flex justify-between border-b border-dashed border-ink-soft/15 py-1">
-                  <dt className="text-ink-soft">Souscrit le</dt>
-                  <dd>{new Date(s.start_date).toLocaleDateString("fr-FR")}</dd>
-                </div>
-                <div className="flex justify-between py-1">
-                  <dt className="text-ink-soft">Expire le</dt>
-                  <dd>{new Date(s.end_date).toLocaleDateString("fr-FR")}</dd>
-                </div>
-              </dl>
-              <button
-                onClick={() => cancel(s.id)}
-                className="mt-3 min-h-[36px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction"
+      {/* Onglets : abonnements / notes / activité / confidentialité */}
+      <div className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px] w-fit">
+        {(
+          [
+            ["abonnements", "Abonnements"],
+            ["notes", "Mes notes"],
+            ["activite", "Activité"],
+            ["donnees", "Confidentialité"],
+          ] as [OngletProfil, string][]
+        ).map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setOnglet(v)}
+            aria-pressed={onglet === v}
+            className={`rounded-full px-4 py-1.5 ${onglet === v ? "bg-ink text-paper" : "text-ink-soft"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {onglet === "abonnements" && (
+        <div className="space-y-4">
+          {profil.abonnements.length === 0 && (
+            <div className="rounded-lg border border-dashed border-ink-soft/25 bg-paper-raised p-6 text-center">
+              <p className="text-sm text-ink-soft">Aucun abonnement actif pour l'instant.</p>
+              <Link
+                to="/abonnement"
+                className="mt-3 inline-flex min-h-[40px] items-center rounded-full bg-ink px-5 text-sm font-medium text-paper hover:opacity-90"
               >
-                Annuler cet abonnement
-              </button>
+                Découvrir les forfaits
+              </Link>
+            </div>
+          )}
+          {profil.abonnements.map((s) => {
+            // Fenêtre de validité : jours restants + progression (bornée 0-100).
+            const debut = new Date(s.start_date).getTime();
+            const fin = new Date(s.end_date).getTime();
+            const maintenant = Date.now();
+            const joursRestants = Math.max(0, Math.ceil((fin - maintenant) / 86_400_000));
+            const progression = Math.min(100, Math.max(0, ((maintenant - debut) / Math.max(1, fin - debut)) * 100));
+            const expireBientot = joursRestants <= 14;
+            return (
+              <div key={s.id} className="overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised shadow-sm">
+                {/* Bandeau : portée + statut */}
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-highlight-soft/60 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="font-mono-tag text-[10px] text-ink-soft">ABONNEMENT ACTIF</p>
+                    <p className="truncate font-serif-brand text-lg leading-tight">{s.scope_label}</p>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-valide px-2.5 py-1 font-mono-tag text-[10px] text-paper">
+                    <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
+                    Active
+                  </span>
+                </div>
+
+                <div className="p-4">
+                  {/* Validité : jours restants + barre de progression de la période */}
+                  <div>
+                    <div className="flex items-baseline justify-between text-xs">
+                      <span className={expireBientot ? "font-medium text-correction" : "font-medium text-ink"}>
+                        {joursRestants > 0 ? `${joursRestants} jour${joursRestants > 1 ? "s" : ""} restant${joursRestants > 1 ? "s" : ""}` : "Expire aujourd'hui"}
+                      </span>
+                      <span className="text-slate">jusqu'au {new Date(s.end_date).toLocaleDateString("fr-FR")}</span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-soft/15" role="presentation">
+                      <div
+                        className={`h-full rounded-full ${expireBientot ? "bg-correction" : "bg-valide"}`}
+                        style={{ width: `${progression}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Portée en pastilles : chaque dimension couverte, lisible d'un coup d'œil */}
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {s.epreuve_label ? (
+                      <PuceAbonnement icone={FileText} label="Épreuve" valeur={s.epreuve_label} />
+                    ) : (
+                      <>
+                        <PuceAbonnement icone={GraduationCap} label="Classe" valeur={classeLabel(s.classe)} />
+                        <PuceAbonnement icone={GraduationCap} label="Série" valeur={s.filiere} />
+                        {s.matiere !== "ALL" && <PuceAbonnement icone={BookOpen} label="Matière" valeur={s.matiere} />}
+                        {s.annee !== "ALL" && <PuceAbonnement icone={Calendar} label="Année" valeur={s.annee} />}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Ce que ça débloque, mis en avant */}
+                  <div className="mt-3 flex items-center gap-3 rounded-lg bg-paper px-4 py-3">
+                    <span className="font-serif-brand text-3xl text-ink">{s.epreuves_couvertes}</span>
+                    <span className="text-xs text-ink-soft">
+                      épreuve{s.epreuves_couvertes > 1 ? "s" : ""} débloquée
+                      {s.epreuves_couvertes > 1 ? "s" : ""} dans le catalogue
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-ink-soft/20 pt-3">
+                    <p className="font-mono-tag text-[10px] text-slate">
+                      Souscrite le {new Date(s.start_date).toLocaleDateString("fr-FR")}
+                    </p>
+                    <button
+                      onClick={() => cancel(s.id)}
+                      className="min-h-[36px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction-soft/40"
+                    >
+                      Annuler cet abonnement
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {onglet === "notes" && (
+        <div className="space-y-3">
+          {notes.length === 0 && (
+            <p className="text-sm text-slate">
+              Aucune note pour l'instant — sélectionne un passage dans une épreuve et clique « Prendre une note ».
+            </p>
+          )}
+          {notes.map((n) => (
+            <div key={n.id} className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-serif-brand text-base">
+                  {n.matiere ? `${n.matiere} — ${n.evaluation} ${n.annee}` : "Note personnelle"}
+                </p>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setNoteEdition(n)}
+                    aria-label="Modifier la note"
+                    title="Modifier"
+                    className="p-1.5 text-ink-soft hover:text-ink"
+                  >
+                    <Edit3 size={15} strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteNote(n.id)}
+                    aria-label="Supprimer la note"
+                    title="Supprimer"
+                    className="p-1.5 text-ink-soft hover:text-correction"
+                  >
+                    <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              {n.contexte_extrait.trim() && (
+                <p className="mt-1 line-clamp-2 rounded border-l-4 border-highlight bg-highlight-soft/40 px-2 py-1 text-xs text-ink-soft">
+                  {n.contexte_extrait.replace(/\s+/g, " ")}
+                </p>
+              )}
+              <p className="mt-2 line-clamp-3 text-sm text-ink-soft">{n.contenu.replace(/\s+/g, " ")}</p>
+              <p className="mt-2 font-mono-tag text-[10px] text-slate">
+                Modifiée {formatRelativeTime(n.updated_at)}
+                {n.epreuve_id && (
+                  <>
+                    {" · "}
+                    <Link to={`/epreuve/${n.epreuve_id}`} className="underline hover:text-highlight">
+                      ouvrir l'épreuve
+                    </Link>
+                  </>
+                )}
+              </p>
             </div>
           ))}
         </div>
-      </div>
+      )}
+
+      {onglet === "activite" && (
+        <div className="space-y-1">
+          {activite.length === 0 && <p className="text-sm text-slate">Aucune activité enregistrée.</p>}
+          {activite.map((a, i) => {
+            const Icone = ICONE_ACTIVITE[a.type] ?? Activity;
+            // Les items reliés à une épreuve ouvrent le lecteur ; une
+            // discussion IA rouvre en plus SON onglet (?conv=).
+            const contenu = (
+              <>
+                <Icone size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-ink-soft" />
+                <p className="min-w-0 flex-1 truncate text-sm">{a.libelle}</p>
+                <p className="shrink-0 font-mono-tag text-[10px] text-slate">{formatRelativeTime(a.date)}</p>
+              </>
+            );
+            const base = "flex items-center gap-3 rounded-lg border border-ink-soft/10 bg-paper-raised px-3 py-2";
+            if (a.epreuve_id) {
+              const cible = a.conversation_id
+                ? `/epreuve/${a.epreuve_id}?conv=${a.conversation_id}`
+                : `/epreuve/${a.epreuve_id}`;
+              return (
+                <Link key={i} to={cible} className={`${base} transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50`}>
+                  {contenu}
+                </Link>
+              );
+            }
+            return (
+              <div key={i} className={base}>
+                {contenu}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {onglet === "donnees" && user && (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+            <p className="flex items-center gap-2 font-serif-brand text-base">
+              <Database size={16} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+              Mes données et confidentialité
+            </p>
+            <p className="mt-1 text-xs text-ink-soft">
+              Tu décides de ce qui est conservé sur nos serveurs. Un refus est effectif
+              immédiatement ; tu peux changer d'avis ici à tout moment.
+            </p>
+            <div className="mt-3 space-y-2">
+              <label className="flex cursor-pointer items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={consentIa}
+                  onChange={(e) => setConsentIa(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--color-highlight)]"
+                />
+                Stocker mes conversations IA (refus = discussions éphémères, rien n'est enregistré)
+              </label>
+              <label className="flex cursor-pointer items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={consentNotes}
+                  onChange={(e) => setConsentNotes(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--color-highlight)]"
+                />
+                Stocker mes notes personnelles (refus = la prise de note est masquée)
+              </label>
+            </div>
+            {(consentIa !== (user.consent_ia !== false) || consentNotes !== (user.consent_notes !== false)) && (
+              <button
+                type="button"
+                disabled={savingConsent}
+                onClick={() => saveConsentement(consentIa, consentNotes)}
+                className="mt-3 min-h-[36px] rounded-full bg-ink px-4 text-xs font-medium text-paper disabled:opacity-50"
+              >
+                {savingConsent ? "Enregistrement…" : "Enregistrer mes choix"}
+              </button>
+            )}
+          </div>
+          <p className="px-1 text-xs text-slate">
+            Ta demande de suppression de compte et de données peut être adressée à l'équipe
+            depuis l'adresse {user.email}.
+          </p>
+        </div>
+      )}
+
+      {noteEdition && (
+        <NoteEditor
+          epreuveId={noteEdition.epreuve_id}
+          note={noteEdition}
+          onClose={() => setNoteEdition(null)}
+          onSaved={() => api.get<Note[]>("/api/me/notes").then(setNotes).catch(() => {})}
+        />
+      )}
     </div>
+  );
+}
+
+/** Pastille de portée d'un abonnement : icône + libellé + valeur couverte. */
+function PuceAbonnement({
+  icone: Icon,
+  label,
+  valeur,
+}: {
+  icone: ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
+  label: string;
+  valeur: string;
+}) {
+  return (
+    <span
+      title={`${label} : ${valeur}`}
+      className="flex items-center gap-1.5 rounded-full border border-ink-soft/20 bg-paper px-2.5 py-1 text-xs text-ink-soft"
+    >
+      <Icon size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-highlight" />
+      <span className="font-mono-tag text-[10px] text-slate">{label.toUpperCase()}</span>
+      <span className="max-w-[180px] truncate font-medium text-ink">{valeur}</span>
+    </span>
   );
 }

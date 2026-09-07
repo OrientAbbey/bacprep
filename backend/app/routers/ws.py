@@ -10,6 +10,11 @@ from ..db import SessionLocal
 router = APIRouter(tags=["ws"])
 log = get_logger("ws")
 
+# Plafond de connexions simultanées par utilisateur : plusieurs onglets
+# sont légitimes, un millier de sockets ouverts par un même compte ne
+# l'est pas — au-delà, la plus ancienne connexion est fermée.
+MAX_WEBSOCKETS_PAR_USER = 3
+
 
 def _resolve_user_from_cookie(cookie_header: str) -> str | None:
     """Extrait le jeton de session (`bacprep_session`) d'un en-tête Cookie
@@ -47,7 +52,14 @@ async def ws_session(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
-    store.ACTIVE_WEBSOCKETS[user.id] = websocket
+    conns = store.ACTIVE_WEBSOCKETS.setdefault(user.id, [])
+    conns.append(websocket)
+    while len(conns) > MAX_WEBSOCKETS_PAR_USER:
+        oldest = conns.pop(0)
+        try:
+            await oldest.close(code=4429)
+        except Exception:
+            pass
     log.info("WebSocket connecté pour user_id=%s", user.id)
 
     try:
@@ -56,6 +68,9 @@ async def ws_session(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        if store.ACTIVE_WEBSOCKETS.get(user.id) is websocket:
-            del store.ACTIVE_WEBSOCKETS[user.id]
+        conns = store.ACTIVE_WEBSOCKETS.get(user.id) or []
+        if websocket in conns:
+            conns.remove(websocket)
+        if not conns:
+            store.ACTIVE_WEBSOCKETS.pop(user.id, None)
         log.info("WebSocket déconnecté pour user_id=%s", user.id)

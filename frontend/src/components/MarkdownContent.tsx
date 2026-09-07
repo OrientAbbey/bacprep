@@ -15,7 +15,14 @@ import { normalizeLatexDelimiters } from "../lib/latex";
 const markdownComponents = {
   img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
     // eslint-disable-next-line jsx-a11y/alt-text
-    <img {...props} src={props.src ? resolveMediaUrl(props.src) : props.src} />
+    <img
+      {...props}
+      src={props.src ? resolveMediaUrl(props.src) : props.src}
+      // Les sujets scannés peuvent compter de nombreuses pages-images :
+      // chargement paresseux hors écran (vignettes admin déjà couvertes).
+      loading="lazy"
+      decoding="async"
+    />
   ),
 };
 
@@ -40,7 +47,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({
    */
   trackSourcePositions?: boolean;
 }) {
-  const rehypePlugins = useMemo(
+  const rehypePlugins = useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>>(
     () =>
       trackSourcePositions
         ? [rehypeKatex, rehypeSourceOffsets, rehypeStripAnchorText]
@@ -63,7 +70,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({
     <div className={variant === "epreuve" ? "prose-exam" : "prose-chat"}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={rehypePlugins as any}
+        rehypePlugins={rehypePlugins}
         components={markdownComponents}
       >
         {normalized}

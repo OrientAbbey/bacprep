@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { Consultation, EpreuveListItem, Filtres, SubscriptionOut } from "../api/types";
 import { Combobox } from "../components/Combobox";
 import { MetaBadge } from "../components/MetaBadge";
+import { CatalogueSkeleton } from "../components/Skeleton";
 import { computeAccessStatus } from "../lib/access";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
@@ -38,6 +39,8 @@ export function CataloguePage() {
 
   const [filtres, setFiltres] = useState<Filtres>({ filieres: [], matieres: [], annees: [], evaluations: [] });
   const [epreuves, setEpreuves] = useState<EpreuveListItem[]>([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [historique, setHistorique] = useState<Consultation[]>([]);
@@ -84,22 +87,39 @@ export function CataloguePage() {
     if (annee) params.set("annee", annee);
     if (evaluation) params.set("evaluation", evaluation);
     if (corrige !== "tous") params.set("corrige", corrige);
-    // "Ouvert" n'existe pas comme notion côté serveur (c'est un statut
-    // calculé côté client à partir des abonnements de l'utilisateur, voir
-    // lib/access.ts) : on demande au serveur de ne renvoyer que les
-    // épreuves payantes, puis on affine "ouvert" vs "payant" localement.
-    if (acces === "gratuit") params.set("acces_type", "gratuit");
-    else if (acces === "ouvert" || acces === "payant") params.set("acces_type", "payant");
+    // "Ouvert" est résolu côté serveur (miroir SQL de store.has_access, avec
+    // la session élève si présente) — le filtre s'applique donc AVANT la
+    // pagination, contrairement à l'ancienne version qui filtrait côté
+    // client après coup (une page pouvait afficher moins de cartes).
+    if (acces !== "tous") params.set("acces_type", acces);
     return params;
   }
 
-  // Recharge la première page à chaque changement de filtre/requête.
-  useEffect(() => {
-    if (!initialized) return;
-    api.get<EpreuveListItem[]>(`/api/epreuves?${buildParams(0)}`).then((page) => {
+  // Recharge la première page à chaque changement de filtre/requête
+  // (effet) ou au clic sur « Réessayer ». AbortController recréé à chaque
+  // effet : une réponse d'un filtre périmé ne peut plus écraser la liste
+  // courante (courses de réponses).
+  async function loadFirstPage(signal?: AbortSignal) {
+    setChargement(true);
+    setErreur(false);
+    try {
+      const page = await api.get<EpreuveListItem[]>(`/api/epreuves?${buildParams(0)}`, undefined, signal);
       setEpreuves(page);
       setHasMore(page.length === PAGE_SIZE);
-    });
+      setChargement(false);
+    } catch (err) {
+      if (signal?.aborted) return;
+      setErreur(true);
+      setChargement(false);
+      console.error("Chargement du catalogue impossible", err);
+    }
+  }
+
+  useEffect(() => {
+    if (!initialized) return;
+    const ac = new AbortController();
+    loadFirstPage(ac.signal);
+    return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filiere, matiere, annee, evaluation, corrige, acces, initialized, query]);
 
@@ -109,6 +129,10 @@ export function CataloguePage() {
       const page = await api.get<EpreuveListItem[]>(`/api/epreuves?${buildParams(epreuves.length)}`);
       setEpreuves((prev) => [...prev, ...page]);
       setHasMore(page.length === PAGE_SIZE);
+    } catch {
+      // "Voir plus" échoué : on garde la liste déjà affichée, l'utilisateur
+      // peut relancer — mais pas de concaténation de résultats périmés.
+      setHasMore(false);
     } finally {
       setLoadingMore(false);
     }
@@ -122,16 +146,6 @@ export function CataloguePage() {
   }
 
   const historiqueMap = useMemo(() => new Map(historique.map((h) => [h.epreuve_id, h])), [historique]);
-
-  // Distingue "ouvert" de "payant" parmi les épreuves déjà payantes
-  // renvoyées par le serveur — nécessaire uniquement quand le filtre Accès
-  // cible spécifiquement l'un des deux. Ce filtrage s'applique APRÈS la
-  // pagination serveur (trade-off documenté, une page peut afficher moins
-  // de cartes que PAGE_SIZE si "ouvert"/"payant" y sont rares).
-  const epreuvesAffichees = useMemo(() => {
-    if (acces !== "ouvert" && acces !== "payant") return epreuves;
-    return epreuves.filter((e) => computeAccessStatus(e, subscriptions) === acces);
-  }, [epreuves, subscriptions, acces]);
 
   function openEpreuve(e: EpreuveListItem) {
     // "Ouvert" (déjà couvert par un abonnement actif) se comporte comme
@@ -224,26 +238,32 @@ export function CataloguePage() {
         />
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        <div className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
-          {(["tous", "avec", "sans"] as CorrigeFiltre[]).map((v) => (
+      {/* Un libellé unique par groupe (pas répété sur chaque bouton) ;
+          les boutons ne portent que la valeur capitalisée. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+        <span className="font-mono-tag text-[10px] text-ink-soft">Corrigé</span>
+        <div role="group" aria-label="Filtre par disponibilité du corrigé" className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
+          {([["tous", "Tous"], ["avec", "Avec"], ["sans", "Sans"]] as [CorrigeFiltre, string][]).map(([v, label]) => (
             <button
               key={v}
               onClick={() => setCorrige(v)}
+              aria-pressed={corrige === v}
               className={`rounded-full px-3 py-1.5 ${corrige === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
-              Corrigé : {v}
+              {label}
             </button>
           ))}
         </div>
-        <div className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
-          {(["tous", "gratuit", "ouvert", "payant"] as AccesFiltre[]).map((v) => (
+        <span className="font-mono-tag text-[10px] text-ink-soft">Accès</span>
+        <div role="group" aria-label="Filtre par type d'accès" className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
+          {([["tous", "Tous"], ["gratuit", "Gratuit"], ["ouvert", "Ouvert"], ["payant", "Payant"]] as [AccesFiltre, string][]).map(([v, label]) => (
             <button
               key={v}
               onClick={() => setAcces(v)}
+              aria-pressed={acces === v}
               className={`rounded-full px-3 py-1.5 ${acces === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
-              Accès : {v}
+              {label}
             </button>
           ))}
         </div>
@@ -272,7 +292,24 @@ export function CataloguePage() {
       )}
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {epreuvesAffichees.map((e) => {
+        {erreur && !chargement && (
+          <div className="col-span-full rounded-lg border border-correction/30 bg-correction-soft p-4 text-correction">
+            Le catalogue n'a pas pu être chargé.{" "}
+            <button
+              type="button"
+              onClick={() => loadFirstPage()}
+              className="underline"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
+        {chargement && (
+          <div className="col-span-full">
+            <CatalogueSkeleton />
+          </div>
+        )}
+        {!chargement && epreuves.map((e) => {
           const status = computeAccessStatus(e, subscriptions);
           return (
             <button
@@ -283,41 +320,33 @@ export function CataloguePage() {
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-serif-brand text-lg leading-snug">{e.matiere}</h3>
                 {status === "gratuit" && (
-                  <span
-                    className="rounded-full border border-valide px-2 py-0.5 font-mono-tag text-[10px] text-valide"
-                    style={{
-                      boxShadow:
-                        "0 0 0 2px var(--color-paper-raised), 0 0 0 3px var(--color-valide-soft)",
-                    }}
-                    title="Contenu gratuit de découverte"
-                  >
+                  <MetaBadge variant="pill" tone="valide" title="Contenu gratuit de découverte">
                     Gratuit
-                  </span>
+                  </MetaBadge>
                 )}
                 {status === "ouvert" && (
-                  <span
-                    className="flex items-center gap-1 rounded-full bg-valide-soft px-2 py-0.5 font-mono-tag text-[10px] text-valide"
-                    title="Déjà débloquée par ton abonnement"
-                  >
+                  <MetaBadge variant="pill" tone="valide" title="Déjà débloquée par ton abonnement">
                     <LockOpen size={12} strokeWidth={2} aria-hidden="true" />
                     Ouvert
-                  </span>
+                  </MetaBadge>
                 )}
                 {status === "payant" && (
-                  <span
-                    className="flex items-center gap-1 rounded-full bg-correction-soft px-2 py-0.5 font-mono-tag text-[10px] text-correction"
-                    title="Abonnement requis"
-                  >
+                  <MetaBadge variant="pill" tone="correction" title="Abonnement requis">
                     <Lock size={12} strokeWidth={2} aria-hidden="true" />
                     Payant
-                  </span>
+                  </MetaBadge>
                 )}
               </div>
 
               <p className="font-mono-tag text-[11px] text-slate">
                 {e.evaluation} {e.annee}
                 {modeRecherche ? ` · ${classeLabel(e.classe)}` : ""}
+                {e.duree ? ` · ${e.duree}` : ""}
               </p>
+
+              {/* Extrait du sujet (2 lignes max) : donne un aperçu du
+                  contenu avant d'ouvrir l'épreuve. */}
+              {e.extrait && <p className="line-clamp-2 text-xs text-ink-soft">{e.extrait}</p>}
 
               {/* Un seul badge pour l'ensemble des séries (ex. "A,C,E") plutôt
                   qu'un badge par série. Le badge "corrigé" combine icône ET
@@ -341,7 +370,7 @@ export function CataloguePage() {
           );
         })}
 
-        {epreuvesAffichees.length === 0 && initialized && (
+        {!chargement && epreuves.length === 0 && initialized && (
           <p className="col-span-full text-sm text-slate">
             {modeRecherche
               ? "Aucune épreuve ne correspond à cette recherche."

@@ -65,9 +65,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Link to="/abonnement" className="hidden sm:inline hover:text-highlight">
               Abonnement
             </Link>
-            <Link to="/admin" className="hidden sm:inline hover:text-highlight">
-              Admin
-            </Link>
+            {/* Console admin : réservée aux comptes de la liste blanche
+                (is_admin calculé serveur) — le lien ne s'affiche même pas
+                pour les autres ; la route reste de toute façon protégée par
+                le jeton admin vérifié à chaque appel API. */}
+            {user?.is_admin && (
+              <Link to="/admin" className="hidden sm:inline hover:text-highlight">
+                Admin
+              </Link>
+            )}
 
             <button
               type="button"

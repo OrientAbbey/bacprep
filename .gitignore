@@ -10,3 +10,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .zcode/
+# État local des scans/hooks Mimosa (jamais versionné)
+.mimosa/
+# Cache pytest
+.pytest_cache/

@@ -24,7 +24,11 @@ log = get_logger("epreuve_files")
 DOCUMENT_FORMAT = "md"
 IMAGE_FORMAT = "image"
 
-ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"}
+# Source unique des MIME d'images acceptés à l'upload ET à l'import.
+# Le SVG en est volontairement EXCLU : servi depuis l'origine de l'app, un
+# SVG peut embarquer <script> (XSS stocké). Les quelques SVG pouvant exister
+# dans d'anciennes données sont servis en `attachment` par routers/files.py.
+ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
 
 def sha256_hex(data: bytes) -> str:
@@ -40,14 +44,6 @@ def document_key(epreuve: EpreuveORM, cible: str) -> str:
 def image_key(epreuve: EpreuveORM, cible: str, filename: str) -> str:
     """Clé d'une image d'illustration : ``epreuves/{niveau}/{annee}/{epreuve_id}/{cible}-{filename}``."""
     return f"epreuves/{epreuve.niveau}/{epreuve.annee}/{epreuve.id}/{cible}-{filename}"
-
-
-def new_epreuve_id(db: Session) -> str:
-    """Identifiant court unique pour une nouvelle épreuve (ex. ``8f3a2c91``)."""
-    while True:
-        candidate = uuid.uuid4().hex[:8]
-        if not db.query(EpreuveORM).filter(EpreuveORM.id == candidate).one_or_none():
-            return candidate
 
 
 def get_document(db: Session, epreuve_id: str, cible: str) -> Optional[EpreuveFileORM]:
@@ -97,6 +93,14 @@ def write_document(
     key = document_key(epreuve, cible)
     get_storage().put_bytes(key, data, "text/markdown; charset=utf-8")
 
+    # Extrait de présentation : régénéré à chaque écriture du SUJET (le
+    # corrigé ne porte pas l'extrait) — alimente les cartes du catalogue.
+    if cible == "sujet":
+        from . import extraits
+
+        epreuve.extrait = extraits.build_extrait(stripped)
+        db.add(epreuve)
+
     if existing:
         existing.filename = f"{cible}.md"
         existing.storage_key = key
@@ -128,9 +132,11 @@ def save_image(
     filename: str,
     data: bytes,
     mime_type: str,
+    width: int | None = None,
+    height: int | None = None,
 ) -> EpreuveFileORM:
     """Enregistre une image d'illustration (déjà optimisée par l'appelant)
-    dans le stockage et en base."""
+    dans le stockage et en base — dimensions en pixels si mesurées."""
     filename = Path(filename or "image.png").name or "image.png"
     key = image_key(epreuve, cible, f"{uuid.uuid4().hex[:8]}-{filename}")
     get_storage().put_bytes(key, data, mime_type)
@@ -142,6 +148,8 @@ def save_image(
         storage_key=key,
         mime_type=mime_type,
         size_bytes=len(data),
+        width=width,
+        height=height,
         checksum_sha256=sha256_hex(data),
     )
     db.add(row)
@@ -162,19 +170,15 @@ def delete_file(db: Session, row: EpreuveFileORM) -> None:
 _IMAGE_MD_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
 
 
-def find_file_id_refs(markdown: str) -> list[str]:
-    """Extrait les identifiants de fichiers référencés dans un Markdown sous
-    la forme ``![légende](/api/files/{id})`` — utilisé par l'import massif
-    et l'assistant (pièces jointes multimodales)."""
-    ids: list[str] = []
-    for url in _IMAGE_MD_RE.findall(markdown or ""):
-        marker = "/api/files/"
-        if marker not in url:
-            continue
-        file_id = url.split(marker, 1)[1].split("/")[0].split("?")[0]
-        if file_id:
-            ids.append(file_id)
-    return ids
+def file_id_from_url(url: str) -> str | None:
+    """Extrait l'identifiant d'un fichier depuis une URL ``/api/files/{id}``
+    (la suite du chemin et une query string éventuelle — URL signée — sont
+    ignorées). None si l'URL ne pointe pas vers /api/files/."""
+    marker = "/api/files/"
+    if marker not in url:
+        return None
+    file_id = url.split(marker, 1)[1].split("/")[0].split("?")[0]
+    return file_id or None
 
 
 def sign_image_urls(markdown: str) -> str:
@@ -187,10 +191,7 @@ def sign_image_urls(markdown: str) -> str:
 
     def _replace(match: re.Match) -> str:
         alt, url = match.group(1), match.group(2)
-        marker = "/api/files/"
-        if marker not in url:
-            return match.group(0)
-        file_id = url.split(marker, 1)[1].split("/")[0].split("?")[0]
+        file_id = file_id_from_url(url)
         if not file_id:
             return match.group(0)
         return f"![{alt}]({signed_file_url(file_id)})"

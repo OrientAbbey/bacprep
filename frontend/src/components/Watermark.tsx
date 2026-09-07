@@ -1,5 +1,9 @@
+import { useId } from "react";
+
 export function Watermark({ label }: { label: string }) {
-  const patternId = "watermark-pattern";
+  // useId : id unique par instance — deux filigranes simultanés ne
+  // partageraient plus le même id de pattern SVG (collision évitée).
+  const patternId = useId();
   return (
     <svg
       aria-hidden="true"

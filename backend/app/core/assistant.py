@@ -12,6 +12,7 @@ from typing import AsyncIterator, Optional
 
 import httpx
 
+from .epreuve_files import file_id_from_url
 from .logging_config import get_logger
 from .storage import get_storage
 
@@ -53,7 +54,19 @@ def _model_supports_streaming(model: str) -> bool:
 
 _semaphore: Optional[asyncio.Semaphore] = None
 
+# Client httpx partagé (connexions réutilisées entre appels LLM ; un
+# AsyncClient par appel relançait une poignée TLS à chaque question).
+# timeout=60 couvre les appels streaming les plus longs.
+_shared_client: Optional[httpx.AsyncClient] = None
+
 _IMAGE_MD_RE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=60)
+    return _shared_client
 
 
 def _get_semaphore() -> asyncio.Semaphore:
@@ -68,7 +81,7 @@ def _get_semaphore() -> asyncio.Semaphore:
     return _semaphore
 
 
-def _extract_local_image_paths(markdown: str) -> list[Path]:
+def _extract_local_image_paths(markdown: str, user_id: str | None = None) -> list[Path]:
     """Retrouve les images `![légende](/api/files/...)` référencées dans un
     passage Markdown (typiquement le contexte transmis par le lecteur, qui
     peut inclure une image sélectionnée par l'élève — voir
@@ -76,19 +89,26 @@ def _extract_local_image_paths(markdown: str) -> list[Path]:
     (dossier temporaire local) pour les transmettre en pièce jointe à un
     fournisseur LLM multimodal (Gemini). Les URL signées (?token=...) sont
     acceptées : le jeton n'est qu'un accélérateur, l'accès backend aux
-    fichiers est direct."""
+    fichiers est direct.
+
+    Paywall : chaque image est servie SEULEMENT si l'utilisateur a accès à
+    l'épreuve qui la porte (`store.has_access`). Le contexte des
+    discussions étant rédigé par le client, un abonné pourrait sinon y
+    glisser les ids de fichiers d'une épreuve payante et faire décrire ces
+    images par le modèle — un contournement du paywall.
+
+    FONCTION BLOQUANTE (I/O stockage + disque) : NE JAMAIS l'appeler
+    directement depuis une coroutine — passer par
+    `_extract_local_image_paths_async`."""
     storage_dir = Path(os.getenv("TEMP", tempfile.gettempdir())) / "bacprep_assistant_images"
     storage_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
     for url in _IMAGE_MD_RE.findall(markdown or ""):
-        marker = "/api/files/"
-        if marker not in url:
-            continue
-        file_id = url.split(marker, 1)[1].split("/")[0].split("?")[0]
+        file_id = file_id_from_url(url)
         if not file_id:
             continue
         try:
-            row = _fetch_image_row(file_id)
+            row = _fetch_image_row(file_id, user_id)
         except Exception as exc:
             log.warning("Image %s introuvable en base: %s", file_id, exc)
             continue
@@ -112,11 +132,33 @@ def _extract_local_image_paths(markdown: str) -> list[Path]:
     return paths
 
 
-def _fetch_image_row(file_id: str):
+async def _extract_local_image_paths_async(markdown: str, user_id: str | None = None) -> list[Path]:
+    """Variante async : déporte le travail bloquant sur un thread pour ne
+    pas geler la boucle d'événements pendant chaque question posée."""
+    return await asyncio.to_thread(_extract_local_image_paths, markdown, user_id)
+
+
+def _cleanup_image_paths(paths: list[Path]) -> None:
+    """Supprime les images temporaires extraites pour une question —
+    sinon le dossier %TEMP%/bacprep_assistant_images grossissait à chaque
+    échange (fuite disque lente mais réelle)."""
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _fetch_image_row(file_id: str, user_id: str | None = None):
     """Ligne `epreuve_files` d'une image (session DB dédiée, courte durée —
-    cette fonction est appelée pendant une requête SSE de longue vie)."""
+    cette fonction est appelée pendant une requête SSE de longue vie).
+
+    Renvoie None si l'utilisateur n'a pas accès à l'épreuve porteuse
+    (paywall) — le contexte étant fourni par le client, on ne fait
+    confiance à aucun `/api/files/{id}` qui y apparaît."""
     from ..db import SessionLocal
-    from ..db_models import EpreuveFileORM
+    from ..db_models import EpreuveFileORM, EpreuveORM
+    from . import store
 
     db = SessionLocal()
     try:
@@ -130,6 +172,14 @@ def _fetch_image_row(file_id: str):
         )
         if row is None:
             return None
+        if user_id is not None:
+            epreuve = db.query(EpreuveORM).filter(EpreuveORM.id == row.epreuve_id).one_or_none()
+            if epreuve is None or not store.has_access(db, user_id, epreuve):
+                log.warning(
+                    "Image %s ignorée : utilisateur %s sans accès à l'épreuve %s (paywall)",
+                    file_id, user_id, row.epreuve_id,
+                )
+                return None
         db.expunge(row)
         return row
     finally:
@@ -221,15 +271,15 @@ async def _call_gemini(prompt: str, image_paths: list[Path]) -> Optional[str]:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                url,
-                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-                json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+        client = _get_http_client()
+        resp = await client.post(
+            url,
+            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+            json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
     except httpx.HTTPStatusError as exc:
         log.warning("Gemini a échoué (%s) : %s", exc.response.status_code, exc.response.text)
         return None
@@ -259,34 +309,34 @@ async def _stream_gemini(prompt: str, image_paths: list[Path]) -> AsyncIterator[
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            async with client.stream(
-                "POST",
-                url,
-                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-                json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
-            ) as resp:
-                if resp.status_code >= 400:
-                    body = await resp.aread()
-                    log.warning(
-                        "Gemini (streaming) a échoué (%s) : %s",
-                        resp.status_code,
-                        body.decode(errors="replace"),
-                    )
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    raw = line[len("data:"):].strip()
-                    if not raw:
-                        continue
-                    try:
-                        data = json.loads(raw)
-                        text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
-                    if text:
-                        yield text
+        client = _get_http_client()
+        async with client.stream(
+            "POST",
+            url,
+            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+            json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
+        ) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                log.warning(
+                    "Gemini (streaming) a échoué (%s) : %s",
+                    resp.status_code,
+                    body.decode(errors="replace"),
+                )
+                return
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                raw = line[len("data:"):].strip()
+                if not raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                    text = data["candidates"][0]["content"]["parts"][0]["text"]
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+                if text:
+                    yield text
     except Exception as exc:
         log.warning("Gemini (streaming) a échoué (exception): %s", exc)
         return
@@ -319,15 +369,15 @@ async def _call_groq(prompt: str, nb_images_ignorees: int) -> Optional[str]:
     prompt = _groq_prompt_with_image_note(prompt, nb_images_ignorees)
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                url,
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        client = _get_http_client()
+        resp = await client.post(
+            url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
     except httpx.HTTPStatusError as exc:
         log.warning("Groq a échoué (%s) : %s", exc.response.status_code, exc.response.text)
         return None
@@ -352,38 +402,38 @@ async def _stream_groq(prompt: str, nb_images_ignorees: int) -> AsyncIterator[st
     prompt = _groq_prompt_with_image_note(prompt, nb_images_ignorees)
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            async with client.stream(
-                "POST",
-                url,
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": True,
-                },
-            ) as resp:
-                if resp.status_code >= 400:
-                    body = await resp.aread()
-                    log.warning(
-                        "Groq (streaming) a échoué (%s) : %s",
-                        resp.status_code,
-                        body.decode(errors="replace"),
-                    )
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    raw = line[len("data:"):].strip()
-                    if not raw or raw == "[DONE]":
-                        continue
-                    try:
-                        data = json.loads(raw)
-                        delta = data["choices"][0]["delta"].get("content")
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        delta = None
-                    if delta:
-                        yield delta
+        client = _get_http_client()
+        async with client.stream(
+            "POST",
+            url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": True,
+            },
+        ) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                log.warning(
+                    "Groq (streaming) a échoué (%s) : %s",
+                    resp.status_code,
+                    body.decode(errors="replace"),
+                )
+                return
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                raw = line[len("data:"):].strip()
+                if not raw or raw == "[DONE]":
+                    continue
+                try:
+                    data = json.loads(raw)
+                    delta = data["choices"][0]["delta"].get("content")
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    delta = None
+                if delta:
+                    yield delta
     except Exception as exc:
         log.warning("Groq (streaming) a échoué (exception): %s", exc)
         return
@@ -403,29 +453,34 @@ def _demo_fallback(epreuve_meta: dict, question: str, image_paths: list[Path]) -
 
 
 async def ask_assistant(
-    epreuve_meta: dict, contexte: str, question: str, historique: list[dict]
+    epreuve_meta: dict, contexte: str, question: str, historique: list[dict],
+    user_id: str | None = None,
 ) -> str:
     """Réponse complète (non-streaming) : Gemini → Groq → mode démo. Utilisé
     par l'endpoint historique `/api/assistant/ask` ; l'endpoint par défaut
     côté frontend est désormais `/api/assistant/ask/stream` (voir
-    `ask_assistant_stream` ci-dessous)."""
+    `ask_assistant_stream` ci-dessous). `user_id` sert au contrôle du
+    paywall sur les images référencées par le contexte."""
     prompt = _build_prompt(epreuve_meta, contexte, question, historique)
-    image_paths = _extract_local_image_paths(contexte)
+    image_paths = await _extract_local_image_paths_async(contexte, user_id)
+    try:
+        async with _get_semaphore():
+            reponse = await _call_gemini(prompt, image_paths)
+            if reponse:
+                return reponse
+            reponse = await _call_groq(prompt, nb_images_ignorees=len(image_paths))
+            if reponse:
+                return reponse
 
-    async with _get_semaphore():
-        reponse = await _call_gemini(prompt, image_paths)
-        if reponse:
-            return reponse
-        reponse = await _call_groq(prompt, nb_images_ignorees=len(image_paths))
-        if reponse:
-            return reponse
-
-    log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles)")
-    return _demo_fallback(epreuve_meta, question, image_paths)
+        log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles)")
+        return _demo_fallback(epreuve_meta, question, image_paths)
+    finally:
+        _cleanup_image_paths(image_paths)
 
 
 async def ask_assistant_stream(
-    epreuve_meta: dict, contexte: str, question: str, historique: list[dict]
+    epreuve_meta: dict, contexte: str, question: str, historique: list[dict],
+    user_id: str | None = None,
 ) -> AsyncIterator[str]:
     """Variante streaming de `ask_assistant`, activée par défaut côté
     frontend (`/api/assistant/ask/stream`) pour tout fournisseur qui la
@@ -438,23 +493,26 @@ async def ask_assistant_stream(
     si Gemini ne cède AUCUN fragment (clé absente, échec avant le premier
     chunk), on retente entièrement sur Groq ; si Groq échoue aussi, on cède
     un unique fragment "mode démonstration" (pas de streaming réel dans ce
-    cas puisqu'il n'y a rien à streamer)."""
+    cas puisqu'il n'y a rien à streamer). `user_id` sert au contrôle du
+    paywall sur les images référencées par le contexte."""
     prompt = _build_prompt(epreuve_meta, contexte, question, historique)
-    image_paths = _extract_local_image_paths(contexte)
+    image_paths = await _extract_local_image_paths_async(contexte, user_id)
+    try:
+        async with _get_semaphore():
+            got_any = False
+            async for chunk in _stream_gemini(prompt, image_paths):
+                got_any = True
+                yield chunk
+            if got_any:
+                return
 
-    async with _get_semaphore():
-        got_any = False
-        async for chunk in _stream_gemini(prompt, image_paths):
-            got_any = True
-            yield chunk
-        if got_any:
-            return
+            async for chunk in _stream_groq(prompt, nb_images_ignorees=len(image_paths)):
+                got_any = True
+                yield chunk
+            if got_any:
+                return
 
-        async for chunk in _stream_groq(prompt, nb_images_ignorees=len(image_paths)):
-            got_any = True
-            yield chunk
-        if got_any:
-            return
-
-    log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles, streaming)")
-    yield _demo_fallback(epreuve_meta, question, image_paths)
+        log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles, streaming)")
+        yield _demo_fallback(epreuve_meta, question, image_paths)
+    finally:
+        _cleanup_image_paths(image_paths)

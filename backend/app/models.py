@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import ClassVar, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------- Auth ----------
 
 class MockLoginIn(BaseModel):
-    email: str
-    nom: str
-    platform: str = "web"
+    email: str = Field(max_length=254)
+    nom: str = Field(default="", max_length=120)
+    platform: str = Field(default="web", max_length=20)
 
 
 class GoogleLoginIn(BaseModel):
-    id_token: str
-    platform: str = "web"
+    id_token: str = Field(max_length=4096)
+    platform: str = Field(default="web", max_length=20)
 
 
 class UserOut(BaseModel):
@@ -24,6 +24,21 @@ class UserOut(BaseModel):
     email: str
     nom: str
     created_at: datetime
+    # Gating admin côté client : vrai si l'email est dans ADMIN_EMAILS
+    # (calculé serveur — la liste elle-même ne part jamais au frontend).
+    is_admin: bool = False
+    # Consentements (NULL = pas encore demandé, la modale doit s'afficher).
+    consent_ia: Optional[bool] = None
+    consent_notes: Optional[bool] = None
+
+
+class ConsentementIn(BaseModel):
+    """Choix de consentement recueillis à la connexion (modale granulaire) :
+    persistance des conversations IA et des notes. `False` = refus explicite
+    (aucune donnée de cette finalité n'est stockée)."""
+
+    partage_conversations_ia: bool
+    partage_notes: bool
 
 
 class AuthConfigOut(BaseModel):
@@ -43,6 +58,7 @@ class EpreuveListItem(BaseModel):
     session: str
     duree: Optional[str] = None
     coefficient: Optional[str] = None
+    extrait: str = ""
     gratuit: bool
     statut: str
     filieres: list[str]
@@ -59,6 +75,10 @@ class EpreuveFileOut(BaseModel):
     format: str  # md|image
     filename: str
     url: str
+    size_bytes: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    mime_type: str = ""
 
 
 class EpreuveDetail(EpreuveListItem):
@@ -71,8 +91,8 @@ class EpreuveIn(BaseModel):
     niveau: str = "SECONDAIRE"
     classe: str = "terminale"
     evaluation: str = "BAC"
-    matiere: str
-    annee: str
+    matiere: str = Field(min_length=1, max_length=120)
+    annee: str = Field(min_length=4, max_length=4, pattern=r"^\d{4}$")
     session: str = ""
     duree: Optional[str] = None
     coefficient: Optional[str] = None
@@ -87,8 +107,8 @@ class EpreuveUpdate(BaseModel):
     niveau: Optional[str] = None
     classe: Optional[str] = None
     evaluation: Optional[str] = None
-    matiere: Optional[str] = None
-    annee: Optional[str] = None
+    matiere: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    annee: Optional[str] = Field(default=None, min_length=4, max_length=4, pattern=r"^\d{4}$")
     session: Optional[str] = None
     duree: Optional[str] = None
     coefficient: Optional[str] = None
@@ -108,7 +128,16 @@ class CheckoutIn(BaseModel):
     annee: Optional[str] = None
     classe: Optional[str] = None  # requis sauf pour scope="epreuve"
     epreuve_id: Optional[str] = None
+    # Liste fermée : la valeur part telle quelle en base et sert à
+    # l'affichage du profil — on refuse tout autre libellé.
     provider: str = "orange"
+
+    @field_validator("provider")
+    @classmethod
+    def _provider_connu(cls, v: str) -> str:
+        if v not in ("orange", "mtn"):
+            raise ValueError("provider doit valoir 'orange' ou 'mtn'")
+        return v
 
 
 class SubscriptionOut(BaseModel):
@@ -143,14 +172,34 @@ class AdminLoginIn(BaseModel):
 # ---------- Assistant ----------
 
 class ConversationCreateIn(BaseModel):
-    contexte: str = ""
-    label: str = "Nouvelle discussion"
+    contexte: str = Field(default="", max_length=20000)
+    label: str = Field(default="Nouvelle discussion", max_length=120)
 
 
 class ConversationUpdateIn(BaseModel):
+    """Mise à jour d'une discussion : messages remplaçables en bloc par le
+    client. Bornés ici (nombre + taille) — sans plafond, un client pouvait
+    faire grossir `messages_json` en base sans limite et gonfler l'entrée
+    LLM suivante."""
+
+    MAX_MESSAGES: ClassVar[int] = 60
+    MAX_MESSAGE_CHARS: ClassVar[int] = 8000
+
     messages: list[dict]
-    label: Optional[str] = None
-    contexte: Optional[str] = None
+    label: Optional[str] = Field(default=None, max_length=120)
+    contexte: Optional[str] = Field(default=None, max_length=20000)
+
+    @field_validator("messages")
+    @classmethod
+    def _bornes_messages(cls, v: list[dict]) -> list[dict]:
+        if len(v) > cls.MAX_MESSAGES:
+            raise ValueError(f"au maximum {cls.MAX_MESSAGES} messages")
+        for m in v:
+            if not isinstance(m, dict) or not isinstance(m.get("content"), str):
+                raise ValueError("message invalide (dict avec role/content attendu)")
+            if len(m["content"]) > cls.MAX_MESSAGE_CHARS:
+                raise ValueError(f"message trop long ({cls.MAX_MESSAGE_CHARS} caractères max)")
+        return v
 
 
 class ConversationOut(BaseModel):
@@ -164,5 +213,69 @@ class ConversationOut(BaseModel):
 
 
 class AskIn(BaseModel):
-    conversation_id: str
-    message: str
+    """Question à l'assistant. Deux voies exclusives :
+
+    - PERSISTÉE : `conversation_id` présent — l'échange est stocké dans la
+      discussion (exige le consentement IA) ;
+    - ÉPHÉMÈRE : `epreuve_id` (+ contexte/historique fournis par le client)
+      et SANS `conversation_id` — refus du consentement IA : rien n'est
+      écrit en base, la discussion ne vit que côté client.
+    """
+
+    conversation_id: Optional[str] = Field(default=None, max_length=64)
+    epreuve_id: Optional[str] = Field(default=None, max_length=64)
+    contexte: str = ""
+    historique: list[dict[str, str]] = Field(default_factory=list, max_length=40)
+    message: str = Field(min_length=1, max_length=4000)
+
+
+# ---------- Profil élève ----------
+
+class ProfilUpdateIn(BaseModel):
+    """Mise à jour du profil étendu (tout optionnel : seuls les champs
+    fournis sont modifiés)."""
+
+    nom: Optional[str] = None
+    niveau: Optional[str] = None
+    classe: Optional[str] = None
+    etablissement: Optional[str] = None
+
+
+class NoteIn(BaseModel):
+    cible: str = "sujet"  # sujet|corrige
+    contexte_extrait: str = ""
+    contenu: str
+
+
+class NoteUpdateIn(BaseModel):
+    contexte_extrait: Optional[str] = None
+    contenu: Optional[str] = None
+
+
+class NoteOut(BaseModel):
+    id: str
+    epreuve_id: str
+    cible: str
+    contexte_extrait: str
+    contenu: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class NoteWithEpreuveOut(NoteOut):
+    """Note enrichie des infos d'épreuve (affichage dans « Mes notes » du
+    profil sans aller-retour supplémentaire)."""
+
+    matiere: str = ""
+    annee: str = ""
+    classe: str = ""
+    evaluation: str = ""
+
+
+class SignalementIn(BaseModel):
+    motif: str  # contenu_illisible|erreur_enonce|corrige_manquant|image_cassee|autre
+    message: str = ""
+
+
+class BannirIn(BaseModel):
+    motif: str = Field(default="", max_length=500)

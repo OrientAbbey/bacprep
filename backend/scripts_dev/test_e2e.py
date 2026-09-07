@@ -8,13 +8,24 @@ import http.cookiejar
 import json
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 B = "http://localhost:8000"
 
 
+def _url_locale(path: str) -> str:
+    """Garde anti-SSRF : ce script de dev ne doit parler qu'au serveur
+    local — tout autre hôte est refusé avant toute requête."""
+    url = B + path
+    host = (urlsplit(url).hostname or "").lower()
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        raise ValueError(f"Hôte non autorisé par ce script de dev : {host}")
+    return url
+
+
 def req(method, path, body=None, headers=None, cookies=None):
     data = json.dumps(body).encode() if body is not None else None
-    r = urllib.request.Request(B + path, data=data, method=method)
+    r = urllib.request.Request(_url_locale(path), data=data, method=method)
     r.add_header("Content-Type", "application/json")
     for k, v in (headers or {}).items():
         r.add_header(k, v)

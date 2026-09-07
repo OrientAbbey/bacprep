@@ -13,16 +13,28 @@ import { BASE_URL } from "../api/client";
  * utilisée par AssistantPanel ; `/api/assistant/ask` (non-streaming) reste
  * disponible côté backend mais n'est plus appelé ici.
  */
+/** Charge utile de la question. Deux voies exclusives (cf. `AskIn` backend) :
+ * - persistée : `conversation_id` (l'échange est stocké — consentement IA) ;
+ * - éphémère : `epreuve_id` + `contexte` + `historique`, sans
+ *   `conversation_id` (refus du consentement — rien n'est persisté,
+ *   `done.conversation` vaut alors null). */
+export interface AssistantAskPayload {
+  conversation_id?: string;
+  epreuve_id?: string;
+  contexte?: string;
+  historique?: { role: string; content: string }[];
+  message: string;
+}
+
 export async function streamAssistantAsk(
-  conversationId: string,
-  message: string,
+  payload: AssistantAskPayload,
   onEvent: (event: { type: "chunk"; text: string } | { type: "done"; conversation: any } | { type: "error"; message: string }) => void
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/assistant/ask/stream`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversation_id: conversationId, message }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok || !res.body) {

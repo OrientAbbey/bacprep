@@ -1,20 +1,13 @@
 """Import massif d'épreuves Markdown + images depuis une arborescence locale
 ou une archive zip (upload admin).
 
-Format attendu du dossier importé (tolérant) :
-
-```
-{annee}/{classe}/{matiere}/**   (un niveau racine optionnel est ignoré)
-```
-
-ex. ``imports/2023/Terminale/Mathématiques/bac-D-sujet.md``.
-
 Le script parcourt récursivement, identifie les fichiers Markdown et images,
 récupère les informations depuis l'arborescence (année, classe, matière,
-série, sujet/corrigé), crée les entrées en base, copie les fichiers vers le
-stockage définitif (``epreuves/{niveau}/{annee}/{epreuve_id}/...``), génère
-les storage_key, détecte les doublons par checksum et signale les fichiers
-aux métadonnées insuffisantes — conformément au prompt d'amélioration §2.
+série, sujet/corrigé — heuristiques dans `core/import_parsing.py`), crée les
+entrées en base, copie les fichiers vers le stockage définitif
+(``epreuves/{niveau}/{annee}/{epreuve_id}/...``), génère les storage_key,
+détecte les doublons par checksum et signale les fichiers aux métadonnées
+insuffisantes — conformément au prompt d'amélioration §2.
 
 La classification métier vit en BASE, jamais dans l'arborescence physique
 du stockage (l'arborescence ne reflète que niveau/année/épreuve).
@@ -28,129 +21,21 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..db_models import EpreuveFiliereORM, EpreuveFileORM, EpreuveORM
-from . import epreuve_files, referentiel
+from . import epreuve_files, images, import_parsing, referentiel
 from .logging_config import get_logger
 from .storage import get_storage
 
 log = get_logger("import")
 
 MAX_FILE_BYTES = 10 * 1024 * 1024  # garde-fou par fichier importé
+MAX_MARKDOWN_BYTES = 2 * 1024 * 1024  # un sujet/corrigé Markdown dépasse rarement quelques centaines de Ko
 IMAGE_MIME = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
     ".gif": "image/gif",
-    ".svg": "image/svg+xml",
 }
-
-_ANNEE_RE = re.compile(r"^(19|20)\d{2}$")
-_CORRIGE_RE = re.compile(r"corrig[eé]|answer", re.IGNORECASE)
-_SERIE_RE = re.compile(r"(?:serie|série|bac)\s*[:\- ]?\s*([A-Z])\b", re.IGNORECASE)
-
-
-def _fold(value: str) -> str:
-    return referentiel.fold(value)
-
-
-def _guess_cible(path: Path) -> str:
-    """Sujet ou corrigé selon le nom du fichier ("corrige..." → corrigé)."""
-    return "corrige" if _CORRIGE_RE.search(path.stem) else "sujet"
-
-
-def _guess_serie(text: str) -> Optional[str]:
-    m = _SERIE_RE.search(text or "")
-    return m.group(1).upper() if m else None
-
-
-def _match_matiere(segment: str) -> Optional[str]:
-    """Reconnaît une matière connue (comparaison insensible casse/accents)
-    dans un segment de chemin — évite de prendre un nom de dossier
-    quelconque pour une matière."""
-    folded = _fold(segment)
-    for matiere in referentiel.MATIERES_CONNUES:
-        if folded == _fold(matiere):
-            return matiere
-    return None
-
-
-def _parse_path(path: Path, root: Path) -> dict:
-    """Extrait les métadonnées d'un fichier depuis son chemin relatif et son
-    nom. Retourne un dict de champs trouvés + la liste des informations
-    manquantes. Tolérant aux niveaux racine supplémentaires : chaque segment
-    est identifié par sa nature (année, classe, niveau, matière) plutôt que
-    par sa position."""
-    rel = path.relative_to(root)
-    parts = [p for p in rel.parts[:-1]]  # dossiers parents (hors nom de fichier)
-
-    annee = None
-    classe = None
-    matiere = None
-    niveau = referentiel.NIVEAU_SECONDAIRE
-
-    # Passe 1 : segments non ambigus (année, niveau, classe, matière connue)
-    restants: list[str] = []
-    for part in parts:
-        part = part.strip()
-        if _ANNEE_RE.match(part):
-            annee = annee or part
-            continue
-        if _fold(part) in ("primaire", "secondaire"):
-            niveau = referentiel.normalize_niveau(part)
-            continue
-        normalized_classe = referentiel.normalize_classe(part)
-        if normalized_classe and not classe:
-            classe = normalized_classe
-            continue
-        restants.append(part)
-
-    # Passe 2 : matière — priorité aux matières CONNUES, puis le segment
-    # suivant la classe (convention {annee}/{classe}/{matiere}), puis le
-    # dernier segment restant.
-    for part in restants:
-        known = _match_matiere(part)
-        if known:
-            matiere = known
-            break
-    if not matiere and classe:
-        # segment immédiatement après la classe dans le chemin original
-        try:
-            idx = next(i for i, p in enumerate(parts) if referentiel.normalize_classe(p))
-            if idx + 1 < len(parts):
-                matiere = parts[idx + 1].strip() or None
-        except StopIteration:
-            pass
-    if not matiere and restants:
-        matiere = restants[-1].strip() or None
-
-    filename_parts = path.stem
-    serie = _guess_serie(filename_parts) or next(
-        (s for s in (_guess_serie(p) for p in parts) if s), None
-    )
-    if not matiere:
-        # "maths_2023" → "maths" : retire l'année en fin de nom de fichier
-        matiere = re.sub(r"[_\- ]?(19|20)\d{2}$", "", filename_parts).strip() or None
-
-    evaluation = _guess_evaluation(" ".join(parts)) or _guess_evaluation(filename_parts)
-
-    manquants = []
-    if not annee:
-        manquants.append("annee")
-    if not classe:
-        manquants.append("classe")
-    if not matiere:
-        manquants.append("matiere")
-
-    return {
-        "niveau": niveau,
-        "annee": annee,
-        "classe": classe,
-        "matiere": matiere,
-        "serie": serie,
-        "evaluation": evaluation,
-        "cible": _guess_cible(path),
-        "manquants": manquants,
-    }
 
 
 def _find_duplicate(db: Session, checksum: str, exclude_epreuve: Optional[str] = None) -> Optional[str]:
@@ -162,55 +47,14 @@ def _find_duplicate(db: Session, checksum: str, exclude_epreuve: Optional[str] =
     return row.epreuve_id if row else None
 
 
-def _guess_evaluation(text: str) -> Optional[str]:
-    """Détecte l'évaluation mentionnée dans un texte de chemin/nom de
-    fichier : mots entiers pour les évaluations simples, motifs tolérants
-    (espaces/dashes optionnels) pour les séquences et compositions."""
-    folded = _fold(text or "")
-    if not folded:
-        return None
-    simple = {
-        r"\bbac\b": "BAC",
-        r"\bb\.?ac\b": "BAC",
-        r"\bbepc\b": "BEPC",
-        r"\bprobatoire\b": "PROBATOIRE",
-        r"\bcep\b": "CEP",
-        r"\bconcours\b": "CONCOURS",
-    }
-    for pattern, code in simple.items():
-        if re.search(pattern, folded):
-            return code
-    if re.search(r"sequence\s*0?1", folded):
-        return "SEQUENCE 1"
-    if re.search(r"sequence\s*0?2", folded):
-        return "SEQUENCE 2"
-    if re.search(r"sequence\s*0?3", folded):
-        return "SEQUENCE 3"
-    if re.search(r"composition\s*trimest", folded):
-        return "COMPOSITION TRIMESTRIELLE"
-    if re.search(r"examen\s*blanc", folded):
-        return "EXAMEN BLANC"
-    return None
-
-
-def _find_or_create_epreuve(
-    db: Session, meta: dict, batch_checksums: dict[str, str]
-) -> tuple[EpreuveORM, bool]:
-    """Retrouve une épreuve du lot correspondant aux métadonnées (même
-    niveau/classe/évaluation/matière/année), ou la crée en brouillon. Le
-    booléen vaut True si l'épreuve a été créée.
-
-    IMPORTANT : l'évaluation stockée est TOUJOURS une valeur par défaut
-    appliquée ("AUTRE" si absente), jamais None — sinon la recherche des
-    fichiers suivants du même lot ne retrouve pas l'épreuve créée (le
-    défaut SQL "BAC" n'est pas visible d'une requête `== None`) et en
-    recrée une copie à chaque fichier."""
+def _find_epreuve(db: Session, meta: dict) -> Optional[EpreuveORM]:
+    """Retrouve une épreuve existante correspondant aux métadonnées (même
+    niveau/classe/évaluation/matière/année), ou None."""
     evaluation = meta["evaluation"] or "AUTRE"
     annee = meta["annee"] or "0000"  # "0000" = à compléter, visible en back-office
     matiere = meta["matiere"] or "À qualifier"
     classe = meta["classe"] or referentiel.default_classe_for_evaluation(meta["evaluation"])
-
-    existing = (
+    return (
         db.query(EpreuveORM)
         .filter(
             EpreuveORM.niveau == meta["niveau"],
@@ -221,28 +65,41 @@ def _find_or_create_epreuve(
         )
         .one_or_none()
     )
-    if existing:
-        return existing, False
 
+
+def _create_epreuve(db: Session, meta: dict) -> EpreuveORM:
+    """Crée l'épreuve d'un fichier importé en brouillon.
+
+    IMPORTANT : l'évaluation stockée est TOUJOURS une valeur par défaut
+    appliquée ("AUTRE" si absente), jamais None — sinon la recherche des
+    fichiers suivants du même lot ne retrouve pas l'épreuve créée (le
+    défaut SQL "BAC" n'est pas visible d'une requête `== None`) et en
+    recrée une copie à chaque fichier."""
     e = EpreuveORM(
         niveau=meta["niveau"],
-        classe=classe,
-        evaluation=evaluation,
-        matiere=matiere,
-        annee=annee,
+        classe=meta["classe"] or referentiel.default_classe_for_evaluation(meta["evaluation"]),
+        evaluation=meta["evaluation"] or "AUTRE",
+        matiere=meta["matiere"] or "À qualifier",
+        annee=meta["annee"] or "0000",
         statut="brouillon",
     )
     db.add(e)
     db.flush()
-    return e, True
+    return e
 
 
 def _import_markdown(
     db: Session, path: Path, root: Path, report: dict, dry_run: bool, batch_checksums: dict[str, str]
 ) -> Optional[EpreuveORM]:
     """Traite un fichier Markdown : renvoie l'épreuve créée/retrouvée, ou
-    None si le fichier a été ignoré/doublonné/ en erreur."""
-    meta = _parse_path(path, root)
+    None si le fichier a été ignoré/doublonné/en erreur.
+
+    L'ordre des vérifications garantit un rapport véridique : le doublon
+    logique (un second sujet/corrigé pour la même épreuve) est détecté
+    AVANT toute création d'épreuve et tout incrément de compteur — aucune
+    mutation n'a alors lieu, donc plus de rollback qui annulait une
+    épreuve déjà comptée comme créée."""
+    meta = import_parsing.parse_path(path, root)
     if meta["manquants"]:
         report["metadonnees_manquantes"].append(
             {"fichier": str(path.relative_to(root)), "manquants": meta["manquants"]}
@@ -253,6 +110,11 @@ def _import_markdown(
         report["ignores"].append(str(path.relative_to(root)))
         return None
 
+    if path.stat().st_size > MAX_MARKDOWN_BYTES:
+        report["erreurs"].append(
+            {"fichier": str(path.relative_to(root)), "erreur": f"markdown trop volumineux (>2 Mo)"}
+        )
+        return None
     try:
         content = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -280,20 +142,20 @@ def _import_markdown(
         )
         return None
 
-    epreuve, created = _find_or_create_epreuve(db, meta, batch_checksums)
-    if created:
-        report["epreuves_creees"] += 1
-
+    epreuve = _find_epreuve(db, meta)
     cible = meta["cible"]
-    existing_doc = epreuve_files.get_document(db, epreuve.id, cible)
-    if existing_doc:
+    if epreuve is not None and epreuve_files.get_document(db, epreuve.id, cible):
         # Deux sujets (ou corrigés) pour la même épreuve du même lot :
-        # le second est signalé comme doublon logique.
+        # le second est signalé comme doublon logique — sans créer ni
+        # modifier quoi que ce soit.
         report["doublons"].append(
             {"fichier": str(path.relative_to(root)), "doublon_de": f"{epreuve.id}/{cible}"}
         )
-        db.rollback()
         return None
+
+    if epreuve is None:
+        epreuve = _create_epreuve(db, meta)
+        report["epreuves_creees"] += 1
 
     storage = get_storage()
     key = epreuve_files.document_key(epreuve, cible)
@@ -335,7 +197,7 @@ def _import_markdown(
 
 
 def _import_images_of_folder(
-    db: Session, folder: Path, root: Path, epreuve_by_dir: dict[Path, EpreuveORM], report: dict
+    db: Session, epreuve: EpreuveORM, folder: Path, root: Path, report: dict
 ) -> None:
     """Importe les images d'un dossier d'épreuve et réécrit les références
     relatives du document (``![](figure.png)``) vers ``/api/files/{id}``."""
@@ -344,9 +206,6 @@ def _import_images_of_folder(
         ext = image_path.suffix.lower()
         if ext not in IMAGE_MIME or not image_path.is_file():
             continue
-        epreuve = epreuve_by_dir.get(folder)
-        if not epreuve:
-            return
         rel_name = image_path.name
         already = (
             db.query(EpreuveFileORM)
@@ -362,6 +221,16 @@ def _import_images_of_folder(
                 {"fichier": str(image_path.relative_to(root)), "erreur": "image trop volumineuse (>10 Mo)"}
             )
             continue
+        # Validation du contenu réel via Pillow (magic bytes) + réencodage :
+        # une image importée ne stocke jamais ses octets bruts — un fichier
+        # non décodable est signalé en erreur, pas persisté.
+        try:
+            data, image_mime, _, _ = images.process_image(data, IMAGE_MIME[ext])
+        except images.InvalidImageError as exc:
+            report["erreurs"].append(
+                {"fichier": str(image_path.relative_to(root)), "erreur": f"image invalide : {exc}"}
+            )
+            continue
         checksum = epreuve_files.sha256_hex(data)
         if _find_duplicate(db, checksum, exclude_epreuve=epreuve.id):
             report["doublons"].append(
@@ -370,7 +239,7 @@ def _import_images_of_folder(
             continue
 
         row = epreuve_files.save_image(
-            db, epreuve, "sujet", rel_name, data, IMAGE_MIME[ext]
+            db, epreuve, "sujet", rel_name, data, image_mime
         )
         report["images_importees"] += 1
 
@@ -395,10 +264,14 @@ def _import_images_of_folder(
                 db.add(doc)
 
 
-def run_import(db: Session, root: Path, dry_run: bool = False) -> dict:
+def run_import(db: Session, root: Path, dry_run: bool = False, on_progress=None) -> dict:
     """Importe tout le contenu Markdown + images trouvés sous `root`.
     Retourne le rapport JSON-serializable (analyses, créées, doublons,
-    erreurs, métadonnées manquantes...)."""
+    erreurs, métadonnées manquantes...).
+
+    `on_progress` (optionnel) est appelé avec une ligne de journal à chaque
+    étape notable (analyse d'un fichier, création, doublon, erreur) —
+    utilisé par l'import admin pour afficher les logs en direct."""
     report: dict = {
         "racine": str(root),
         "analyses": 0,
@@ -410,6 +283,15 @@ def run_import(db: Session, root: Path, dry_run: bool = False) -> dict:
         "erreurs": [],
         "metadonnees_manquantes": [],
     }
+
+    def trace(message: str) -> None:
+        log.info("Import: %s", message)
+        if on_progress:
+            try:
+                on_progress(message)
+            except Exception:  # pragma: no cover — le journal ne doit jamais casser l'import
+                pass
+
     if not root.is_dir():
         report["erreurs"].append({"fichier": str(root), "erreur": "dossier introuvable"})
         return report
@@ -418,26 +300,37 @@ def run_import(db: Session, root: Path, dry_run: bool = False) -> dict:
     epreuve_by_dir: dict[Path, EpreuveORM] = {}
 
     md_files = sorted(p for p in root.rglob("*.md") if p.is_file())
+    trace(f"{len(md_files)} fichier(s) Markdown trouvé(s)")
     for path in md_files:
+        rel = str(path.relative_to(root))
+        trace(f"Analyse de {rel}")
         try:
             epreuve = _import_markdown(db, path, root, report, dry_run, batch_checksums)
+            if epreuve is not None:
+                trace(f"Épreuve {epreuve.id} — {epreuve.matiere} ({epreuve.annee})")
             if not dry_run and epreuve is not None:
                 epreuve_by_dir[path.parent] = epreuve
                 db.commit()
         except Exception as exc:
             db.rollback()
-            report["erreurs"].append({"fichier": str(path.relative_to(root)), "erreur": str(exc)})
+            report["erreurs"].append({"fichier": rel, "erreur": str(exc)})
+            trace(f"ERREUR sur {rel} : {exc}")
             log.exception("Échec d'import de %s", path)
 
     if not dry_run:
-        db.commit()
+        # Chaque Markdown réussi est déjà committé fichier par fichier
+        # (isolation d'un lot : un échec ultérieur ne perd pas les épreuves
+        # précédentes) ; un échec est rolled back. La passe images ci-
+        # dessous est committée en bloc à la fin.
         for folder, epreuve in epreuve_by_dir.items():
             try:
-                _import_images_of_folder(db, folder, root, epreuve_by_dir, report)
+                _import_images_of_folder(db, epreuve, folder, root, report)
             except Exception as exc:
                 db.rollback()
                 report["erreurs"].append({"fichier": str(folder), "erreur": str(exc)})
+                trace(f"ERREUR images de {folder} : {exc}")
                 log.exception("Échec d'import des images de %s", folder)
         db.commit()
 
+    trace(f"Import terminé — {report['epreuves_creees']} épreuve(s) créée(s), {len(report['doublons'])} doublon(s), {len(report['erreurs'])} erreur(s)")
     return report

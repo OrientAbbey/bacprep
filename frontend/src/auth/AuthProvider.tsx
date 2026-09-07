@@ -7,6 +7,12 @@ export interface User {
   email: string;
   nom: string;
   created_at: string;
+  /** Vrai si l'email est dans la liste blanche admin (calculé serveur) —
+   * conditionne l'affichage du lien et l'accès à la page /admin. */
+  is_admin: boolean;
+  /** Consentements (null = modale pas encore répondue). */
+  consent_ia: boolean | null;
+  consent_notes: boolean | null;
 }
 
 interface AuthContextValue {
@@ -17,6 +23,11 @@ interface AuthContextValue {
   loginMock: (email: string, nom: string) => Promise<void>;
   loginGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Recharge /api/auth/me pour refléter un changement de consentement
+   * (modale de première connexion, réglages du profil) — renvoie l'utilisateur
+   * relu, ou null si la session est invalide : l'appelant (modale de
+   * consentement) s'en sert pour CONFIRMER côté serveur avant de se fermer. */
+  refreshConsentement: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -118,11 +129,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     showToast("Déconnexion réussie.", "info");
   };
 
+  const refreshConsentement = useCallback(async (): Promise<User | null> => {
+    try {
+      const me = await api.get<User>("/api/auth/me");
+      setUser(me);
+      return me;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const clearKickoutMessage = () => setKickoutMessage(null);
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, kickoutMessage, clearKickoutMessage, loginMock, loginGoogle, logout }}
+      value={{
+        user,
+        loading,
+        kickoutMessage,
+        clearKickoutMessage,
+        loginMock,
+        loginGoogle,
+        logout,
+        refreshConsentement,
+      }}
     >
       {children}
     </AuthContext.Provider>

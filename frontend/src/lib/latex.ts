@@ -6,11 +6,30 @@
  * ou un \begin{...} nu ne seraient sinon jamais rendus et resteraient
  * affichés comme du texte brut illisible.
  *
+ * Implémentation en machine à états ligne par ligne (remplace une version
+ * regex globale sur tout le texte, qui touchait aussi l'intérieur des
+ * blocs de code et ratait des cas limites) :
+ * - l'intérieur des blocs de code fencés (``` ou ~~~) est laissé INTACT ;
+ * - chaque bloc $$...$$, où qu'il apparaisse (au milieu d'un paragraphe,
+ *   plusieurs sur une même ligne, à cheval sur plusieurs lignes), est
+ *   isolé sur ses propres lignes entourées de lignes vides — condition
+ *   nécessaire pour que remark-math le reconnaisse comme "math flow" ;
+ * - les formules inline $...$ et les \$ échappés ne sont jamais touchés.
+ *
  * Best-effort, pas un vrai parseur LaTeX : suffisant pour les cas usuels
  * (bloc affiché, formule en ligne, environnement aligned/matrix nu) sans
  * viser une couverture exhaustive de toute la syntaxe LaTeX possible.
  */
-export function normalizeLatexDelimiters(markdown: string): string {
+
+/** Teste si une ligne ouvre un bloc de code fencé (``` ou ~~~, avec
+ * éventuellement une longueur supérieure et une info de langage). */
+function isFence(line: string): boolean {
+  return /^\s*(`{3,}|~{3,})/.test(line);
+}
+
+/** Convertit \[...\] et \(...\), et enveloppe les environnements
+ * \begin{...} nus dans $$...$$ — appliqué AVANT l'isolation des blocs. */
+function convertDelimiters(markdown: string): string {
   let out = markdown;
 
   // \[ ... \] (bloc affiché) -> $$ ... $$
@@ -29,20 +48,114 @@ export function normalizeLatexDelimiters(markdown: string): string {
     }
   );
 
-  // Isole tout bloc $$...$$ sur ses propres lignes, entourées de lignes
-  // vides — condition nécessaire pour que `remark-math` le reconnaisse
-  // comme un bloc de formule ("math flow", au même titre qu'un bloc de
-  // code avec des ```). `remark-math` traite $$...$$ comme un CONSTRUIT DE
-  // BLOC (à la manière d'un bloc de code clôturé), pas comme un délimiteur
-  // utilisable au milieu d'un paragraphe : un modèle qui écrit
-  // "Donc $$x=1$$ car..." ou qui place la formule au milieu d'une phrase
-  // sans saut de ligne produit un bloc que le moteur ne reconnaît PAS comme
-  // formule et laisse tel quel en texte brut (backslashes compris) — ce
-  // qui correspond exactement au bug observé. On force donc chaque
-  // occurrence de $$...$$, où qu'elle apparaisse dans le texte, à être
-  // entourée de lignes vides, quelle que soit la façon dont le modèle l'a
-  // formatée à l'origine.
-  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_match, inner) => `\n\n$$\n${inner.trim()}\n$$\n\n`);
-
   return out;
+}
+
+/**
+ * Phase d'isolation : parcourt le texte ligne à ligne. Hors blocs de code,
+ * chaque segment $$...$$ trouvé (le délimiteur d'ouverture et de fermeture
+ * peut être sur la même ligne ou sur des lignes différentes) est retiré de
+ * son flux d'origine et réémis comme bloc autonome entouré de lignes vides.
+ */
+function isolateDisplayMath(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let inFence = false;
+  let fenceMarker = "";
+
+  // État du bloc $$ multiligne en cours de collecte (null = aucun).
+  let collecting: string[] | null = null;
+
+  /** Réémet un bloc math isolé, entouré de lignes vides. */
+  function emitBlock(inner: string) {
+    const body = inner.trim();
+    if (out.length > 0 && out[out.length - 1].trim() !== "") out.push("");
+    out.push("$$", body, "$$");
+    out.push("");
+  }
+
+  /** Traite le contenu texte d'une ligne hors bloc math multiligne :
+   * découpe en segments $$...$$ complets sur la ligne ; le texte avant /
+   * entre est vidé AVANT chaque bloc (pour conserver l'ordre de lecture),
+   * chaque bloc complet est réémis isolé. Retourne le reste à collecter si
+   * un $$ d'ouverture n'a pas de $$ de fermeture sur la même ligne. */
+  function processLine(line: string): string | null {
+    let rest = line;
+    let pending = "";
+    for (;;) {
+      const open = rest.indexOf("$$");
+      if (open === -1) {
+        pending += rest;
+        break;
+      }
+      // \$$ échappé : on déplace le curseur après l'échappement.
+      if (open > 0 && rest[open - 1] === "\\") {
+        pending += rest.slice(0, open + 2);
+        rest = rest.slice(open + 2);
+        continue;
+      }
+      pending += rest.slice(0, open);
+      const afterOpen = rest.slice(open + 2);
+      const close = afterOpen.indexOf("$$");
+      if (close === -1) {
+        if (pending.trim() !== "") out.push(pending);
+        return afterOpen; // ouverture sans fermeture sur la ligne
+      }
+      if (pending.trim() !== "") out.push(pending);
+      pending = "";
+      emitBlock(afterOpen.slice(0, close));
+      rest = afterOpen.slice(close + 2);
+    }
+    if (pending.trim() !== "") out.push(pending);
+    return null;
+  }
+
+  for (const line of lines) {
+    if (isFence(line)) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = line.match(/^\s*(`{3,}|~{3,})/)![1][0];
+        out.push(line);
+      } else if (line.trim().startsWith(fenceMarker)) {
+        inFence = false;
+        out.push(line);
+      } else {
+        out.push(line);
+      }
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+
+    if (collecting !== null) {
+      const close = line.indexOf("$$");
+      if (close === -1) {
+        collecting.push(line);
+      } else {
+        collecting.push(line.slice(0, close));
+        emitBlock(collecting.join("\n"));
+        collecting = null;
+        const rest = line.slice(close + 2);
+        if (rest.trim() !== "") out.push(rest);
+      }
+      continue;
+    }
+
+    const remainder = processLine(line);
+    if (remainder !== null) collecting = [remainder];
+  }
+
+  // Bloc $$ jamais refermé : on le restitue tel quel (comportement sûr,
+  // remark-math affichera le texte brut plutôt que de perdre le contenu).
+  if (collecting !== null) {
+    out.push("$$", ...collecting);
+  }
+
+  return out.join("\n");
+}
+
+export function normalizeLatexDelimiters(markdown: string): string {
+  return isolateDisplayMath(convertDelimiters(markdown));
 }

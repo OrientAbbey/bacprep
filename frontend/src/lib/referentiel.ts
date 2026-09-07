@@ -14,3 +14,9 @@ export const CLASSES_SECONDAIRE: { code: string; label: string }[] = [
 export function classeLabel(code: string): string {
   return CLASSES_SECONDAIRE.find((c) => c.code === code)?.label ?? code;
 }
+
+// Niveaux du système (avant : dupliqué dans AdminPage et ProfilePage).
+export const NIVEAUX = [
+  { code: "SECONDAIRE", label: "Secondaire" },
+  { code: "PRIMAIRE", label: "Primaire (réservé)" },
+] as const;

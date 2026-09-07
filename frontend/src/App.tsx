@@ -1,7 +1,9 @@
 import React, { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import { RequireAdmin } from "./auth/RequireAdmin";
 import { RequireAuth } from "./auth/RequireAuth";
+import { ConsentModal } from "./components/ConsentModal";
 import { Layout } from "./components/Layout";
 import { ToastProvider } from "./components/Toast";
 import { ThemeProvider } from "./theme/ThemeProvider";
@@ -34,8 +36,13 @@ function KickoutBanner() {
  * - `/` : accueil (niveau → classe) et recherche globale — SANS connexion ;
  * - `/secondaire/:classe` : catalogue filtrable d'une classe — public ;
  * - `/catalogue?q=` : résultats de recherche globale — public ;
- * - `/connexion` : page de connexion (l'accueil n'est plus derrière auth) ;
- * - `/epreuve/:id`, `/abonnement`, `/profil` : connexion requise.
+ * - `/epreuve/:id` : lecteur — PUBLIC pour les épreuves gratuites (mode
+ *   visiteur ; les épreuves payantes renvoient vers la connexion) ;
+ * - `/abonnement` : grille des forfaits — publique, la souscription exige
+ *   elle un compte ;
+ * - `/connexion` : page de connexion ;
+ * - `/profil` : connexion requise ;
+ * - `/admin` : réservé aux comptes de la liste blanche admin (RequireAdmin).
  */
 export default function App() {
   return (
@@ -43,73 +50,72 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <KickoutBanner />
+          <ConsentModal />
           <Routes>
-          <Route
-            path="/"
-            element={
-              <Layout>
-                <HomePage />
-              </Layout>
-            }
-          />
-          <Route path="/connexion" element={<LoginPage />} />
-          <Route
-            path="/admin"
-            element={
-              <Layout>
-                <Suspense fallback={<p className="text-sm text-slate">Chargement…</p>}>
-                  <AdminPage />
-                </Suspense>
-              </Layout>
-            }
-          />
-          <Route
-            path="/secondaire/:classe"
-            element={
-              <Layout>
-                <CataloguePage />
-              </Layout>
-            }
-          />
-          <Route
-            path="/catalogue"
-            element={
-              <Layout>
-                <CataloguePage />
-              </Layout>
-            }
-          />
-          <Route
-            path="/epreuve/:id"
-            element={
-              <RequireAuth>
+            <Route
+              path="/"
+              element={
+                <Layout>
+                  <HomePage />
+                </Layout>
+              }
+            />
+            <Route path="/connexion" element={<LoginPage />} />
+            <Route
+              path="/admin"
+              element={
+                <RequireAdmin>
+                  <Layout>
+                    <Suspense fallback={<p className="text-sm text-slate">Chargement…</p>}>
+                      <AdminPage />
+                    </Suspense>
+                  </Layout>
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/secondaire/:classe"
+              element={
+                <Layout>
+                  <CataloguePage />
+                </Layout>
+              }
+            />
+            <Route
+              path="/catalogue"
+              element={
+                <Layout>
+                  <CataloguePage />
+                </Layout>
+              }
+            />
+            <Route
+              path="/epreuve/:id"
+              element={
                 <Layout>
                   <ViewerPage />
                 </Layout>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/abonnement"
-            element={
-              <RequireAuth>
+              }
+            />
+            <Route
+              path="/abonnement"
+              element={
                 <Layout>
                   <SubscribePage />
                 </Layout>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/profil"
-            element={
-              <RequireAuth>
-                <Layout>
-                  <ProfilePage />
-                </Layout>
-              </RequireAuth>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
+              }
+            />
+            <Route
+              path="/profil"
+              element={
+                <RequireAuth>
+                  <Layout>
+                    <ProfilePage />
+                  </Layout>
+                </RequireAuth>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AuthProvider>
       </ToastProvider>

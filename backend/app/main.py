@@ -28,7 +28,18 @@ from .core import store
 from .core.catalogue import seed_database_if_empty
 from .core.logging_config import get_logger, setup_logging
 from .db import Base, DATABASE_URL, SessionLocal, engine
-from .routers import admin, assistant, auth, epreuves, files, me, subscriptions, ws
+from .routers import (
+    admin_epreuves,
+    admin_import,
+    admin_misc,
+    assistant,
+    auth,
+    epreuves,
+    files,
+    me,
+    subscriptions,
+    ws,
+)
 
 setup_logging()
 log = get_logger("main")
@@ -67,6 +78,24 @@ app = FastAPI(title="Copies & Corrigés API", lifespan=lifespan)
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
+# Headers de sécurité de base sur toutes les réponses (dont le frontend
+# servi en service unifié). Pas de CSP complète pour l'instant : Google
+# Identity Services injecte un iframe + scripts inline et KaTeX pose des
+# styles inline — une politique trop stricte casserait la connexion
+# Google et le rendu des formules ; à introduire en report-only d'abord.
+from .core.config import is_prod
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if is_prod():
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
 # Origines autorisées : configurable via CORS_ORIGINS (liste séparée par des
 # virgules). Défaut : le serveur de dev Vite. En production avec service
 # unifié (frontend servi par le backend), la même origine est utilisée et ce
@@ -78,30 +107,37 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Admin-Session"],
 )
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Journalise le corps brut de la requête en plus des erreurs de
-    validation (422) — essentiel pour diagnostiquer une désynchronisation
-    frontend/backend sur la forme d'une requête (voir CAHIER_DES_CHARGES,
-    section 12.1 et 12.8)."""
+    """Journalise les erreurs de validation (422) — essentiel pour
+    diagnostiquer une désynchronisation frontend/backend sur la forme d'une
+    requête (voir CAHIER_DES_CHARGES, section 12.1 et 12.8).
+
+    Le corps brut n'est plus loggé en WARNING : il peut contenir des
+    données sensibles (ex. un id_token Google sur un google-login mal
+    formé) — il passe en DEBUG et tronqué à 500 caractères."""
     try:
         body = await request.body()
-        body_text = body.decode("utf-8", errors="replace")
+        body_text = body.decode("utf-8", errors="replace")[:500]
     except Exception:
         body_text = "<illisible>"
     log.warning(
-        "Erreur de validation (422) sur %s %s — erreurs=%s — corps brut reçu=%s",
+        "Erreur de validation (422) sur %s %s — erreurs=%s",
         request.method,
         request.url.path,
         exc.errors(),
-        body_text,
     )
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    log.debug("Corps brut (tronqué) reçu : %s", body_text)
+    # jsonable_encoder : les erreurs pydantic contiennent parfois des objets
+    # non sérialisables (ex. ValueError dans ctx des @field_validator).
+    from fastapi.encoders import jsonable_encoder
+
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
 
 @app.exception_handler(Exception)
@@ -117,7 +153,9 @@ app.include_router(auth.router)
 app.include_router(epreuves.router)
 app.include_router(files.router)
 app.include_router(subscriptions.router)
-app.include_router(admin.router)
+app.include_router(admin_misc.router)
+app.include_router(admin_epreuves.router)
+app.include_router(admin_import.router)
 app.include_router(assistant.router)
 app.include_router(me.router)
 app.include_router(ws.router)
@@ -126,8 +164,9 @@ app.include_router(ws.router)
 @app.get("/api/health")
 def health() -> dict:
     """Sonde de santé simple — utilisée pour vérifier que le backend a
-    démarré et pour diagnostiquer si un fichier .env a été trouvé."""
-    return {"status": "ok", "env_file_found": ENV_FILE_FOUND}
+    démarré. (N'expose plus `env_file_found`, détail de configuration
+    inutile en public.)"""
+    return {"status": "ok"}
 
 
 @app.get("/api/config")
@@ -142,15 +181,27 @@ def config() -> dict:
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
+    _FRONTEND_DIST_RESOLVED = FRONTEND_DIST.resolve()
+
     @app.get("/{full_path:path}")
     async def spa_catch_all(full_path: str):
         """Sert `frontend/dist` (service unifié, voir DEPLOIEMENT.md) :
         toute route qui n'est ni une API ni un fichier statique existant
         renvoie `index.html`, laissant React Router gérer la navigation
-        côté client plutôt que de renvoyer une 404."""
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
+        côté client plutôt que de renvoyer une 404.
+
+        Sécurité : le chemin est résolu puis CONFINÉ à frontend/dist (même
+        garde que LocalStorage._path) — sans ce contrôle, une requête
+        brute `/../backend/.env` (curl ne normalise pas les segments
+        contrairement aux navigateurs) sortait du dossier et servait un
+        fichier arbitraire, .env compris. Les chemins /api/* inconnus
+        répondent 404 JSON (contrat d'API) plutôt qu'index.html."""
+        if full_path.startswith("api/") or full_path == "api":
+            return JSONResponse(status_code=404, content={"detail": "Ressource API introuvable"})
+        if full_path:
+            candidate = (FRONTEND_DIST / full_path).resolve()
+            if candidate.is_file() and candidate.is_relative_to(_FRONTEND_DIST_RESOLVED):
+                return FileResponse(candidate)
         return FileResponse(FRONTEND_DIST / "index.html")
 
     log.info("Service unifié activé: frontend/dist servi par le backend")

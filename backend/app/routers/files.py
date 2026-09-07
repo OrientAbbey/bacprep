@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from ..core import store
@@ -70,7 +68,18 @@ def get_file(
         raise HTTPException(404, "Fichier introuvable")
 
     media_type = f.mime_type or "application/octet-stream"
-    if f.format == "image" and f.mime_type != "image/svg+xml":
+    if f.mime_type == "image/svg+xml":
+        # SVG accepté historiquement mais XSS-able (embarque <script>) :
+        # jamais rendu inline, toujours proposé au téléchargement.
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{f.filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
+    if f.format == "image":
         # Cache long : les images sont immuables (clé unique par upload)
         # — réduit fortement les rechargements pendant la lecture.
         return Response(

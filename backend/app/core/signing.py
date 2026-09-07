@@ -8,6 +8,9 @@ court (comme les presigned URLs de R2, version maison pour le backend) :
 ``GET /api/files/{id}?token=...`` est accepté sans session tant que le
 jeton est valide et récent — la vérification des droits proprement dite
 reste faite à la génération de l'URL (détail d'épreuve).
+
+Les URLs sont régénérées à chaque chargement du détail d'épreuve et à
+chaque upload admin : la durée de vie peut donc rester courte (1 h).
 """
 from __future__ import annotations
 
@@ -16,14 +19,30 @@ import hmac
 import os
 import time
 
-DEFAULT_MAX_AGE_SECONDS = 24 * 3600  # durée de lecture largement suffisante
+DEFAULT_MAX_AGE_SECONDS = 3600  # régénérées à chaque affichage du détail
+GRACE_SECONDS = 300  # tolérance : image qui casse en pleine lecture d'une page ouverte
 
 
 def _secret() -> bytes:
-    """Clé HMAC : FILE_URL_SECRET si fournie, sinon dérivée du jeton admin
-    (prototype : une seule instance, la cohérence entre serveurs n'est pas
-    un besoin tant qu'il n'y a pas de réplique backend)."""
-    raw = os.getenv("FILE_URL_SECRET") or os.getenv("ADMIN_TOKEN") or "bacprep-dev-secret"
+    """Clé HMAC : ``FILE_URL_SECRET`` si fournie, sinon ``ADMIN_TOKEN``
+    hors production. Aucun repli codé en dur — sans secret configuré, on
+    refuse de signer (une clé dev-secret partagée permettrait de forger
+    des jetons hors ligne). En production (ENV=prod), le fallback sur
+    ADMIN_TOKEN est refusé : un secret dédié devient obligatoire, pour
+    qu'une rotation du jeton admin n'invalide pas les URLs signées et
+    qu'un jeton faible n'affaiblisse pas la signature des fichiers."""
+    from .config import is_prod
+
+    raw = os.getenv("FILE_URL_SECRET")
+    if not raw and is_prod():
+        raise RuntimeError(
+            "FILE_URL_SECRET est obligatoire en production (le repli sur ADMIN_TOKEN y est refusé)"
+        )
+    raw = raw or os.getenv("ADMIN_TOKEN")
+    if not raw:
+        raise RuntimeError(
+            "FILE_URL_SECRET (ou ADMIN_TOKEN) doit être configuré pour signer les URLs de fichiers"
+        )
     return raw.encode("utf-8")
 
 
@@ -35,11 +54,11 @@ def sign_file_id(file_id: str, max_age_seconds: int = DEFAULT_MAX_AGE_SECONDS) -
     return f"{expires}.{digest}", expires
 
 
-def verify_file_token(file_id: str, token: str, max_age_grace: int = 3600) -> bool:
+def verify_file_token(file_id: str, token: str, max_age_grace: int = GRACE_SECONDS) -> bool:
     """Vérifie un jeton émis par `sign_file_id`. Une petite tolérance
-    (grâce d'une heure) accepte les jetons expirés depuis peu : le jeton
-    n'est qu'un accélérateur d'accès, les droits ayant déjà été vérifiés à
-    son émission — on évite simplement qu'une image casse en pleine lecture
+    accepte les jetons expirés depuis peu : le jeton n'est qu'un
+    accélérateur d'accès, les droits ayant déjà été vérifiés à son
+    émission — on évite simplement qu'une image casse en pleine lecture
     d'une épreuve ouverte depuis un moment."""
     try:
         expires_raw, digest = token.split(".", 1)

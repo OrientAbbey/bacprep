@@ -10,13 +10,25 @@ from sqlalchemy.orm import Session
 from ..core import store
 from ..core.assistant import ask_assistant, ask_assistant_stream
 from ..core.logging_config import get_logger
+from ..core.rate_limit import SlidingWindowLimiter
 from ..db import get_db
-from ..db_models import AIConversationORM, EpreuveORM
+from ..db_models import AIConversationORM
 from ..models import AskIn, ConversationOut
 from .auth import require_user
+from .deps import get_epreuve_or_404
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 log = get_logger("assistant_router")
+
+# Plafonne le coût LLM par utilisateur (l'assistant appelle des APIs
+# payantes à la requête) — comptage mémoire, mono-instance (désactivable
+# via ASSISTANT_RATE_LIMIT pour les tests).
+_ask_limiter = SlidingWindowLimiter(
+    max_attempts=20,
+    window_seconds=300.0,
+    message="Trop de questions à l'assistant — réessaie dans quelques minutes",
+    env_switch="ASSISTANT_RATE_LIMIT",
+)
 
 
 def _load_conversation_and_epreuve(db: Session, user_id: str, conversation_id: str):
@@ -30,10 +42,7 @@ def _load_conversation_and_epreuve(db: Session, user_id: str, conversation_id: s
     if not conv:
         raise HTTPException(404, "Discussion introuvable")
 
-    epreuve = db.query(EpreuveORM).filter(EpreuveORM.id == conv.epreuve_id).one_or_none()
-    if not epreuve:
-        raise HTTPException(404, "Épreuve introuvable")
-
+    epreuve = get_epreuve_or_404(db, conv.epreuve_id)
     return conv, epreuve
 
 
@@ -50,8 +59,14 @@ async def ask(payload: AskIn, db: Session = Depends(get_db), user=Depends(requir
     Le contexte utilisé est celui figé à la création de la discussion
     (`conv.contexte` — un passage précis sélectionné, ou vide pour
     "épreuve entière"), pas un contexte recalculé à chaque question.
-    """
+
+    Garde consentement : voie persistée refusée (403) aux utilisateurs
+    ayant refusé le stockage de leurs conversations IA (l'éphémère passe
+    par `/ask/stream`)."""
+    if user.consent_ia is False:
+        raise HTTPException(403, "Tu as refusé le stockage de tes conversations IA — modifie ton choix dans ton profil.")
     conv, epreuve = _load_conversation_and_epreuve(db, user.id, payload.conversation_id)
+    _ask_limiter.check(user.id)
 
     messages = json.loads(conv.messages_json or "[]")
     messages.append({"role": "user", "content": payload.message})
@@ -61,6 +76,7 @@ async def ask(payload: AskIn, db: Session = Depends(get_db), user=Depends(requir
         contexte=conv.contexte,
         question=payload.message,
         historique=messages,
+        user_id=user.id,
     )
     messages.append({"role": "assistant", "content": reponse})
 
@@ -80,39 +96,61 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
     `data: <json>` par évènement :
     - `{"type": "chunk", "text": "..."}` — un fragment de texte à ajouter
       au message assistant affiché ;
-    - `{"type": "done", "conversation": {...}}` — la discussion complète,
-      telle que persistée en base, une fois le flux terminé (mêmes champs
-      que `ConversationOut`) ;
+    - `{"type": "done", "conversation": {...}|null}` — la discussion complète
+      persistée (voie persistée), ou `null` (voie éphémère, rien n'est
+      stocké) une fois le flux terminé ;
     - `{"type": "error", "message": "..."}` — en cas d'échec pendant le
       flux (après quoi la connexion se ferme).
 
-    Le message de l'élève est persisté IMMÉDIATEMENT (avant de commencer à
-    streamer la réponse), pour ne jamais le perdre même si le flux est
-    interrompu en cours de route. Le message de l'assistant, lui, n'est
-    persisté qu'une fois le flux terminé (texte accumulé complet).
-    """
-    conv, epreuve = _load_conversation_and_epreuve(db, user.id, payload.conversation_id)
+    Deux voies exclusives (cf. `AskIn`) : PERSISTÉE (`conversation_id`, le
+    message de l'élève est écrit IMMÉDIATEMENT pour ne jamais le perdre —
+    exige le consentement IA) et ÉPHÉMÈRE (refus du consentement : l'élève
+    garde sa discussion côté client, RIEN n'est persisté, ni à la question
+    ni à la réponse)."""
+    ephemere = payload.conversation_id is None
+    if ephemere:
+        if not payload.epreuve_id:
+            raise HTTPException(400, "epreuve_id requis pour une question éphémère")
+        epreuve = get_epreuve_or_404(db, payload.epreuve_id)
+        _ask_limiter.check(user.id)
+        contexte = payload.contexte
+        # Historique borné côté client, réordonné par sécurité + question.
+        messages = list(payload.historique)[-20:] + [{"role": "user", "content": payload.message}]
+        conv_id = None
+    else:
+        if user.consent_ia is False:
+            raise HTTPException(
+                403, "Tu as refusé le stockage de tes conversations IA — modifie ton choix dans ton profil pour retrouver tes discussions."
+            )
+        conv, epreuve = _load_conversation_and_epreuve(db, user.id, payload.conversation_id)
+        _ask_limiter.check(user.id)
 
-    messages = json.loads(conv.messages_json or "[]")
-    messages.append({"role": "user", "content": payload.message})
-    conv = store.update_conversation(db, conv, messages)
+        messages = json.loads(conv.messages_json or "[]")
+        messages.append({"role": "user", "content": payload.message})
+        conv = store.update_conversation(db, conv, messages)
+
+        contexte = conv.contexte
+        conv_id = conv.id
 
     epreuve_meta = {"matiere": epreuve.matiere, "annee": epreuve.annee, "filieres": epreuve.filieres}
-    contexte = conv.contexte
-    conv_id = conv.id
 
     async def event_stream():
         """Générateur SSE : cède les fragments de texte au fur et à mesure,
-        puis persiste et cède l'état final de la discussion (voir
-        docstring de `ask_stream` pour le format des évènements)."""
+        puis persiste (voie persistée uniquement) et cède l'état final de la
+        discussion (voir docstring de `ask_stream` pour le format des
+        évènements)."""
         accumulated = ""
         try:
-            async for chunk in ask_assistant_stream(epreuve_meta, contexte, payload.message, messages):
+            async for chunk in ask_assistant_stream(epreuve_meta, contexte, payload.message, messages, user_id=user.id):
                 accumulated += chunk
                 yield f"data: {json.dumps({'type': 'chunk', 'text': chunk}, ensure_ascii=False)}\n\n"
         except Exception as exc:
             log.exception("Erreur pendant le streaming assistant (conversation=%s): %s", conv_id, exc)
             yield f"data: {json.dumps({'type': 'error', 'message': 'Une erreur est survenue côté serveur.'})}\n\n"
+            return
+
+        if ephemere:
+            yield f"data: {json.dumps({'type': 'done', 'conversation': None})}\n\n"
             return
 
         # Nouvelle session DB : celle injectée par Depends(get_db) peut déjà

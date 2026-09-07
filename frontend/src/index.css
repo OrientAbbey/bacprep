@@ -2,6 +2,26 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ============================================================================
+   RÈGLES DE DESIGN — référentiel des choix visuels de l'application
+   (à respecter partout ; toute exception doit être documentée sur place)
+
+   ARRONDIS : 4 niveaux, par nature d'élément —
+   - rounded-[2px]  : champs de saisie, selects, zones de texte ;
+   - rounded-full   : actions, filtres, segmented controls, avatars, badges pill ;
+   - rounded-lg     : conteneurs et cartes (cartes catalogue, panneaux, toasts) ;
+   - rounded-2xl    : EXCEPTION réservée aux bulles de chat de l'assistant.
+
+   ÉCHELLE Z-INDEX (une seule source de vérité) :
+   - z-20   : menus déroulants (Combobox) ;
+   - z-30   : header sticky (AppBar) ;
+   - z-40   : colonne latérale assistant (desktop) ;
+   - z-50   : éléments flottants (boutons de sélection, feuille mobile) ;
+   - z-[59] : overlay de la modale assistant étendue ;
+   - z-[60] : modale assistant étendue ;
+   - z-[100]: pile de toasts (toujours au-dessus de tout).
+   ============================================================================ */
+
 @theme {
   --font-serif: "Source Serif 4", ui-serif, Georgia, serif;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
@@ -154,6 +174,84 @@ body {
   letter-spacing: 0.085em;
 }
 
+/* Halo doré du bouton lanceur de l'assistant, uniquement en mode sombre —
+   construit sur le token (plus de valeur rgba en dur dans une classe
+   arbitraire Tailwind, que le préfixe dark: ne peut d'ailleurs pas
+   appliquer à une classe custom). */
+.dark .halo-highlight {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-highlight) 14%, transparent);
+}
+
+/* Verrou de contraste pour les boutons à couleurs fixes : force
+   EXPLICITEMENT la même couleur de fond et de texte sur :hover,
+   :focus-visible ET :active — contre les repaints heuristiques des
+   moteurs de rendu (notamment la WebView Android de Capacitor, cf.
+   commentaire en tête de fichier) qui réinterprétaient les couleurs au
+   survol et rendaient certains boutons illisibles. Une classe par paire
+   de tokens ; remplace la répétition des mêmes classes Tailwind x4 sur
+   chaque bouton concerné (assistant, connexion Google...). */
+.verrou-ink,
+.verrou-ink:hover,
+.verrou-ink:focus-visible,
+.verrou-ink:active {
+  background-color: var(--color-ink);
+  color: var(--color-paper);
+}
+.verrou-highlight,
+.verrou-highlight:hover,
+.verrou-highlight:focus-visible,
+.verrou-highlight:active {
+  background-color: var(--color-highlight);
+  color: var(--color-highlight-ink);
+}
+.verrou-margin,
+.verrou-margin:hover,
+.verrou-margin:focus-visible,
+.verrou-margin:active {
+  background-color: var(--color-margin);
+  color: var(--color-margin-text);
+}
+.verrou-valide,
+.verrou-valide:hover,
+.verrou-valide:focus-visible,
+.verrou-valide:active {
+  background-color: var(--color-valide);
+  color: var(--color-paper);
+}
+
+/* Squelette de chargement : bloc gris neutre avec pulsation discrète.
+   Désactivé (statique) si l'utilisateur préfère réduire les animations. */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
+.skeleton {
+  background: color-mix(in srgb, var(--color-ink-soft) 18%, var(--color-paper-raised));
+  border-radius: 6px;
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/* Apparition en fondu d'un bloc de contenu (sélection de niveaux / classes).
+   Statique si l'utilisateur préfère réduire les animations. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in {
+  animation: fade-in 300ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    animation: none;
+  }
+}
+
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -259,7 +357,7 @@ body {
   padding-left: 1.3em;
 }
 .prose-chat code {
-  background: rgba(127, 127, 127, 0.16);
+  background: color-mix(in srgb, var(--color-ink) 16%, transparent);
   padding: 0.1em 0.35em;
   border-radius: 3px;
   font-family: var(--font-mono);
@@ -269,7 +367,7 @@ body {
 .prose-chat pre {
   max-width: 100%;
   overflow-x: auto;
-  background: rgba(127, 127, 127, 0.12);
+  background: color-mix(in srgb, var(--color-ink) 12%, transparent);
   border-radius: 6px;
   padding: 0.6em 0.75em;
 }
@@ -286,7 +384,7 @@ body {
 }
 .prose-chat th,
 .prose-chat td {
-  border: 1px solid rgba(127, 127, 127, 0.3);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 30%, transparent);
   padding: 0.3em 0.55em;
   white-space: nowrap;
 }

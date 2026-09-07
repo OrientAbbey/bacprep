@@ -2,7 +2,7 @@
 ## Application d'aide à l'apprentissage pour les classes de Terminale (Cameroun)
 ### Préparation aux examens — Épreuves, corrigés et assistant IA
 
-**Version 2.3 — Document de spécification, mis à jour après plusieurs séries de retours d'usage sur le prototype fonctionnel**
+**Version 2.4 — Document de spécification, mis à jour après plusieurs séries de retours d'usage sur le prototype fonctionnel**
 
 ### Journal des versions
 
@@ -12,7 +12,8 @@
 | 2.0 | Journalisation applicative, images jointes, assistant multi-discussions persistées et plafonnées, portée d'abonnement supplémentaire, profil utilisateur, historique de consultation, notifications temps réel (WebSocket), mode clair/sombre. Détail en section 12. |
 | 2.1 | Correctifs de contraste, préremplissage et récapitulatif de l'abonnement, filtre année par défaut, profil enrichi avec annulation, authentification Google réelle activable, mise à jour des modèles IA avec journalisation détaillée, audit d'accessibilité, script de déploiement de test. Détail en section 13. |
 | 2.2 | Restructuration du stockage des données (dossier unique), épreuves multi-filières, fusion du sujet et du corrigé en une seule entité, reconnexion WebSocket automatique, correctif de contraste du panneau assistant, verrou de session admin avec liste d'emails autorisés, révélation progressive du paiement, optimisations de performance (base de données, fichiers, appels IA), déploiement unifié gratuit (retrait de Vercel au profit de Render), guide d'intégration du paiement réel. Détail en section 14. |
-| 2.3 (cette version) | Réponses de l'assistant en streaming, envoi d'images en contexte à l'IA, persistance du verrou admin en base, nouveau statut d'accès "Ouvert", refonte du panneau assistant (contraste, avatars, disposition à côté du contenu, vue plein écran, défilement des onglets, champ multi-ligne), recherche insensible aux accents, back-office enrichi (recherche, pagination, notifications toast, gestion fine des images), correctifs d'accessibilité clavier et de contraste, nombreux bugs corrigés et documentés avec leur cause identifiée. Détail en section 15. |
+| 2.3 | Réponses de l'assistant en streaming, envoi d'images en contexte à l'IA, persistance du verrou admin en base, nouveau statut d'accès "Ouvert", refonte du panneau assistant (contraste, avatars, disposition à côté du contenu, vue plein écran, défilement des onglets, champ multi-ligne), recherche insensible aux accents, back-office enrichi (recherche, pagination, notifications toast, gestion fine des images), correctifs d'accessibilité clavier et de contraste, nombreux bugs corrigés et documentés avec leur cause identifiée. Détail en section 15. |
+| 2.4 (cette version) | Mode visiteur (épreuves gratuites consultables sans compte, paywall 401/403 distincts), fonctions compte masquées en visiteur, consentement granulaire à la connexion (IA / notes, révocable, assistant éphémère en cas de refus), activité enrichie et cliquable (ouverture de l'épreuve ou de la discussion exacte), « Consultées récemment » à l'accueil, forfaits en cartes et page abonnement publique (souscription gated), accès admin réservé aux emails de la liste blanche avec déconnexion automatique paramétrable (3 min), correction du bug « sujet.md » affiché comme image, journal d'audit détaillé et navigable, back-office Utilisateurs (table par élève, bannir/débannir/supprimer, métrique hors admins). Détail en section 16. |
 
 ---
 
@@ -1048,4 +1049,173 @@ qui n'existait pas du tout auparavant.
 
 ---
 
-*Fin du document — Version 2.3*
+## 16. Évolutions fonctionnelles — version 2.4
+
+Cinquième vague, axée sur le **parcours visiteur**, le **consentement
+utilisateur** et la **gouvernance admin** — alignée sur les pratiques des
+produits de référence : freemium « vitrine » (Notion, Grammarly : le
+contenu gratuit est consultable sans compte, le compte n'apporte que les
+fonctions), présentation de l'offre au visiteur avec souscription gated
+(Stripe, Notion), consentement granulaire recueilli à l'inscription et
+révocable (modèle RGPD), back-office centré utilisateurs (Stripe, Linear)
+et sessions d'administration à expiration rapide (consoles cloud).
+
+### 16.1 Mode visiteur — épreuves gratuites ouvertes à tous
+
+**Constat :** toute consultation d'épreuve exigeait une session : un
+visiteur arrivant depuis un lien ne voyait rien, alors que les épreuves
+gratuites ont précisément vocation à servir de vitrine.
+
+**Solution :** `GET /api/epreuves/{id}` accepte désormais le visiteur
+(`optional_user`) pour une épreuve **gratuite** publiée — sans enregistrer
+de consultation (l'historique reste une fonctionnalité de compte). Une
+épreuve payante sans session renvoie **401 « connecte-toi »**, distinct du
+**403 « abonnement requis »** d'un utilisateur connecté non couvert — le
+lecteur affiche en conséquence une carte « connexion / voir les
+abonnements » ou la carte abonnement. Les images signées (HMAC) avaient
+déjà une voie sans session.
+
+### 16.2 Fonctions compte bloquées en visiteur
+
+Le lecteur masque en visiteur le lanceur de l'assistant, la barre de
+sélection (Demander / Prendre une note), le drapeau de signalement et
+l'éditeur de notes — l'API les refuse de toute façon (401, garde existant
+conservé en défense en profondeur). Un encart propose de se connecter.
+
+### 16.3 Signaux visuels et onglets de l'assistant
+
+- Le **drapeau** de signalement est désormais affiché en permanence dans la
+  couleur `correction` (rouge), couleur métier du « problème » — plus
+  seulement au survol.
+- **« Prendre une note »** passe du doré (couleur du surlignage de
+  sélection) au **vert** (`verrou-valide`) : les trois actions du lecteur
+  (sélection dorée, assistant encre, note verte) deviennent distinctes au
+  premier coup d'œil.
+- **Onglets de l'assistant dédoublonnés** : un libellé par défaut déjà
+  pris devient « Discussion générale 2 », « 3 »… (à la création comme au
+  renommage automatique après la première question) — convention des
+  messageries, contre plusieurs onglets rigoureusement identiques.
+
+### 16.4 Activité enrichie et navigable ; « Consultées récemment » à l'accueil
+
+- Les libellés d'activité portent le **contexte complet** : « Consultation
+  de Histoire — terminale (BAC 2023) · Séries : D ». Les items reliés à une
+  épreuve sont **cliquables** (ouverture du lecteur) ; une discussion IA
+  rouvre en plus **son onglet exact** via `/epreuve/{id}?conv={id}`
+  (deep-link consommé par le panneau assistant).
+- L'accueil affiche **« Consultées récemment »** pour les comptes connectés
+  (la fonctionnalité existait au catalogue) ; le visiteur, lui, ne génère
+  aucun historique (16.1).
+
+### 16.5 Abonnements présentés aux visiteurs, souscription gated
+
+La page `/abonnement` est **publique** : la grille tarifaire est
+consultable sans compte ; le bouton de paiement est remplacé, pour un
+visiteur, par « Se connecter pour souscrire » avec **retour automatique**
+vers la page après connexion. Les forfaits se présentent désormais en
+**cartes** (libellé, prix, durée, description fournie par `/api/pricing`)
+sélectionnables au clavier (`radiogroup`), au lieu de pills compactes.
+
+### 16.6 Accès admin restreint aux emails de la liste blanche
+
+Le lien « Admin » et la route `/admin` ne sont accessibles qu'à un
+utilisateur **connecté** dont l'email figure dans `ADMIN_EMAILS` —
+`is_admin` est calculé **serveur** dans `UserOut` (la liste blanche ne part
+jamais au client). Il s'agit d'une commodité d'affichage : la console reste
+réellement protégée par le jeton `ADMIN_TOKEN` + liste blanche vérifiés à
+chaque appel.
+
+### 16.7 Déconnexion admin automatique paramétrable
+
+Le verrou admin est maintenu par un **battement de cœur** : tant que la
+console est ouverte, la page envoie `POST /api/admin/heartbeat` toutes les
+30 s, qui rafraîchit l'horodatage du verrou — **un admin restant sur la
+console n'est jamais déconnecté**, même sans interaction. La déconnexion
+automatique ne survient qu'après avoir **quitté `/admin`** (onglet fermé ou
+navigation ailleurs) : les battements s'arrêtent et le verrou expire après
+`ADMIN_SESSION_TIMEOUT_MINUTES` (**défaut 3 minutes**, anciennement 30) ; le
+prochain 401 purge la session locale et repasse par le formulaire. Les
+panneaux (utilisateurs, journal, signalements) distinguent désormais un 401
+d'une vraie liste vide : un verrou expiré ramène au formulaire au lieu
+d'afficher « Aucun … ».
+
+### 16.8 Bug : documents « sujet.md » affichés comme images
+
+**Constat :** le détail d'une épreuve côté admin montrait des « images »
+nommées `sujet.md`/`corrige.md` rattachées à chaque sujet/corrigé.
+
+**Cause :** ce ne sont pas des images parasites : `admin_get_epreuve`
+renvoyait TOUS les fichiers (`format='md'` compris) dans `assets`, que
+l'interface traite comme une galerie d'images.
+
+**Solution :** la réponse sépare désormais `assets` (images uniquement,
+galerie) et `documents` (liste texte : nom, taille, date, suppression) —
+l'interface admin affiche les documents en liste au-dessus de chaque
+éditeur de contenu.
+
+### 16.9 Journal d'audit et activité : explicites et navigables
+
+- Les évènements portent désormais **le détail de l'action** : champs
+  réellement modifiés (diff avant/après) pour une modification, nom du
+  fichier supprimé, métadonnées d'une épreuve supprimée (capturées avant
+  suppression), nom/taille des uploads. L'affichage traduit ces détails en
+  phrase lisible au lieu du JSON brut.
+- L'**id d'épreuve** du journal est **cliquable** : ouvre l'épreuve dans la
+  section « Épreuves » du back-office ; chaque ligne est enrichie du résumé
+  lisible de l'épreuve (matière — classe (BAC 2023)).
+- Les **signalements** affichent motif lisible, message, auteur, contexte
+  d'épreuve et lien d'ouverture.
+
+### 16.10 Back-office utilisateurs : table, modération, métrique corrigée
+
+- La métrique « Utilisateurs » **exclut les emails de la liste blanche
+  admin** (un admin connecté en élève pour tester ne gonfle plus le
+  compteur).
+- Nouvel onglet **Utilisateurs** : une ligne par élève avec identité
+  déclarée, profil, **consentements**, statut de modération, dernière
+  connexion et compteurs d'usage (notes, discussions IA, consultations,
+  abonnements actifs, dépenses confirmées). **Aucune donnée secrète** n'y
+  figure ni n'existe dans le produit : pas de mot de passe local
+  (connexions Google/mock), pas de code mobile money (paiement simulé par
+  référence d'agrégateur). La **dernière connexion** est un horodatage
+  persistant posé à chaque login (`users.derniere_connexion`) qui **survit à
+  la déconnexion** — la table `sessions` étant purgée au logout, elle ne
+  peut pas servir de source ; le profil étendu non renseigné s'affiche
+  explicitement « Non renseigné ».
+- **Bannir** (motif facultatif) : session supprimée immédiatement avec
+  kick-out WebSocket, re-login refusé (403), toute session résiduelle
+  purgée à la résolution ; **débannir** restaure l'accès ; **supprimer**
+  efface toutes les données personnelles de l'élève (sessions, notes,
+  discussions, consultations, abonnements, signalements, paiements) —
+  droit à l'effacement, action tracée au journal.
+
+### 16.11 Consentement à la connexion (IA / notes)
+
+Modale granulaire à la première connexion, révocable depuis le profil :
+`users.consent_ia` et `users.consent_notes` (NULL = pas encore demandé ;
+l'ancien `consent_given_at` posé automatiquement à la création est
+abandonné). Refus IA → l'assistant fonctionne en **mode éphémère** : les
+onglets vivent côté client, les questions partent en `epreuve_id` +
+`historique` SANS `conversation_id` et **rien n'est persisté** (voie SSE
+étendue) — gardes serveur 403 sur toute tentative de persistance. Refus
+notes → bouton masqué + garde 403. `PUT /api/me/consentement` enregistre
+(ou révoque) les choix et horodate le consentement.
+
+### 16.12 Démonstration & migration
+
+`python -m scripts_dev.seed_epreuves_payantes` crée deux épreuves
+**payantes** publiées (Mathématiques BAC 2022, Physique-Chimie Probatoire
+2023) pour éprouver le paywall visiteur/compte. La migration idempotente
+`python -m scripts_dev.migrate_2026_09` ajoute les colonnes `users`
+(`consent_ia`, `consent_notes`, `banni`, `banni_motif`…).
+
+**Tests** : `backend/tests/test_evolution_visiteur_admin.py` (18 tests :
+visiteur gratuit/payant, absence de consultation anonyme, gardes de
+consentement, métrique hors admins, table utilisateurs sans données
+sensibles, bannissement/débannissement/suppression, séparation
+assets/documents, audit des champs modifiés, fenêtre admin paramétrable) —
+suite complète : 68 tests.
+
+---
+
+*Fin du document — Version 2.4*

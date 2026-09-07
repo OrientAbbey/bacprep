@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..core import referentiel, store
+from ..core.config import demo_allowed
 from ..core.logging_config import get_logger
+from ..core.subscriptions import SCOPE_LABELS, sub_to_out
 from ..db import get_db, utc_now
 from ..db_models import EpreuveORM, PaymentORM, SubscriptionORM
 from ..models import CheckoutIn, SubscriptionOut, WebhookIn
@@ -25,12 +27,18 @@ PRICING = {
     "filiere": 6000,
 }
 
-SCOPE_LABELS = {
-    "epreuve": "Épreuve précise",
-    "matiere_annee": "Matière, année précise",
-    "matiere": "Matière (toutes années)",
-    "annee": "Année (toutes matières)",
-    "filiere": "Série complète",
+# Les libellés de portée (SCOPE_LABELS) vivent dans core/subscriptions.py,
+# partagés avec le router me (affichage profil) — plus de définition en
+# double.
+
+# Description lisible de ce que débloque chaque portée — affichée sur les
+# cartes de prix de la page Abonnement (deux lignes max, phrase simple).
+SCOPE_DESCRIPTIONS = {
+    "epreuve": "Le sujet et le corrigé d'une seule épreuve, à ton rythme.",
+    "matiere_annee": "Toutes les épreuves d'une matière pour une année donnée — idéale pour réviser un chapitre précis.",
+    "matiere": "Toutes les années d'une même matière, séquences comme examens — pour creuser une discipline.",
+    "annee": "Toutes les matières d'une même année d'examen — pour se mettre en condition comme le jour J.",
+    "filiere": "Tout le contenu d'une série pour une classe : chaque matière, chaque année publiée.",
 }
 
 DUREE_VALIDITE = timedelta(days=365)
@@ -42,7 +50,12 @@ def pricing() -> dict:
     des charges) — endpoint public, pas besoin d'authentification. Toutes
     les portées (hors « épreuve précise ») sont achetées dans le cadre
     d'une classe."""
-    return {"pricing": PRICING, "labels": SCOPE_LABELS, "duree_jours": DUREE_VALIDITE.days}
+    return {
+        "pricing": PRICING,
+        "labels": SCOPE_LABELS,
+        "descriptions": SCOPE_DESCRIPTIONS,
+        "duree_jours": DUREE_VALIDITE.days,
+    }
 
 
 @router.get("/subscriptions/deja-couvert")
@@ -221,16 +234,32 @@ def checkout(payload: CheckoutIn, db: Session = Depends(get_db), user=Depends(re
 
 
 @router.post("/payments/simulate-webhook")
-def simulate_webhook(payload: WebhookIn, db: Session = Depends(get_db)) -> dict:
+def simulate_webhook(payload: WebhookIn, db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
     """Simule le webhook de confirmation d'un agrégateur de paiement réel
     (Notch Pay/Monetbil — voir PAIEMENT.md pour l'intégration réelle).
     Idempotent par construction : si le paiement est déjà "confirmed", la
     notification est ignorée silencieusement plutôt que de réactiver ou
     re-traiter la souscription (l'agrégateur peut notifier plusieurs fois
-    le même événement)."""
+    le même événement).
+
+    Authentification OBLIGATOIRE (+ vérification que le paiement appartient
+    à l'utilisateur) : la référence est retournée au client au checkout —
+    un endpoint public l'activant permettrait de s'abonner sans payer. Un
+    vrai agrégateur signera ses notifications (HMAC + timestamp) ; le
+    contrôle d'appartenance sera remplacé par la vérification de signature.
+
+    REFUSÉ en production (ENV=prod) sauf DEMO_MODE=true explicite : même
+    authentifié, l'utilisateur connaît la référence (reçue au checkout) et
+    pourrait donc s'activer un abonnement gratuitement."""
+    if not demo_allowed():
+        log.warning("simulate-webhook refusé en production sans DEMO_MODE")
+        raise HTTPException(403, "Simulation de paiement désactivée en production")
     payment = (
         db.query(PaymentORM)
-        .filter(PaymentORM.reference_agregateur == payload.reference_agregateur)
+        .filter(
+            PaymentORM.reference_agregateur == payload.reference_agregateur,
+            PaymentORM.user_id == user.id,
+        )
         .one_or_none()
     )
     if not payment:
@@ -252,58 +281,6 @@ def simulate_webhook(payload: WebhookIn, db: Session = Depends(get_db)) -> dict:
     return {"ok": True, "already_confirmed": False}
 
 
-def _scope_of(sub: SubscriptionORM) -> str:
-    """Déduit la portée (scope) d'une souscription déjà en base à partir de
-    ses champs bruts — l'inverse de `_resolve_scope_fields`, utilisé pour
-    l'affichage (profil, liste "mine")."""
-    if sub.epreuve_id:
-        return "epreuve"
-    if sub.matiere != "ALL" and sub.annee != "ALL":
-        return "matiere_annee"
-    if sub.matiere != "ALL":
-        return "matiere"
-    if sub.annee != "ALL":
-        return "annee"
-    return "filiere"
-
-
-def _sub_to_out(db: Session, sub: SubscriptionORM) -> SubscriptionOut:
-    """Enrichit une souscription brute pour l'affichage : libellé de
-    portée lisible, nom de l'épreuve si scope="epreuve", et nombre
-    d'épreuves couvertes recalculé en direct (même logique que le
-    récapitulatif de la page Abonnement)."""
-    scope = _scope_of(sub)
-    epreuve_label = None
-    if sub.epreuve_id:
-        e = db.query(EpreuveORM).filter(EpreuveORM.id == sub.epreuve_id).one_or_none()
-        if e:
-            epreuve_label = f"{e.matiere} — {e.annee}"
-    count = store.matching_epreuves_count(
-        db,
-        classe=None if sub.classe == "ALL" else sub.classe,
-        filiere=sub.filiere,
-        matiere=None if sub.matiere == "ALL" else sub.matiere,
-        annee=None if sub.annee == "ALL" else sub.annee,
-        epreuve_id=sub.epreuve_id,
-    )
-    return SubscriptionOut(
-        id=sub.id,
-        scope=scope,
-        scope_label=SCOPE_LABELS[scope],
-        evaluation=sub.evaluation,
-        classe=sub.classe,
-        filiere=sub.filiere,
-        matiere=sub.matiere,
-        annee=sub.annee,
-        epreuve_id=sub.epreuve_id,
-        epreuve_label=epreuve_label,
-        epreuves_couvertes=count,
-        start_date=sub.start_date,
-        end_date=sub.end_date,
-        statut=sub.statut,
-    )
-
-
 @router.get("/subscriptions/mine", response_model=list[SubscriptionOut])
 def my_subscriptions(db: Session = Depends(get_db), user=Depends(require_user)) -> list[SubscriptionOut]:
     """Tous les abonnements de l'utilisateur (actifs, annulés, expirés),
@@ -311,7 +288,7 @@ def my_subscriptions(db: Session = Depends(get_db), user=Depends(require_user)) 
     subs = db.query(SubscriptionORM).filter(SubscriptionORM.user_id == user.id).order_by(
         SubscriptionORM.start_date.desc()
     ).all()
-    return [_sub_to_out(db, s) for s in subs]
+    return [sub_to_out(db, s) for s in subs]
 
 
 @router.post("/subscriptions/{sub_id}/cancel")

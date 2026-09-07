@@ -13,8 +13,25 @@ from .logging_config import get_logger
 
 log = get_logger("admin_session")
 
-ADMIN_SESSION_TIMEOUT = timedelta(minutes=30)
+# Défaut de la fenêtre d'inactivité admin : 3 minutes. Paramétrable via
+# ADMIN_SESSION_TIMEOUT_MINUTES (lu dynamiquement — un redémarrage du
+# backend suffit à l'appliquer, ou via l'env du process de service).
+ADMIN_SESSION_TIMEOUT_DEFAULT_MINUTES = 3
 LOCK_ID = "singleton"
+
+
+def session_timeout() -> timedelta:
+    """Fenêtre d'inactivité de la session admin, en minutes. Un admin qui
+    ferme la page cesse de rafraîchir le verrou : il est automatiquement
+    déconnecté une fois ce délai écoulé (la prochaine requête recevra 401
+    et le frontend purge sa session locale)."""
+    raw = os.getenv("ADMIN_SESSION_TIMEOUT_MINUTES", "").strip()
+    try:
+        minutes = float(raw) if raw else ADMIN_SESSION_TIMEOUT_DEFAULT_MINUTES
+    except ValueError:
+        log.warning("ADMIN_SESSION_TIMEOUT_MINUTES invalide (%r) — défaut %s min utilisé", raw, ADMIN_SESSION_TIMEOUT_DEFAULT_MINUTES)
+        minutes = ADMIN_SESSION_TIMEOUT_DEFAULT_MINUTES
+    return timedelta(minutes=max(0.5, minutes))
 
 
 def allowed_emails() -> set[str]:
@@ -30,9 +47,9 @@ def _get_lock(db: Session) -> Optional[AdminLockORM]:
 
 
 def _is_expired(lock: AdminLockORM) -> bool:
-    """Vrai si la session admin n'a plus eu d'activité depuis plus de
-    ADMIN_SESSION_TIMEOUT (30 min)."""
-    return utc_now() - lock.last_activity > ADMIN_SESSION_TIMEOUT
+    """Vrai si la session admin n'a plus eu d'activité depuis plus de la
+    fenêtre d'inactivité configurée (ADMIN_SESSION_TIMEOUT_MINUTES)."""
+    return utc_now() - lock.last_activity > session_timeout()
 
 
 def attempt_login(db: Session, email: str, force: bool = False) -> tuple[Optional[AdminLockORM], Optional[dict]]:

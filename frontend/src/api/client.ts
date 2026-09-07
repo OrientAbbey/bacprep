@@ -10,6 +10,16 @@ export class ApiError extends Error {
   }
 }
 
+async function parseError(res: Response): Promise<ApiError> {
+  let detail: unknown = null;
+  try {
+    detail = await res.json();
+  } catch {
+    detail = await res.text().catch(() => null);
+  }
+  return new ApiError(res.status, detail);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const { headers, ...rest } = options;
   // IMPORTANT : fusionner les en-têtes (headers) après avoir étalé `rest`,
@@ -25,15 +35,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     },
   });
 
-  if (!res.ok) {
-    let detail: unknown = null;
-    try {
-      detail = await res.json();
-    } catch {
-      detail = await res.text().catch(() => null);
-    }
-    throw new ApiError(res.status, detail);
-  }
+  if (!res.ok) throw await parseError(res);
 
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -41,12 +43,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string, headers?: Record<string, string>) => request<T>(path, { method: "GET", headers }),
-  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
-    request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined, headers }),
-  put: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
-    request<T>(path, { method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined, headers }),
-  del: <T>(path: string, headers?: Record<string, string>) => request<T>(path, { method: "DELETE", headers }),
+  // `signal` : AbortSignal pour annuler une requête devenue obsolète
+  // (navigation, changement de filtre) — voir ViewerPage/CataloguePage.
+  get: <T>(path: string, headers?: Record<string, string>, signal?: AbortSignal) =>
+    request<T>(path, { method: "GET", headers, signal }),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>, signal?: AbortSignal) =>
+    request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined, headers, signal }),
+  put: <T>(path: string, body?: unknown, headers?: Record<string, string>, signal?: AbortSignal) =>
+    request<T>(path, { method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined, headers, signal }),
+  del: <T>(path: string, headers?: Record<string, string>, signal?: AbortSignal) =>
+    request<T>(path, { method: "DELETE", headers, signal }),
   upload: async <T>(path: string, formData: FormData, headers?: Record<string, string>): Promise<T> => {
     const res = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
@@ -54,15 +60,7 @@ export const api = {
       body: formData,
       headers: headers || {},
     });
-    if (!res.ok) {
-      let detail: unknown = null;
-      try {
-        detail = await res.json();
-      } catch {
-        detail = null;
-      }
-      throw new ApiError(res.status, detail);
-    }
+    if (!res.ok) throw await parseError(res);
     return res.json();
   },
 };

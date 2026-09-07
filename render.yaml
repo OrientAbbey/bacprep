@@ -12,6 +12,8 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
+      - key: ENV
+        value: prod # cookie Secure, refus du jeton admin d'exemple
       - key: DATABASE_URL
         sync: false # chaîne Supabase PostgreSQL (voir DEPLOIEMENT.md)
       - key: STORAGE_BACKEND
@@ -26,10 +28,14 @@ services:
         sync: false
       - key: ADMIN_TOKEN
         generateValue: true
+      - key: FILE_URL_SECRET
+        generateValue: true # clé HMAC des URLs signées de fichiers
       - key: ADMIN_EMAILS
         value: admin@example.com
       - key: AUTH_MODE
-        value: mock
+        value: mock # démo simulée — passer à "google" en production réelle
+      - key: DEMO_MODE
+        value: "true" # requis en prod pour autoriser mock-login + paiement simulé
       - key: GEMINI_API_KEY
         sync: false
       - key: GROQ_API_KEY

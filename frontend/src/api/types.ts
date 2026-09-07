@@ -8,6 +8,7 @@ export interface EpreuveListItem {
   session: string;
   duree: string | null;
   coefficient: string | null;
+  extrait: string;
   gratuit: boolean;
   statut: string;
   filieres: string[];
@@ -20,6 +21,10 @@ export interface EpreuveFile {
   format: "md" | "image";
   filename: string;
   url: string;
+  size_bytes: number | null;
+  width: number | null;
+  height: number | null;
+  mime_type: string;
 }
 
 export interface EpreuveDetail extends EpreuveListItem {
@@ -105,4 +110,126 @@ export interface ImportJob {
   created_at: string;
   finished_at: string | null;
   report: ImportJobReport;
+  logs: string[];
+}
+
+// ---------- Notes personnelles ----------
+
+export interface Note {
+  id: string;
+  epreuve_id: string;
+  cible: "sujet" | "corrige";
+  contexte_extrait: string;
+  contenu: string;
+  created_at: string;
+  updated_at: string;
+  matiere?: string;
+  annee?: string;
+  classe?: string;
+  evaluation?: string;
+}
+
+// ---------- Signalements ----------
+
+export type MotifSignalement =
+  | "contenu_illisible"
+  | "erreur_enonce"
+  | "corrige_manquant"
+  | "image_cassee"
+  | "autre";
+
+export interface Signalement {
+  id: string;
+  epreuve_id: string;
+  motif: MotifSignalement;
+  message: string;
+  statut: "ouvert" | "resolu";
+  created_at: string;
+  resolved_at: string | null;
+  matiere: string;
+  annee: string;
+  classe: string;
+  auteur_email: string;
+}
+
+// ---------- Activité (profil) ----------
+
+export type TypeActivite =
+  | "connexion"
+  | "consultation"
+  | "abonnement"
+  | "paiement"
+  | "note"
+  | "discussion_ia";
+
+export interface ActiviteItem {
+  type: TypeActivite;
+  date: string;
+  libelle: string;
+  epreuve_id: string | null;
+  details: string;
+  /** Présent sur les items `discussion_ia` : permet de rouvrir l'onglet de
+   * discussion exact dans le lecteur (/epreuve/{id}?conv={id}). */
+  conversation_id?: string | null;
+}
+
+// ---------- Admin ----------
+
+export interface AdminEpreuveCounts {
+  tous: number;
+  brouillon: number;
+  a_reviser: number;
+  publie: number;
+}
+
+export interface AdminEvent {
+  id: string;
+  action: string;
+  epreuve_id: string | null;
+  email: string;
+  details: Record<string, unknown>;
+  created_at: string;
+  /** Résumé lisible de l'épreuve concernée (matière — classe (BAC 2023)). */
+  epreuve_resume?: string;
+}
+
+/** Ligne de la table « Utilisateurs » du back-office — volontairement
+ * limitée aux informations de compte et compteurs d'usage (aucune donnée
+ * sensible : pas de mot de passe, pas de code de paiement). */
+export interface AdminUtilisateur {
+  id: string;
+  nom: string;
+  email: string;
+  niveau: string | null;
+  classe: string | null;
+  etablissement: string | null;
+  consent_ia: boolean | null;
+  consent_notes: boolean | null;
+  banni: boolean;
+  banni_motif: string | null;
+  created_at: string;
+  derniere_connexion: string | null;
+  notes: number;
+  discussions_ia: number;
+  consultations: number;
+  abonnements_actifs: number;
+  total_depense_fcfa: number;
+}
+
+export interface AdminStats {
+  utilisateurs: number;
+  abonnements_actifs: number;
+  revenu_total_fcfa: number;
+  epreuves_par_statut: Record<string, number>;
+  epreuves_par_classe: Record<string, number>;
+  stockage: {
+    total_octets: number;
+    par_format: Record<string, number>;
+    nb_fichiers: number;
+  };
+  revenus_par_mois: Record<string, number>;
+  consultations: number;
+  notes: number;
+  discussions_ia: number;
+  signalements_ouverts: number;
 }

@@ -5,7 +5,6 @@ import uuid
 from sqlalchemy import (
     Boolean,
     Column,
-    DateTime,
     ForeignKey,
     Integer,
     String,
@@ -35,7 +34,24 @@ class UserORM(Base):
     id = Column(String, primary_key=True, default=_uid)
     email = Column(String, unique=True, nullable=False, index=True)
     nom = Column(String, nullable=False, default="")
+    # Profil étendu (optionnel, renseigné par l'élève dans sa page Profil) :
+    # niveau et classe suivis, établissement.
+    niveau = Column(String, nullable=True)
+    classe = Column(String, nullable=True)
+    etablissement = Column(String, nullable=True)
+    # Consentement recueilli À LA CONNEXION (modale granulaire, révocable
+    # depuis le profil) : NULL = pas encore demandé ; False = refus explicite
+    # (aucune persistance des données concernées) ; True = accepté.
+    consent_ia = Column(Boolean, nullable=True)
+    consent_notes = Column(Boolean, nullable=True)
     consent_given_at = Column(UTCDateTime, nullable=True)
+    # Modération back-office : un compte banni ne peut plus ouvrir (ni
+    # conserver) une session ; motif conservé pour le journal admin.
+    banni = Column(Boolean, nullable=False, default=False)
+    banni_motif = Column(String, nullable=True)
+    # Dernière connexion RÉELLE (posée à chaque login, jamais effacée par une
+    # déconnexion — contrairement à la table `sessions`, purgée au logout).
+    derniere_connexion = Column(UTCDateTime, nullable=True)
     created_at = Column(UTCDateTime, default=utc_now)
 
 
@@ -46,6 +62,9 @@ class SessionORM(Base):
     token = Column(String, unique=True, nullable=False, index=True)
     platform = Column(String, default="web")
     issued_at = Column(UTCDateTime, default=utc_now)
+    # Dernier accès constaté (expiration GLISSANTE) — distinct d'issued_at,
+    # qui borne la durée de vie MAXIMALE absolue de la session.
+    last_seen = Column(UTCDateTime, default=utc_now)
 
 
 class KickoutNoticeORM(Base):
@@ -95,6 +114,7 @@ class EpreuveORM(Base):
     session = Column(String, default="")
     duree = Column(String, nullable=True)
     coefficient = Column(String, nullable=True)
+    extrait = Column(String, nullable=False, default="")
     gratuit = Column(Boolean, default=False)
     statut = Column(String, default="brouillon")  # brouillon|a_reviser|publie
     created_at = Column(UTCDateTime, default=utc_now)
@@ -161,6 +181,10 @@ class EpreuveFileORM(Base):
     storage_key = Column(String, nullable=False, unique=True, index=True)
     mime_type = Column(String, nullable=False, default="")
     size_bytes = Column(Integer, nullable=True)
+    # Dimensions des images en pixels (remplies à l'upload via Pillow ;
+    # NULL pour les documents Markdown et les images non mesurables).
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
     checksum_sha256 = Column(String, nullable=True, index=True)
     uploaded_at = Column(UTCDateTime, default=utc_now)
 
@@ -198,6 +222,9 @@ class ImportJobORM(Base):
     filename = Column(String, nullable=False, default="")
     status = Column(String, nullable=False, default="pending")  # pending|running|done|error
     report_json = Column(Text, nullable=False, default="{}")
+    # Lignes de journal accumulées pendant l'exécution (affichées en direct
+    # par l'interface admin via polling) — liste JSON de chaînes.
+    logs_json = Column(Text, nullable=False, default="[]")
     created_at = Column(UTCDateTime, default=utc_now)
     finished_at = Column(UTCDateTime, nullable=True)
 
@@ -240,9 +267,50 @@ class ConsultationORM(Base):
 
 
 class AdminEventORM(Base):
+    """Journal d'audit du back-office : chaque action admin (création,
+    publication, suppression, import, login/logout...) y est tracée avec
+    l'email de son auteur et un détail libre en JSON."""
+
     __tablename__ = "admin_events"
 
     id = Column(String, primary_key=True, default=_uid)
     epreuve_id = Column(String, nullable=True, index=True)
     action = Column(String, nullable=False)
+    email = Column(String, nullable=False, default="")
+    details = Column(Text, nullable=False, default="{}")
     created_at = Column(UTCDateTime, default=utc_now)
+
+
+class NoteORM(Base):
+    """Note personnelle d'un élève, liée à une épreuve (et souvent à un
+    passage précis de celle-ci, conservé dans `contexte_extrait`). Le
+    contenu est du Markdown : rédaction manuelle ou réponse de l'assistant
+    sauvegardée telle quelle."""
+
+    __tablename__ = "notes"
+
+    id = Column(String, primary_key=True, default=_uid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    epreuve_id = Column(String, ForeignKey("epreuves.id"), nullable=False, index=True)
+    cible = Column(String, nullable=False, default="sujet")  # sujet|corrige
+    contexte_extrait = Column(Text, nullable=False, default="")
+    contenu = Column(Text, nullable=False, default="")
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
+
+
+class SignalementORM(Base):
+    """Signalement d'un problème sur une épreuve par un élève (contenu
+    illisible, erreur d'énoncé, corrigé manquant, image cassée, autre).
+    Statut ouvert → résolu, traité dans le back-office."""
+
+    __tablename__ = "signalements"
+
+    id = Column(String, primary_key=True, default=_uid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    epreuve_id = Column(String, ForeignKey("epreuves.id"), nullable=False, index=True)
+    motif = Column(String, nullable=False)
+    message = Column(Text, nullable=False, default="")
+    statut = Column(String, nullable=False, default="ouvert")  # ouvert|resolu
+    created_at = Column(UTCDateTime, default=utc_now)
+    resolved_at = Column(UTCDateTime, nullable=True)

@@ -3,13 +3,21 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import false as sql_false
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core import epreuve_files, referentiel, signing, store
 from ..core.logging_config import get_logger
 from ..db import get_db
-from ..db_models import EpreuveFiliereORM, EpreuveFileORM, EpreuveORM
+from ..db_models import (
+    EpreuveFiliereORM,
+    EpreuveFileORM,
+    EpreuveORM,
+    NoteORM,
+    SignalementORM,
+    SubscriptionORM,
+)
 from ..models import (
     ConversationCreateIn,
     ConversationOut,
@@ -17,8 +25,11 @@ from ..models import (
     EpreuveDetail,
     EpreuveFileOut,
     EpreuveListItem,
+    NoteIn,
+    SignalementIn,
 )
-from .auth import require_user
+from .auth import optional_user, require_user
+from .deps import get_epreuve_or_404
 
 router = APIRouter(prefix="/api/epreuves", tags=["epreuves"])
 log = get_logger("epreuves")
@@ -37,10 +48,25 @@ def _to_list_item(e: EpreuveORM) -> EpreuveListItem:
         session=e.session,
         duree=e.duree,
         coefficient=e.coefficient,
+        extrait=e.extrait or "",
         gratuit=e.gratuit,
         statut=e.statut,
         filieres=e.filieres,
         corrige_disponible=e.corrige_disponible,
+    )
+
+
+def _covered_epreuve_ids(db: Session, user_id: str):
+    """Sous-requête des ids d'épreuves PAYANTES couvertes par un abonnement
+    actif de cet utilisateur — dérive de la règle unique
+    `store.covered_epreuves_condition` (miroir de `has_access`). Permet de
+    filtrer "Ouvert"/"Payant" AVANT la pagination serveur (bug corrigé :
+    le filtrage se faisait côté client APRÈS pagination, une page pouvait
+    afficher moins de cartes que demandé)."""
+    return (
+        db.query(EpreuveORM.id)
+        .join(SubscriptionORM, store.covered_epreuves_condition(db, user_id))
+        .filter(EpreuveORM.gratuit.is_(False))
     )
 
 
@@ -54,10 +80,14 @@ def _apply_filters(
     q: Optional[str],
     corrige: Optional[str],
     acces_type: Optional[str],
+    user_id: Optional[str] = None,
 ):
     """Applique les filtres combinables du catalogue (série via jointure
     many-to-many, matière, année, évaluation, présence d'un corrigé, accès
-    gratuit/payant) à une requête épreuves existante."""
+    gratuit/payant/ouvert) à une requête épreuves existantes. "Ouvert"
+    (payante déjà couverte par un abonnement actif) et "Payant" (payante
+    non couverte) nécessitent l'utilisateur courant — sans session, les
+    deux se ramènent respectivement à « aucune » / « toutes payantes »."""
     query = query.filter(EpreuveORM.statut == "publie")
     if filiere:
         query = query.join(EpreuveFiliereORM, EpreuveFiliereORM.epreuve_id == EpreuveORM.id).filter(
@@ -82,10 +112,16 @@ def _apply_filters(
             EpreuveFileORM.format == "md",
         )
         query = query.filter(~EpreuveORM.id.in_(corrige_subquery))
-    if acces_type == "gratuit":
-        query = query.filter(EpreuveORM.gratuit.is_(True))
-    elif acces_type == "payant":
-        query = query.filter(EpreuveORM.gratuit.is_(False))
+    if acces_type in ("gratuit", "ouvert", "payant"):
+        query = query.filter(EpreuveORM.gratuit.is_(acces_type == "gratuit"))
+    if acces_type == "ouvert":
+        if user_id:
+            query = query.filter(EpreuveORM.id.in_(_covered_epreuve_ids(db, user_id)))
+        else:
+            # Pas de session : aucune épreuve payante n'est "ouverte".
+            query = query.filter(sql_false())
+    elif acces_type == "payant" and user_id:
+        query = query.filter(~EpreuveORM.id.in_(_covered_epreuve_ids(db, user_id)))
     return query.distinct()
 
 
@@ -150,12 +186,16 @@ def list_epreuves(
     limit: int = 24,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user=Depends(optional_user),
 ) -> list[EpreuveListItem]:
     """Catalogue filtré (page Catalogue), paginé (`limit`/`offset`, défaut
     24 par page). `classe` cadre la navigation (Accueil → Classe →
     catalogue) ; `q` est au contraire une recherche GLOBALE qui ignore la
     classe courante. Ne retourne que les épreuves publiées, triées par
-    année décroissante puis matière."""
+    année décroissante puis matière. La route est PUBLIQUE mais accepte une
+    session élève : le filtre `acces_type="ouvert"|"payant"` en a besoin
+    pour distinguer les épreuves payantes couvertes par un abonnement actif
+    (résolu côté serveur, AVANT pagination)."""
     query = _apply_filters(
         db,
         db.query(EpreuveORM),
@@ -166,6 +206,7 @@ def list_epreuves(
         None,
         corrige,
         acces_type,
+        user_id=user.id if user else None,
     )
     if q:
         query = _search_filter(db, query, q)
@@ -249,20 +290,27 @@ def count_epreuves(
 def get_epreuve(
     epreuve_id: str,
     db: Session = Depends(get_db),
-    user=Depends(require_user),
+    user=Depends(optional_user),
 ) -> EpreuveDetail:
     """Détail d'une épreuve : métadonnées + contenu Markdown chargé depuis
     le stockage objet (sujet ET corrigé dans la même réponse) + images
-    d'illustration (URLs d'accès contrôlé `/api/files/{id}`). Vérifie
-    l'accès (gratuit ou abonnement actif couvrant) et enregistre la
-    consultation dans l'historique."""
+    d'illustration (URLs d'accès contrôlé `/api/files/{id}`).
+
+    MODE VISITEUR (sans session) : les épreuves GRATUITES sont consultables
+    par tous (vitrine freemium) — aucune consultation n'est alors
+    enregistrée, l'historique restant une fonctionnalité des comptes. Une
+    épreuve payante exige une connexion (401, distinct du 403 « abonnement
+    requis » d'un utilisateur connecté non couvert)."""
     e = db.query(EpreuveORM).filter(EpreuveORM.id == epreuve_id).one_or_none()
     if not e or e.statut != "publie":
         raise HTTPException(404, "Épreuve introuvable")
-    if not store.has_access(db, user.id, e):
-        raise HTTPException(403, "Accès non autorisé — un abonnement est requis")
-
-    store.record_consultation(db, user.id, epreuve_id)
+    if user is None:
+        if not store.is_gratuit(e):
+            raise HTTPException(401, "Connecte-toi pour consulter cette épreuve payante")
+    else:
+        if not store.has_access(db, user.id, e):
+            raise HTTPException(403, "Accès non autorisé — un abonnement est requis")
+        store.record_consultation(db, user.id, epreuve_id)
 
     return EpreuveDetail(
         **_to_list_item(e).model_dump(),
@@ -279,6 +327,10 @@ def get_epreuve(
                 format=f.format,
                 filename=f.filename,
                 url=signing.signed_file_url(f.id),
+                size_bytes=f.size_bytes,
+                width=f.width,
+                height=f.height,
+                mime_type=f.mime_type,
             )
             for f in e.images
         ],
@@ -286,14 +338,6 @@ def get_epreuve(
 
 
 # ---------- Conversations ----------
-
-def _get_epreuve_or_404(db: Session, epreuve_id: str) -> EpreuveORM:
-    """Récupère une épreuve par id ou lève 404."""
-    e = db.query(EpreuveORM).filter(EpreuveORM.id == epreuve_id).one_or_none()
-    if not e:
-        raise HTTPException(404, "Épreuve introuvable")
-    return e
-
 
 @router.get("/{epreuve_id}/conversations", response_model=list[ConversationOut])
 def list_conversations(
@@ -314,8 +358,12 @@ def create_conversation(
 ) -> ConversationOut:
     """Crée une nouvelle discussion (onglet) sur cette épreuve — 409 si le
     plafond de 5 discussions actives par (utilisateur, épreuve) est déjà
-    atteint."""
-    _get_epreuve_or_404(db, epreuve_id)
+    atteint. Garde serveur du consentement : un utilisateur ayant REFUSÉ le
+    stockage de ses conversations IA (consent_ia=False) n'en a aucune
+    persistée — 403 (le frontend fonctionne alors en mode éphémère)."""
+    if user.consent_ia is False:
+        raise HTTPException(403, "Tu as refusé le stockage de tes conversations IA — révoque ou modifie ton choix dans ton profil.")
+    get_epreuve_or_404(db, epreuve_id)
     try:
         conv = store.create_conversation(db, user.id, epreuve_id, payload.contexte, payload.label)
     except ValueError as exc:
@@ -367,3 +415,84 @@ def delete_conversation(
     conv = _get_conversation_or_404(db, user.id, epreuve_id, conv_id)
     store.delete_conversation(db, conv)
     return {"ok": True}
+
+
+# ---------- Notes & signalements ----------
+
+MOTIFS_SIGNALEMENT = (
+    "contenu_illisible",
+    "erreur_enonce",
+    "corrige_manquant",
+    "image_cassee",
+    "autre",
+)
+
+
+@router.post("/{epreuve_id}/notes")
+def create_note(
+    epreuve_id: str,
+    payload: NoteIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_user),
+) -> dict:
+    """Crée une note personnelle de l'utilisateur sur cette épreuve (rédaction
+    manuelle ou réponse de l'assistant sauvegardée). Garde serveur du
+    consentement : un utilisateur ayant REFUSÉ le stockage de ses notes
+    (consent_notes=False) ne peut pas en créer — 403."""
+    if user.consent_notes is False:
+        raise HTTPException(403, "Tu as refusé le stockage de tes notes — révoque ou modifie ton choix dans ton profil.")
+    e = get_epreuve_or_404(db, epreuve_id)
+    note = NoteORM(
+        user_id=user.id,
+        epreuve_id=e.id,
+        cible=payload.cible if payload.cible in ("sujet", "corrige") else "sujet",
+        contexte_extrait=payload.contexte_extrait,
+        contenu=payload.contenu,
+    )
+    db.add(note)
+    db.commit()
+    return {
+        "id": note.id,
+        "epreuve_id": note.epreuve_id,
+        "cible": note.cible,
+        "contexte_extrait": note.contexte_extrait,
+        "contenu": note.contenu,
+        "created_at": note.created_at,
+        "updated_at": note.updated_at,
+    }
+
+
+@router.post("/{epreuve_id}/signalements")
+def create_signalement(
+    epreuve_id: str,
+    payload: SignalementIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_user),
+) -> dict:
+    """Signale un problème sur cette épreuve (contenu illisible, erreur
+    d'énoncé, corrigé manquant, image cassée, autre). Un même utilisateur ne
+    peut pas ouvrir deux fois le même motif sur la même épreuve (409)."""
+    get_epreuve_or_404(db, epreuve_id)
+    if payload.motif not in MOTIFS_SIGNALEMENT:
+        raise HTTPException(400, "Motif de signalement inconnu")
+    doublon = (
+        db.query(SignalementORM)
+        .filter(
+            SignalementORM.user_id == user.id,
+            SignalementORM.epreuve_id == epreuve_id,
+            SignalementORM.motif == payload.motif,
+            SignalementORM.statut == "ouvert",
+        )
+        .one_or_none()
+    )
+    if doublon:
+        raise HTTPException(409, "Tu as déjà signalé ce problème sur cette épreuve — il est en attente de traitement.")
+    row = SignalementORM(
+        user_id=user.id,
+        epreuve_id=epreuve_id,
+        motif=payload.motif,
+        message=payload.message,
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": row.id}

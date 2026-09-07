@@ -46,6 +46,84 @@ déploiement. La base de développement (`backend/data/bacprep.db`) a été
 régénérée : les tables et le modèle de données changent profondément
 (`epreuve_files`, `import_jobs`, `subscriptions.classe`...).
 
+## 🔒 Durcissement sécurité (sept. 2026) — variables d'environnement
+
+Suite à la revue de code complète, les points suivants ont été corrigés ;
+les nouvelles variables sont documentées dans `backend/.env.example` :
+
+- `ENV=prod` (positionné dans `render.yaml`) : cookie de session `Secure`,
+  refus du jeton admin d'exemple (`admin123`) — à changer de toute façon ;
+- `FILE_URL_SECRET` : clé HMAC des URLs signées de fichiers — sinon
+  dérivée d'`ADMIN_TOKEN` ; les jetons sont valables 1 h (régénérés à
+  chaque chargement du détail) ;
+- `AUTH_MODE=google` : `/api/auth/mock-login` est REFUSÉ côté serveur
+  (fini la connexion par simple email) ;
+- `POST /api/payments/simulate-webhook` exige maintenant la session de
+  l'utilisateur propriétaire du paiement ;
+- rate-limit sur le login admin (5/min/IP, désactivable en test via
+  `LOGIN_RATE_LIMIT=0`) ;
+- catch-all SPA confiné à `frontend/dist` (path traversal fermé), SVG
+  refusé à l'upload et servi en pièce jointe.
+
+Limitation connue : la recherche texte est insensible aux accents sous
+SQLite (dev) mais pas sous PostgreSQL (prod) — à traiter si nécessaire
+par une colonne normalisée à l'écriture.
+
+**Tests** : suite pytest `backend/tests/` (68 tests — `cd backend &&
+.venv/Scripts/python -m pytest tests -q`), tests frontend `npx vitest
+run`. Le back-office backend est découpé en `routers/admin_{misc,
+epreuves,import}.py` ; la règle de couverture d'abonnement a une source
+unique (`store.covered_epreuves_condition`).
+
+## 🆓 Mode visiteur, consentement & gouvernance admin (sept. 2026)
+
+Vague d'évolutions alignée sur les pratiques des produits de référence
+(freemium « vitrine », consentement granulaire type RGPD, back-office
+centré utilisateurs) — détail complet au module 16 du cahier des charges :
+
+- **Épreuves gratuites consultables SANS compte** : `GET /api/epreuves/{id}`
+  accepte le visiteur pour une épreuve gratuite (aucune consultation
+  enregistrée — l'historique reste une fonctionnalité de compte) ; une
+  épreuve payante renvoie 401 au visiteur (carte « connexion / abonnement »
+  dans le lecteur) et 403 à un connecté non couvert. Assistant, notes,
+  sélection & signalements sont masqués côté lecteur et refusés côté API
+  sans session.
+- **Consentement à la connexion** (révocable depuis le profil) :
+  `users.consent_ia` / `users.consent_notes` (NULL = pas encore demandé —
+  modale affichée au premier login). Refus IA → assistant éphémère (aucune
+  persistance, voie SSE sans `conversation_id`) ; refus notes → fonction
+  masquée + garde serveur 403. Ancien `consent_given_at` auto-posé à la
+  création : abandonné.
+- **Admin** : lien et page `/admin` réservés aux comptes connectés dont
+  l'email est dans `ADMIN_EMAILS` (`is_admin` calculé serveur, liste jamais
+  exposée) ; la console reste protégée par `ADMIN_TOKEN` + liste blanche à
+  chaque appel. **Déconnexion automatique uniquement après avoir quitté la
+  console** : la page ouverte envoie un battement de cœur toutes les 30 s
+  qui maintient le verrou ; le délai `ADMIN_SESSION_TIMEOUT_MINUTES`
+  (défaut **3**) s'applique une fois la page fermée ou quittée.
+- **Table Utilisateurs** du back-office : identité déclarée, profil,
+  consentements, compteurs d'usage (notes, discussions IA, consultations,
+  abonnements actifs, dépenses) — aucune donnée secrète (aucun mot de passe
+  ni code mobile money n'est stocké dans le produit). Actions **bannir**
+  (session tuée + kick-out WebSocket, login refusé 403), **débannir**,
+  **supprimer** (effacement de toutes les données personnelles). La
+  métrique « Utilisateurs » exclut les emails de la liste blanche admin.
+- **Audit & activité explicites** : les évènements du journal portent le
+  détail de l'action (champs modifiés, fichier supprimé, métadonnées de
+  l'épreuve supprimée…) ; l'id d'épreuve du journal est cliquable (ouvre
+  l'épreuve dans la section Épreuves) ; l'activité du profil est cliquable
+  (épreuve → lecteur ; discussion IA → lecteur `?conv={id}` qui rouvre le
+  bon onglet). Bug corrigé : les documents `sujet.md`/`corrige.md`
+  n'apparaissent plus comme des images dans le détail admin (réponse
+  séparée `assets` (images) / `documents`).
+- **Forfaits** : la page `/abonnement` est publique (tarifs consultables en
+  visiteur, souscription réservée aux comptes avec retour automatique) ;
+  chaque forfait est une carte (libellé, prix, description).
+- **Démonstration** : `python -m scripts_dev.seed_epreuves_payantes` ajoute
+  deux épreuves PAYANTES publiées pour éprouver le paywall. Migration :
+  `python -m scripts_dev.migrate_2026_09` (colonnes `users` : `consent_ia`,
+  `consent_notes`, `banni`, `banni_motif`…).
+
 ## Démarrage local
 
 ### Backend
@@ -84,29 +162,48 @@ cd ../backend && uvicorn app.main:app --port 8000
 Une fois `frontend/dist` présent, le backend le sert directement sur `/`
 (voir `DEPLOIEMENT.md`).
 
+> 🔑 **Obtenir les identifiants des services externes** (connexion Google,
+> Cloudflare R2, clés Gemini/Groq, génération des secrets) : guide pas-à-pas
+> dans [`DEPLOIEMENT.md`](DEPLOIEMENT.md).
+
+## Parcours de démonstration — visiteur
+
+1. Ouvrir `http://localhost:5173` SANS se connecter : l'accueil propose la
+   sélection de niveaux (Secondaire cliquable, Primaire verrouillé) et la
+   recherche globale.
+2. Ouvrir une épreuve **gratuite** : lecture complète, filigrane
+   « Consultation invitée », sans assistant ni notes (fonctions compte).
+3. Ouvrir une épreuve **payante** (seed `seed_epreuves_payantes`) : carte
+   « connexion / voir les abonnements ».
+4. `/abonnement` : grille des forfaits visible en visiteur ; « Se connecter
+   pour souscrire » ramène à la page après connexion.
+
 ## Parcours de démonstration — élève
 
-1. Ouvrir `http://localhost:5173` : l'accueil PUBLIC propose les classes du
-   secondaire (cartes sans épreuve désactivées) et une recherche globale.
-2. Cliquer sur « Terminale » : le catalogue de la classe, avec filtres
-   dynamiques (série, matière, année, évaluation).
-3. La recherche globale (« histoire ») affiche des résultats de TOUTES les
-   classes, indépendamment de la navigation courante.
-4. Ouvrir une épreuve gratuite directement ; une épreuve payante redirige
-   vers `/connexion` (navigation publique) puis vers l'abonnement.
-5. Choisir un moyen de paiement → "Continuer vers le paiement" → simuler
-   la confirmation du webhook.
-6. Sélectionner un passage de texte → bouton flottant → poser une question
-   à l'assistant (mode démonstration si aucune clé Gemini/Groq n'est
-   configurée).
-7. Page Profil → voir l'abonnement actif (scopé à sa classe), l'annuler.
+1. Se connecter (mode simulé, n'importe quel email/nom) : la **modale de
+   consentement** demande le stockage des conversations IA et des notes
+   (accepter, refuser partiellement, ou refuser tout — modifiable au profil).
+2. Accueil : la rubrique **Consultées récemment** apparaît dès la première
+   consultation (fonctionnalité compte).
+3. Ouvrir une épreuve gratuite puis sélectionner un passage : « Demander »
+   (encre) et « Prendre une note » (vert) ; drapeau rouge pour signaler un
+   problème. Les onglets de l'assistant se dédoublonnent (« Discussion
+   générale 2 »…).
+4. Choix d'un forfait sur `/abonnement` → paiement simulé (webhook) →
+   ouverture de l'épreuve payante.
+5. Profil → onglet **Activité** : entrées enrichies (classe, séries) et
+   cliquables (épreuve, discussion) ; rubrique **Mes données** pour révoquer
+   un consentement.
 
 ## Parcours de démonstration — admin
 
-1. Aller sur `/admin`, se connecter avec l'email listé dans `ADMIN_EMAILS`
-   et le jeton `ADMIN_TOKEN` (`admin123` par défaut).
+1. Se connecter d'abord avec un email listé dans `ADMIN_EMAILS` (le lien
+   « Admin » n'apparaît que pour ces comptes), ouvrir `/admin` puis se
+   connecter avec le jeton `ADMIN_TOKEN` (`admin123` par défaut).
 2. Créer une épreuve : selects Niveau/Classe/Évaluation, séries par puces
-   (multi-sélection), sujet/corrigé en Markdown, upload d'images.
+   (multi-sélection), sujet/corrigé en Markdown, upload d'images (les
+   documents `sujet.md`/`corrige.md` apparaissent en LISTE, séparés des
+   images).
 3. Publier (nécessite un sujet et au moins une série).
 4. Onglet **Import massif** : uploader une archive zip d'un dossier
    organisé `{annee}/{classe}/{matiere}/*.md` — rapport détaillé à la fin
@@ -114,6 +211,11 @@ Une fois `frontend/dist` présent, le backend le sert directement sur `/`
    `python -m app.scripts.importer --dir backend/data/imports`.
 5. Relire les épreuves importées (elles arrivent en brouillon) puis les
    publier.
+6. Onglet **Utilisateurs** : table par élève (consentements, compteurs,
+   dépenses) avec bannir/débannir/supprimer ; le journal d'audit trace tout
+   (champs modifiés, fichiers supprimés) et l'id d'épreuve y est cliquable.
+   La session admin se ferme automatiquement après
+   `ADMIN_SESSION_TIMEOUT_MINUTES` (défaut 3 min) d'inactivité.
 
 ## Import massif — format attendu
 
@@ -297,6 +399,56 @@ identifiée quand elle a pu être déterminée avec certitude).
 32. Filtre "Accès" du catalogue enrichi d'un quatrième statut, "Ouvert" (en
     plus de Tous/Gratuit/Payant).
 
+### Série 6 — vague d'améliorations 2026-09 (UI, bugs connus, fonctionnalités)
+
+33. **Bugs connus du README corrigés** :
+    - Isolation des blocs `$$...$$` : `lib/latex.ts` réécrit en machine à
+      états ligne par ligne (les blocs de code fencés restent intacts,
+      plusieurs blocs par ligne gérés, ordre de lecture conservé, `$$` non
+      refermé restitué tel quel) — couverte par tests vitest.
+    - Filtre "Ouvert"/"Payant" : résolu côté SERVEUR avant pagination
+      (sous-requête SQL miroir de `store.has_access`) ; le catalogue n'applique
+      plus de filtrage client post-pagination — chaque page affiche désormais
+      exactement `PAGE_SIZE` cartes quand il y a assez de résultats.
+34. **Polish UI systématisé** : règles de design documentées en tête de
+    `index.css` (arrondis, échelle z-index) ; badges unifiés via `MetaBadge`
+    (variantes tag/pill) ; couleurs hors tokens éradiquées (pastilles
+    opérateurs, ombre du lanceur assistant → `.halo-highlight` sur token,
+    `text-white` → `text-paper`) ; libellés de filtres non répétés ; tailles
+    mono harmonisées ; verrous de contraste mutualisés (`.verrou-*`) ;
+    filigrane avec `useId()`.
+35. **Accueil en deck séquentiel** : cartes de niveaux empilées (effet paquet
+    de copies) ; le choix d'un niveau révèle les cartes de classes (bouton
+    retour) — plus tout affiché en même temps ; `prefers-reduced-motion`
+    respecté.
+36. **Assistant nommé "Tuteur IA Prep"** : en-tête dédié, réponses signées
+    "Assistant Pédagogique", bulles avec nom + avatar initiales (élève) /
+    robot, onglets auto-renommés à la première question, contexte entièrement
+    repliable pour laisser la place à la discussion.
+37. **Notes personnelles** : sélectionner un passage → « Prendre une note » ;
+    les réponses de l'assistant peuvent être sauvegardées en note depuis le
+    panneau ; consultation/modification/suppression dans le profil (onglet
+    « Mes notes »). Tables et endpoints dédiés (persisté en base).
+38. **Profil étendu + activité** : niveau, classe, établissement renseignables ;
+    onglet « Activité » (connexions, consultations, abonnements, paiements,
+    notes, discussions IA).
+39. **Signalements** : bouton drapeau dans le lecteur (motif + message) ;
+    traitement dans le back-office (onglet « Signalements », marquer résolu).
+40. **Raccourcis clavier du lecteur** : S = sujet, C = corrigé, N = nouvelle
+    note (ignorés dans les champs de saisie) ; icônes sur le switch
+    Sujet/Corrigé.
+41. **Back-office enrichi** : puces de statut avec compteurs ("Brouillon
+    (50)"...), vignettes images avec dimensions/poids (`object-contain`),
+    console de journal EN DIRECT pendant l'import massif, statistiques
+    complétées (stockage objet, revenus par mois, consultations, notes,
+    discussions IA) avec graphiques maison (barres + anneau SVG), journal
+    d'audit complet (action, auteur, détail).
+42. **Divers** : skeletons de chargement (catalogue, lecteur) ; extraits de
+    2 lignes + métadonnées sur les cartes du catalogue ; descriptions des
+    portées d'abonnement ; migration idempotente
+    `backend/scripts_dev/migrate_2026_09.py` (nouveaux champs + backfill
+    extraits/dimensions) ; `httpx` → `httpx2` (dépréciation du TestClient).
+
 
 ## Réponses en streaming (activé par défaut)
 
@@ -333,8 +485,7 @@ nettement plus réactif, en particulier sur une connexion mobile lente
 | Ingestion PDF automatique | Hors périmètre : les épreuves sont exclusivement Markdown + images (voir prompt d'amélioration). |
 | Application Android (Capacitor) | Hors périmètre de ce prototype ; note d'intégration dans `PROMPT_DESIGN_BULLETIN_OFFICIEL.md` §7. |
 | Comptes admin multi-rôles | Un seul niveau "admin", restreint par liste d'emails. |
-| Filtre "Ouvert"/"Payant" du catalogue + pagination | Le statut "Ouvert" est calculé côté client après la pagination serveur (24 épreuves/page) : une page peut afficher moins de 24 cartes une fois filtrée si "Ouvert" ou "Payant" est rare dans cette page. "Voir plus" reste basé sur la présence de données côté serveur, pas sur le nombre de cartes affichées après ce filtre. |
-| Isolation automatique des blocs `$$...$$` | `lib/latex.ts` force chaque bloc `$$...$$` sur ses propres lignes pour que `remark-math` le reconnaisse — best-effort, pas un vrai parseur LaTeX ; certaines constructions très inhabituelles peuvent encore échapper à cette normalisation. |
+| Isolation automatique des blocs `$$...$$` | `lib/latex.ts` normalise les délimiteurs en machine à états (tests vitest) — reste best-effort, pas un vrai parseur LaTeX : des constructions très inhabituelles peuvent encore échapper. |
 
 ## Structure du projet
 
@@ -348,5 +499,7 @@ que ce projet suit.
   backend, modèle de données, tests).
 - `PROMPT_DESIGN_BULLETIN_OFFICIEL.md` — spécification visuelle faisant
   autorité (remplace la section 6.1 du document précédent).
-- `DEPLOIEMENT.md` + `render.yaml` — déploiement.
+- `DEPLOIEMENT.md` + `render.yaml` — déploiement, y compris **l'obtention
+  pas-à-pas des identifiants externes** (connexion Google, Cloudflare R2,
+  clés Gemini/Groq, génération des secrets).
 - `PAIEMENT.md` — intégration du paiement réel.

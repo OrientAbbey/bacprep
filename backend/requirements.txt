@@ -1,14 +1,19 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-pydantic
-pydantic-settings
-httpx
-python-dotenv
-google-auth
-Pillow
-psycopg2-binary
-python-multipart
-websockets
-requests
-boto3
+# Versions épinglées selon l'environnement de développement testé
+# (backend/.venv — régénérer avec `pip freeze` lors d'une montée de version).
+# Correction : `httpx2` (typo, paquet inexistant) → `httpx` ; pytest ajouté
+# pour la suite backend/tests/.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+SQLAlchemy==2.0.52
+pydantic==2.13.5
+pydantic-settings==2.15.0
+httpx==0.28.1
+python-dotenv==1.2.3
+google-auth==2.57.1
+Pillow==12.3.0
+psycopg2-binary==2.9.12
+python-multipart==0.0.32
+websockets==17.1
+requests==2.34.2
+boto3==1.43.89
+pytest==9.1.1

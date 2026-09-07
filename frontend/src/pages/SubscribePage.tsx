@@ -1,22 +1,47 @@
-import { BookOpen, Calendar, GraduationCap, Layers } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { BookOpen, Calendar, CheckCircle2, GraduationCap, Layers } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { EpreuveListItem, Filtres } from "../api/types";
+import { useAuth } from "../auth/AuthProvider";
 import { Combobox } from "../components/Combobox";
 import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
 import { foldText } from "../lib/text";
+
+/** Fait défiler doucement un élément nouvellement apparu dans le champ de
+ * vision (respecte prefers-reduced-motion : déplacement instantané). */
+function scrollIntoViewDoucement(el: HTMLElement | null) {
+  if (!el) return;
+  const reduced =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+}
 
 type Scope = "epreuve" | "matiere_annee" | "matiere" | "annee" | "filiere";
 
 interface Pricing {
   pricing: Record<Scope, number>;
   labels: Record<Scope, string>;
+  descriptions: Record<Scope, string>;
   duree_jours: number;
 }
 
 const SCOPES: Scope[] = ["epreuve", "matiere_annee", "matiere", "annee", "filiere"];
+
+/** Champs de sélection requis par scope, et leur traduction en paramètre
+ * API — SOURCE DE VÉRITÉ UNIQUE pour le garde anti-course du compte
+ * d'épreuves ET la complétude de la sélection (ajouter un scope ou un
+ * champ ne se fait plus qu'à un seul endroit). La portée "epreuve" transmet
+ * `epreuve_id` au lieu de classe/série (toute portée large est achetée
+ * DANS LE CADRE D'UNE CLASSE). */
+const CHAMPS_PAR_SCOPE: Record<Scope, Record<string, string>> = {
+  epreuve: { epreuveId: "epreuve_id" },
+  matiere_annee: { classe: "classe", filiere: "filiere", matiere: "matiere", annee: "annee" },
+  matiere: { classe: "classe", filiere: "filiere", matiere: "matiere" },
+  annee: { classe: "classe", filiere: "filiere", annee: "annee" },
+  filiere: { classe: "classe", filiere: "filiere" },
+};
 const PROVIDERS = [
   { value: "orange", label: "Orange Money" },
   { value: "mtn", label: "MTN Mobile Money" },
@@ -24,9 +49,14 @@ const PROVIDERS = [
 
 /**
  * Page de souscription. Le type d'abonnement (scope) se choisit en
- * premier ; la classe (requise pour toute portée autre que "épreuve
- * précise" — un abonnement est acheté dans le cadre d'une classe), la
- * série, et le cas échéant matière/année en découlent.
+ * premier (grille de cartes : libellé, prix, description) ; la classe
+ * (requise pour toute portée autre que "épreuve précise" — un abonnement
+ * est acheté dans le cadre d'une classe), la série, et le cas échéant
+ * matière/année en découlent.
+ *
+ * La page est PUBLIQUE (pattern Stripe/Notion : on présente l'offre à
+ * tout le monde) ; seule la souscription exige un compte — le visiteur
+ * est renvoyé vers la connexion avec retour automatique.
  *
  * Deux garde-fous empêchent de proposer un paiement pour un contenu déjà
  * accessible :
@@ -38,6 +68,9 @@ const PROVIDERS = [
  */
 export function SubscribePage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [filtres, setFiltres] = useState<Filtres>({ filieres: [], matieres: [], annees: [], evaluations: [] });
   const [epreuves, setEpreuves] = useState<EpreuveListItem[]>([]);
@@ -55,10 +88,14 @@ export function SubscribePage() {
   const [step, setStep] = useState<"form" | "pending" | "confirmed">("form");
   const [reference, setReference] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [erreurPricing, setErreurPricing] = useState(false);
 
   useEffect(() => {
-    api.get<Pricing>("/api/pricing").then(setPricing);
-    api.get<EpreuveListItem[]>("/api/epreuves").then(setEpreuves);
+    api.get<Pricing>("/api/pricing").then(setPricing).catch(() => setErreurPricing(true));
+    // limit=100 (plafond serveur) : la page n'a besoin que du libellé des
+    // épreuves proposables — charger TOUT le catalogue était incohérent
+    // avec le catalogue paginé à 24.
+    api.get<EpreuveListItem[]>("/api/epreuves?limit=100").then(setEpreuves).catch(() => {});
 
     // Préremplissage depuis le catalogue (clic sur une épreuve verrouillée)
     const pre = searchParams.get("epreuve_id");
@@ -86,73 +123,56 @@ export function SubscribePage() {
     return abonnables.filter((e) => foldText(e.matiere).includes(q) || e.annee.includes(q));
   }, [epreuves, epreuveSearch]);
 
+  // Valeurs courantes des champs de sélection, indexables par nom de champ
+  // (cf. CHAMPS_PAR_SCOPE) — redériver des états listés dans les deps.
+  const selection: Record<string, string> = { epreuveId, classe, filiere, matiere, annee };
+
   useEffect(() => {
+    // Garde anti-course : les deux requêtes s'enchaînent en await — changer
+    // de scope/classe/filière entre-temps ne doit pas afficher le
+    // count/dejaCouvert d'une sélection antérieure (page de paiement !).
+    let stale = false;
     async function refresh() {
+      const complete = Object.keys(CHAMPS_PAR_SCOPE[scope]).every((champ) => Boolean(selection[champ]));
+      if (!complete) {
+        setCount(null);
+        setDejaCouvert(false);
+        return;
+      }
       const baseParams: Record<string, string> = {};
-      if (scope === "epreuve") {
-        if (!epreuveId) {
-          setCount(null);
-          setDejaCouvert(false);
-          return;
-        }
-        baseParams.epreuve_id = epreuveId;
-      } else {
-        // Toute portée large est achetée DANS LE CADRE D'UNE CLASSE.
-        if (!classe || !filiere) {
-          setCount(null);
-          setDejaCouvert(false);
-          return;
-        }
-        baseParams.classe = classe;
-        baseParams.filiere = filiere;
-        if (scope === "matiere_annee") {
-          if (!matiere || !annee) {
-            setCount(null);
-            setDejaCouvert(false);
-            return;
-          }
-          baseParams.matiere = matiere;
-          baseParams.annee = annee;
-        } else if (scope === "matiere") {
-          if (!matiere) {
-            setCount(null);
-            setDejaCouvert(false);
-            return;
-          }
-          baseParams.matiere = matiere;
-        } else if (scope === "annee") {
-          if (!annee) {
-            setCount(null);
-            setDejaCouvert(false);
-            return;
-          }
-          baseParams.annee = annee;
-        }
+      for (const [champ, param] of Object.entries(CHAMPS_PAR_SCOPE[scope])) {
+        baseParams[param] = selection[champ];
       }
 
       const countParams = new URLSearchParams(baseParams);
       const countRes = await api.get<{ count: number }>(`/api/epreuves/count?${countParams.toString()}`);
+      if (stale) return;
       setCount(countRes.count);
 
       const couvertParams = new URLSearchParams({ scope, ...baseParams });
       const couvertRes = await api.get<{ deja_couvert: boolean }>(
         `/api/subscriptions/deja-couvert?${couvertParams.toString()}`
       );
+      if (stale) return;
       setDejaCouvert(couvertRes.deja_couvert);
     }
-    refresh();
+    refresh().catch(() => {});
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, classe, filiere, matiere, annee, epreuveId]);
 
-  const selectionComplete =
-    scope === "epreuve"
-      ? Boolean(epreuveId)
-      : scope === "matiere_annee"
-      ? Boolean(classe && filiere && matiere && annee)
-      : scope === "matiere"
-      ? Boolean(classe && filiere && matiere)
-      : scope === "annee"
-      ? Boolean(classe && filiere && annee)
-      : Boolean(classe && filiere);
+  const selectionComplete = Object.keys(CHAMPS_PAR_SCOPE[scope]).every((champ) => Boolean(selection[champ]));
+
+  // Quand la carte récapitulative apparaît (sélection devenue complète) ou
+  // grandit au fil des choix, on l'amène doucement dans le champ de vision —
+  // sans ça, elle naissait SOUS le pli et l'élève devait chercher le scroll.
+  const recapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selectionComplete) scrollIntoViewDoucement(recapRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionComplete, scope, classe, filiere, matiere, annee, epreuveId]);
 
   /** Phrase de synthèse en langage naturel décrivant ce que la sélection
    * courante débloque — accompagne (sans le remplacer) le détail en
@@ -197,8 +217,23 @@ export function SubscribePage() {
 
   async function simulatePayment() {
     if (!reference) return;
-    await api.post("/api/payments/simulate-webhook", { reference_agregateur: reference });
-    setStep("confirmed");
+    try {
+      await api.post("/api/payments/simulate-webhook", { reference_agregateur: reference });
+      setStep("confirmed");
+    } catch {
+      setErreur("La confirmation du paiement a échoué — réessaie.");
+    }
+  }
+
+  if (erreurPricing) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction">
+        La grille tarifaire n'a pas pu être chargée.{" "}
+        <button type="button" onClick={() => window.location.reload()} className="underline">
+          Réessayer
+        </button>
+      </div>
+    );
   }
 
   if (!pricing) return <p className="text-sm text-slate">Chargement…</p>;
@@ -214,14 +249,14 @@ export function SubscribePage() {
             {scope === "epreuve" && epreuveId ? (
               <Link
                 to={`/epreuve/${epreuveId}`}
-                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-white"
+                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
               >
                 Ouvrir l'épreuve
               </Link>
             ) : (
               <Link
                 to="/catalogue"
-                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-white"
+                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
               >
                 Voir le catalogue
               </Link>
@@ -255,21 +290,37 @@ export function SubscribePage() {
         </div>
       ) : (
         <>
-          {/* Le type d'abonnement (scope) se choisit en premier */}
-          <div className="flex flex-wrap gap-2">
-            {SCOPES.map((s) => (
-              <button
-                key={s}
-                onClick={() => setScope(s)}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                  scope === s
-                    ? "bg-highlight text-highlight-ink"
-                    : "border border-ink-soft/25 text-ink-soft hover:border-highlight/50"
-                }`}
-              >
-                {pricing.labels[s]} — {pricing.pricing[s]} FCFA
-              </button>
-            ))}
+          {/* Le type d'abonnement se choisit dans une grille de cartes :
+              libellé + prix + description (le tarif le plus lisible en
+              un coup d'œil, au lieu de pills compactes). */}
+          <div role="radiogroup" aria-label="Type d'abonnement" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {SCOPES.map((s) => {
+              const actif = scope === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  role="radio"
+                  aria-checked={actif}
+                  onClick={() => setScope(s)}
+                  className={`flex flex-col rounded-lg border p-4 text-left transition-colors ${
+                    actif
+                      ? "border-highlight bg-highlight-soft/40"
+                      : "border-ink-soft/20 bg-paper-raised hover:border-highlight/50"
+                  } focus-visible:border-highlight`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="font-serif-brand text-base">{pricing.labels[s]}</span>
+                    {actif && <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" className="text-highlight" />}
+                  </span>
+                  <span className={`mt-1 font-mono-tag text-sm ${actif ? "text-ink" : "text-ink-soft"}`}>
+                    {pricing.pricing[s]} FCFA
+                    <span className="text-[10px] text-slate"> / {pricing.duree_jours} j</span>
+                  </span>
+                  <span className="mt-1.5 text-xs text-slate">{pricing.descriptions?.[s]}</span>
+                </button>
+              );
+            })}
           </div>
 
           {scope === "epreuve" ? (
@@ -315,17 +366,23 @@ export function SubscribePage() {
             </div>
           )}
 
-          {/* Carte récapitulative redessinée : bandeau prix mis en avant,
-              phrase de synthèse, puis le détail en tuiles à icônes plutôt
-              qu'un simple tableau à deux colonnes. */}
+          {/* Carte récapitulative : bandeau prix mis en avant, phrase de
+              synthèse, puis le détail en tuiles à icônes. Elle est amenée
+              dans le champ de vision dès qu'elle apparaît (voir effet
+              `recapRef` ci-dessus). */}
           {selectionComplete && (
-            <div className="overflow-hidden rounded-2xl border border-ink-soft/15 bg-paper-raised shadow-sm">
+            <div ref={recapRef} className="overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised shadow-sm">
               <div className="bg-highlight-soft px-6 py-5 text-center">
                 <p className="font-mono-tag text-[10px] text-ink-soft">Prix de l'abonnement</p>
                 <p className="font-serif-brand text-4xl text-ink">
                   {pricing.pricing[scope]} <span className="text-lg font-sans font-normal text-ink-soft">FCFA</span>
                 </p>
                 <p className="text-xs text-ink-soft">valable {pricing.duree_jours} jours</p>
+                {/* Description lisible de la portée choisie (2 lignes max),
+                    fournie par le backend — même vocabulaire partout. */}
+                {pricing.descriptions?.[scope] && (
+                  <p className="mx-auto mt-2 max-w-sm text-xs text-ink-soft">{pricing.descriptions[scope]}</p>
+                )}
               </div>
 
               <div className="space-y-4 p-5">
@@ -356,35 +413,51 @@ export function SubscribePage() {
 
                 {/* Révélation progressive : moyen de paiement uniquement si
                     la sélection couvre au moins une épreuve ET n'est pas
-                    déjà entièrement accessible (gratuite ou déjà abonnée). */}
+                    déjà entièrement accessible (gratuite ou déjà abonnée).
+                    Visiteur : la souscription exige un compte — CTA de
+                    connexion avec retour automatique vers cette page. */}
                 {count !== null && count > 0 && !dejaCouvert ? (
-                  <div className="space-y-3 border-t border-dashed border-ink-soft/20 pt-4">
-                    <div className="flex gap-2">
-                      {PROVIDERS.map((p) => (
-                        <button
-                          key={p.value}
-                          onClick={() => setProvider(p.value)}
-                          className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
-                            provider === p.value
-                              ? "border-ink"
-                              : "border-ink-soft/20 text-ink-soft hover:border-ink-soft/50"
-                          }`}
-                        >
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ background: p.value === "orange" ? "#C89B3C" : "#2F6E4F" }}
-                          />
-                          {p.label}
-                        </button>
-                      ))}
+                  !user ? (
+                    <div className="space-y-3 border-t border-dashed border-ink-soft/20 pt-4">
+                      <p className="text-sm text-ink-soft">
+                        La souscription nécessite un compte — tes abonnements suivent ton profil.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => navigate("/connexion", { state: { from: location } })}
+                        className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper hover:opacity-90"
+                      >
+                        Se connecter pour souscrire
+                      </button>
                     </div>
-                    <button
-                      onClick={startCheckout}
-                      className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper"
-                    >
-                      Continuer vers le paiement
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="space-y-3 border-t border-dashed border-ink-soft/20 pt-4">
+                      <div className="flex gap-2">
+                        {PROVIDERS.map((p) => (
+                          <button
+                            key={p.value}
+                            onClick={() => setProvider(p.value)}
+                            className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                              provider === p.value
+                                ? "border-ink"
+                                : "border-ink-soft/20 text-ink-soft hover:border-ink-soft/50"
+                            }`}
+                          >
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full ${p.value === "orange" ? "bg-highlight" : "bg-valide"}`}
+                            />
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={startCheckout}
+                        className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper"
+                      >
+                        Continuer vers le paiement
+                      </button>
+                    </div>
+                  )
                 ) : count !== null && dejaCouvert ? (
                   <p className="border-t border-dashed border-ink-soft/20 pt-4 text-sm text-valide">
                     Tu as déjà accès à ce contenu (gratuit ou déjà couvert par un abonnement actif) —
@@ -422,7 +495,7 @@ function InfoTile({
     <div className="flex items-start gap-2.5 rounded-lg border border-ink-soft/15 bg-paper p-3">
       <Icon size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-highlight" />
       <div className="min-w-0">
-        <p className="font-mono-tag text-[9px] text-ink-soft">{label}</p>
+        <p className="font-mono-tag text-[10px] text-ink-soft">{label}</p>
         <p className="truncate text-sm font-medium text-ink">{value}</p>
       </div>
     </div>
