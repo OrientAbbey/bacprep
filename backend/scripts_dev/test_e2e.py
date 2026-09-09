@@ -113,7 +113,7 @@ st, res = req(
 )
 print("checkout epreuve:", st, json.loads(res).get("montant"))
 ref = json.loads(res)["reference_agregateur"]
-st, res = req("POST", "/api/payments/simulate-webhook", {"reference_agregateur": ref})
+st, res = req("POST", "/api/payments/simulate-webhook", {"reference_agregateur": ref}, cookies=cookie)
 print("webhook:", st)
 
 st, res = req("GET", f"/api/epreuves/{paid['id']}", cookies=cookie)

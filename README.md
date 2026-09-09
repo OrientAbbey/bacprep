@@ -3,7 +3,8 @@
 Application d'annuaire d'épreuves du **secondaire camerounais** (6e →
 Terminale : séquences, compositions, BEPC, Probatoire, BAC, examens
 blancs...) : chaque épreuve est un fichier **Markdown + images** stocké
-dans un stockage objet (Cloudflare R2 en production), classé par
+dans un stockage objet S3-compatible (Tigris Data en production, par
+défaut), classé par
 niveau/classe/évaluation/matière/série en base. Navigation publique
 Accueil → Niveau → Classe → Catalogue, recherche globale, import massif
 (CLI ou zip admin), assistant IA contextuel, abonnements payants
@@ -16,7 +17,7 @@ pour les cibles de déploiement.
 ```text
 React/Vite ──HTTPS──► FastAPI
                         ├── SQLAlchemy → SQLite (dev) / PostgreSQL (prod)
-                        └── Storage Service → Cloudflare R2 (prod) / disque local (dev)
+                        └── Storage Service → bucket S3-compatible (prod) / disque local (dev)
                                               epreuves/{niveau}/{annee}/{epreuve_id}/
                                                 ├── sujet.md
                                                 ├── corrige.md
@@ -29,13 +30,14 @@ React/Vite ──HTTPS──► FastAPI
 - la base ne conserve que les métadonnées + `storage_key`, jamais le
   contenu ;
 - fichiers privés servis par `GET /api/files/{id}` (vérification des
-  droits, URL signées HMAC ; redirection vers URL signée R2 en prod).
+  droits, URL signées HMAC ; redirection vers URL signée du bucket en
+  production).
 
 ## ⚠️ Refonte v3 — classification secondaire complète, stockage objet, import massif
 
 Le projet a été refondu conformément à `architecture technique.txt` et au
 prompt d'amélioration : épreuves Markdown + images dans un stockage objet
-(local en dev, Cloudflare R2 en prod), classification complète
+(local en dev, bucket S3-compatible en prod), classification complète
 (niveau/classe/évaluation/séries multi-filières), navigation publique
 Accueil → Niveau → Classe → Catalogue avec recherche globale, abonnements
 scopés à la classe, import massif (CLI + upload zip admin), barre de
@@ -163,8 +165,8 @@ Une fois `frontend/dist` présent, le backend le sert directement sur `/`
 (voir `DEPLOIEMENT.md`).
 
 > 🔑 **Obtenir les identifiants des services externes** (connexion Google,
-> Cloudflare R2, clés Gemini/Groq, génération des secrets) : guide pas-à-pas
-> dans [`DEPLOIEMENT.md`](DEPLOIEMENT.md).
+> stockage objet S3-compatible, clés Gemini/Groq, génération des secrets) :
+> guide pas-à-pas dans [`DEPLOIEMENT.md`](DEPLOIEMENT.md).
 
 ## Parcours de démonstration — visiteur
 
@@ -500,6 +502,6 @@ que ce projet suit.
 - `PROMPT_DESIGN_BULLETIN_OFFICIEL.md` — spécification visuelle faisant
   autorité (remplace la section 6.1 du document précédent).
 - `DEPLOIEMENT.md` + `render.yaml` — déploiement, y compris **l'obtention
-  pas-à-pas des identifiants externes** (connexion Google, Cloudflare R2,
-  clés Gemini/Groq, génération des secrets).
+  pas-à-pas des identifiants externes** (connexion Google, stockage objet
+  S3-compatible, clés Gemini/Groq, génération des secrets).
 - `PAIEMENT.md` — intégration du paiement réel.

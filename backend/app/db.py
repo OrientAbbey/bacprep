@@ -24,7 +24,7 @@ DATA_DIR = BASE_DIR / "data"
 SUJETS_SEED_DIR = DATA_DIR / "epreuves" / "sujets"
 CORRIGES_SEED_DIR = DATA_DIR / "epreuves" / "corriges"
 # Racine du stockage objet en développement (STORAGE_BACKEND=local) — en
-# production le stockage est Cloudflare R2 et ce dossier ne sert plus.
+# production le stockage est un bucket S3-compatible et ce dossier ne sert plus.
 STORAGE_LOCAL_DIR = DATA_DIR / "storage"
 # Zone d'import massif : y déposer un dossier organisé {annee}/{classe}/
 # {matiere}/*.md puis lancer `python -m app.scripts.importer` (ou passer par
@@ -46,6 +46,15 @@ DEFAULT_SQLITE_URL = f"sqlite:///{(DATA_DIR / 'bacprep.db').as_posix()}"
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_SQLITE_URL)
 
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
+if not IS_SQLITE and "sslmode" not in DATABASE_URL:
+    # Les PostgreSQL managés (Supabase en tête) refusent les connexions sans
+    # chiffrement → le démarrage échouait avec « SSL required ». On force
+    # sslmode=require par défaut ; un Postgres local sans SSL peut le
+    # désactiver via DB_SSLMODE=disable.
+    _db_sslmode = os.getenv("DB_SSLMODE", "require")
+    _sep = "&" if "?" in DATABASE_URL else "?"
+    DATABASE_URL = f"{DATABASE_URL}{_sep}sslmode={_db_sslmode}"
 
 
 def _fold_for_search(value):

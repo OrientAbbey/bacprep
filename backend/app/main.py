@@ -62,11 +62,18 @@ MAX_HISTORIQUE = store.MAX_HISTORIQUE
 async def lifespan(app: FastAPI):
     """Crée les tables au démarrage (pas de migrations dans ce prototype —
     `Base.metadata.create_all` suffit) et importe le contenu de seed si la
-    table `epreuves` est vide."""
+    table `epreuves` est vide. Le seed n'est PAS bloquant : un échec de
+    stockage (bucket manquant, réseau…) est journalisé et le serveur
+    démarre quand même — l'import reste possible ensuite via l'admin."""
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         seed_database_if_empty(db)
+    except Exception:
+        log.exception(
+            "Seed du catalogue impossible au démarrage — le serveur démarre "
+            "sans contenu (vérifier le backend de stockage / le bucket)."
+        )
     finally:
         db.close()
     log.info("Démarrage backend — DATABASE_URL=%s", DATABASE_URL)

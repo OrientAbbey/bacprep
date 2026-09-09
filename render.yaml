@@ -1,8 +1,8 @@
 services:
   # Backend FastAPI (process persistant : WebSocket de kick-out, tâches
-  # de fond d'import massif). Les fichiers d'épreuves vivent dans
-  # Cloudflare R2 (STORAGE_BACKEND=r2) — le disque éphémère du service
-  # n'héberge plus de données persistantes.
+  # de fond d'import massif). Les fichiers d'épreuves vivent dans un
+  # stockage objet S3-compatible (STORAGE_BACKEND=s3) — le disque éphémère
+  # du service n'héberge plus de données persistantes.
   - type: web
     name: bacprep-web
     runtime: python
@@ -12,19 +12,34 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.5" # version épinglée (le défaut 3.14 peut casser des wheels)
       - key: ENV
         value: prod # cookie Secure, refus du jeton admin d'exemple
+      # Supabase : utiliser l'URL du POOLER Supavisor (port 6543, IPv4),
+      # PAS la connexion directe db.<ref>.supabase.co:5432 (IPv6-only, non
+      # routable depuis Render). Ex. :
+      # postgresql://postgres.<project_ref>:<mdp>@aws-0-<region>.pooler.supabase.com:6543/postgres
+      # Le sslmode=require est ajouté automatiquement par backend/app/db.py.
       - key: DATABASE_URL
-        sync: false # chaîne Supabase PostgreSQL (voir DEPLOIEMENT.md)
+        sync: false
       - key: STORAGE_BACKEND
-        value: r2
-      - key: R2_ACCOUNT_ID
+        value: s3
+      # Stockage objet S3-compatible — voir DEPLOIEMENT.md pour chaque
+      # fournisseur :
+      # - Tigris Data (défaut) : endpoint https://fly.storage.tigris.dev, région auto
+      # - Supabase Storage     : endpoint https://<ref>.supabase.co/storage/v1/s3, région du projet
+      # - Backblaze B2         : endpoint https://s3.<region>.backblazeb2.com, région du bucket
+      # Le bucket (privé) doit exister avant le premier démarrage.
+      - key: STORAGE_ENDPOINT_URL
         sync: false
-      - key: R2_ACCESS_KEY_ID
+      - key: STORAGE_REGION
         sync: false
-      - key: R2_SECRET_ACCESS_KEY
+      - key: STORAGE_ACCESS_KEY_ID
         sync: false
-      - key: R2_BUCKET
+      - key: STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_BUCKET
         sync: false
       - key: ADMIN_TOKEN
         generateValue: true

@@ -1,5 +1,10 @@
 backend/.venv/
-backend/data/
+backend/data/imports/
+backend/data/storage/
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+# backend/data/epreuves/ (sujets + corrigés de seed) EST versionné
 backend/logs/
 backend/.env
 frontend/node_modules/

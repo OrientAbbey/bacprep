@@ -4,7 +4,7 @@ Les images insérées dans le Markdown sont chargées par des balises
 ``<img>`` : selon le contexte (cross-origin en développement, intégration
 dans une vue), ces requêtes ne transportent pas toujours le cookie de
 session. Chaque référence de fichier est donc servie avec un jeton HMAC
-court (comme les presigned URLs de R2, version maison pour le backend) :
+court (comme les presigned URLs S3, version maison pour le backend) :
 ``GET /api/files/{id}?token=...`` est accepté sans session tant que le
 jeton est valide et récent — la vérification des droits proprement dite
 reste faite à la génération de l'URL (détail d'épreuve).

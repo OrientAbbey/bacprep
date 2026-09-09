@@ -2,7 +2,7 @@
 
 > **Obtention des identifiants** : ce guide contient, pour chaque service
 > externe, la marche à pas-à-pas pour obtenir les éléments à renseigner dans
-> l'environnement — connexion Google, stockage Cloudflare R2, clés de
+> l'environnement — connexion Google, stockage objet S3-compatible, clés de
 > l'assistant IA, secrets internes. Les variables elles-mêmes sont listées
 > dans `backend/.env.example`.
 
@@ -11,8 +11,8 @@
 ```text
 Frontend  → Render Static Site (ou servi par le backend, service unifié)
 Backend   → Render Web Service (FastAPI, process persistant : WebSocket)
-Database  → Supabase PostgreSQL (via DATABASE_URL)
-Files     → Cloudflare R2 (STORAGE_BACKEND=r2)
+Database  → Supabase PostgreSQL (via DATABASE_URL, pooler IPv4)
+Files     → Stockage objet S3-compatible (STORAGE_BACKEND=s3, cf. ci-dessous)
 Login     → Google Identity Services (AUTH_MODE=google)
 Code      → GitHub
 ```
@@ -22,7 +22,7 @@ Le stockage objet est désormais la **seule** source des fichiers d'épreuves
 métadonnées et les `storage_key` (ex.
 `epreuves/SECONDAIRE/2023/8f3a2c91/sujet.md`). En développement local, le
 backend `local` stocke ces fichiers sous `backend/data/storage/` avec la
-même sémantique — aucun compte Cloudflare n'est nécessaire pour développer.
+même sémantique — aucun compte cloud n'est nécessaire pour développer.
 
 ## Développement local
 
@@ -93,47 +93,64 @@ via `GET /api/auth/config`). Pour revenir au formulaire simulé de dev :
 💡 En cas d'erreur `origin_mismatch` au clic : l'origine exacte du navigateur
 (schéma + hôte + port) manque dans *Authorized JavaScript origins*.
 
-## Stockage Cloudflare R2 (production)
+## Stockage objet S3-compatible (production)
 
 Le stockage objet est la source unique des fichiers d'épreuves ; en dev,
-`STORAGE_BACKEND=local` suffit (aucun compte nécessaire). Pour la
-production :
+`STORAGE_BACKEND=local` suffit (aucun compte nécessaire). En production,
+**un seul et même client boto3** sert tous les fournisseurs S3-compatible —
+seules les variables `STORAGE_*` changent :
 
-1. **Compte Cloudflare** ([dash.cloudflare.com](https://dash.cloudflare.com)) —
-   R2 nécessite d'avoir enregistré un moyen de paiement (plan gratuit :
-   10 Go de stockage, sortie de données **gratuite**).
-2. **Activer R2** (*menu gauche → R2 Object Storage* → première activation).
-3. **Account ID** : visible sur la vue d'ensemble R2 (colonne de droite,
-   « Account ID ») → c'est `R2_ACCOUNT_ID`.
-4. **Créer le bucket** (*R2 → Create bucket*, ex. `bacprep-files`, région
-   auto) → c'est `R2_BUCKET`. Pas d'accès public, pas de règle CORS à
-   configurer : les fichiers restent privés et sont servis par URLs signées.
-5. **Créer le jeton S3** (*R2 → Manage API Tokens → Create API Token*) :
-   - permission : **Object Read & Write** ;
-   - scope : **limiter au bucket** créé ci-dessus ;
-   - valider : les **Access Key ID** et **Secret Access Key** affichés UNE
-     seule fois sont `R2_ACCESS_KEY_ID` et `R2_SECRET_ACCESS_KEY`.
+| Fournisseur | Endpoint (`STORAGE_ENDPOINT_URL`) | Région (`STORAGE_REGION`) | Offre gratuite |
+| --- | --- | --- | --- |
+| **Tigris Data** *(choisi par défaut)* | `https://fly.storage.tigris.dev` | `auto` | 5 Go, 10 000 requêtes écriture/mois, 100 000 GET/mois, **egress illimité à 0 $**, sans carte bancaire |
+| Supabase Storage | `https://<project_ref>.supabase.co/storage/v1/s3` | région du projet (ex. `eu-central-1`) | 1 Go + egress inclus, clés S3 générées dans le dashboard, sans carte bancaire |
+| Backblaze B2 | `https://s3.<region>.backblazeb2.com` | région du bucket (ex. `eu-central-003`) | 10 Go, egress libre jusqu'à 3× le stockage, clés = Application Key |
 
-6. **Configurer le backend** :
+Le bucket (ex. `bacprep`) doit être créé **privé** côté fournisseur AVANT le
+premier démarrage (l'application n'a pas le droit de créer les buckets, elle
+y écrit seulement). Les fichiers restent privés et sont servis par **URLs
+signées** temporaires : en backend objet (`s3`/`r2`), `GET /api/files/{id}`
+redirige (302) vers une URL signée courte — les identifiants du bucket ne
+quittent jamais le serveur et la charge de servir ne repose pas sur FastAPI.
+
+### Tigris Data (défaut)
+
+1. Compte sur [console.tigrisdata.com](https://console.tigrisdata.com) (aucune
+   carte bancaire requise) → créer un bucket (ex. `bacprep`, accès privé).
+2. Onglet *Access Keys* → générer une paire `Access Key ID` / `Secret`.
+3. Renseigner :
+   `STORAGE_ENDPOINT_URL=https://fly.storage.tigris.dev`, `STORAGE_REGION=auto`.
+
+### Supabase Storage
+
+1. **Project Settings → Storage → S3 Access Keys → Generate new key**
+   (accès serveur, contourne les politiques RLS — usage uniquement côté
+   backend).
+2. **Storage → New bucket** : nom = `STORAGE_BUCKET` (ex. `bacprep`),
+   Access control = **Private**.
+3. Renseigner : `STORAGE_ENDPOINT_URL=https://<project_ref>.supabase.co/storage/v1/s3`
+   et `STORAGE_REGION=<région du projet>` (visible dans le dashboard).
+
+### Backblaze B2
+
+1. Panneau B2 → **Create a Bucket** (privé) ; l'URL d'API de la clé donne le
+   `s3.<region>.backblazeb2.com` à renseigner.
+2. **Application Keys** → créer une clé avec accès **lecture + écriture**
+   (`Access Key ID` / `Key Name` / `applicationKey`).
 
 ```env
-STORAGE_BACKEND=r2
-R2_ACCOUNT_ID=...          # 32 caractères hexadécimaux
-R2_ACCESS_KEY_ID=...
-R2_SECRET_ACCESS_KEY=...
-R2_BUCKET=bacprep-files
-R2_SIGNED_URL_EXPIRY=900   # URLs valables 15 min
+# Tigris (défaut) — ou l'endpoint/région d'un autre fournisseur (tableau ci-dessus)
+STORAGE_BACKEND=s3
+STORAGE_ENDPOINT_URL=https://fly.storage.tigris.dev
+STORAGE_REGION=auto
+STORAGE_ACCESS_KEY_ID=...
+STORAGE_SECRET_ACCESS_KEY=...
+STORAGE_BUCKET=bacprep
+STORAGE_SIGNED_URL_EXPIRY=900
 ```
 
-L'application construit elle-même l'endpoint S3
-`https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com`. Les fichiers privés sont
-servis par `GET /api/files/{id}` après vérification des droits : en backend
-`r2`, la route redirige (302) vers une **URL signée temporaire** — les
-identifiants du bucket ne quittent jamais le serveur, et la charge de servir
-les fichiers ne repose pas sur FastAPI.
-
 Vérification : depuis le back-office, téléverser une image sur une épreuve
-puis confirmer que l'objet apparaît dans le bucket côté Cloudflare.
+puis confirmer que l'objet apparaît dans le bucket côté fournisseur.
 
 ## Clés de l'assistant IA (Gemini / Groq)
 
@@ -154,9 +171,19 @@ coût (20 questions / 5 min / utilisateur côté API).
 
 SQLite ne doit être utilisé qu'en développement local. En production,
 créer un projet [Supabase](https://supabase.com), puis récupérer la chaîne
-de connexion (*Project Settings → Database → Connection string → URI*) et
-la passer en `DATABASE_URL` (utiliser le pooler sur le port 6543 si le
-nombre de connexions simultanées dépasse les limites). Au premier
+de connexion dans *Project Settings → Database → Connection string* en
+sélectionnant l'onglet **Pooler** puis **Transaction** — c'est l'URL à
+mettre dans `DATABASE_URL` :
+
+```text
+postgresql://postgres.<project_ref>:<mot_de_passe>@aws-0-<région>.pooler.supabase.com:6543/postgres
+```
+
+⚠️ **Ne PAS utiliser la connexion directe** `db.<project_ref>.supabase.co:5432` :
+elle résout en IPv6 uniquement, et Render ne route pas l'IPv6 → échec
+`Network is unreachable` au démarrage. Le pooler Supavisor (port 6543) est
+accessible en IPv4. Le `sslmode=require` est ajouté automatiquement par
+`backend/app/db.py` (surcharge via `DB_SSLMODE` si besoin). Au premier
 démarrage sur une base VIDE, `Base.metadata.create_all` crée tout le
 schéma.
 
@@ -176,8 +203,8 @@ python -m scripts_dev.migrate_2026_09
 
 Voir `backend/.env.example` pour la liste complète commentée. Au minimum :
 
-- `DATABASE_URL` (PostgreSQL Supabase en prod)
-- `STORAGE_BACKEND=r2` + les 5 variables `R2_*` (voir plus haut)
+- `DATABASE_URL` (pooler Supabase, port 6543 — voir plus haut)
+- `STORAGE_BACKEND=s3` + les 5 variables `STORAGE_*` (voir plus haut)
 - `ADMIN_TOKEN`, `ADMIN_EMAILS`
 - `GEMINI_API_KEY` et/ou `GROQ_API_KEY` (sinon l'assistant tourne en mode
   démonstration)
@@ -219,12 +246,15 @@ catch-all.
 1. Pousser ce dépôt sur GitHub/GitLab.
 2. Sur [render.com](https://render.com), **New → Blueprint**, pointer le
    dépôt.
-3. Renseigner les secrets (`sync: false`) : clés LLM (`GEMINI_API_KEY` /
-   `GROQ_API_KEY`), variables `R2_*`, `ADMIN_TOKEN` (valeur forte),
-   `ADMIN_EMAILS`, `FILE_URL_SECRET`, `AUTH_MODE=google` +
-   `GOOGLE_CLIENT_ID` (voir sections ci-dessus pour les obtenir).
+3. Renseigner les secrets (`sync: false`) : le pooler Supabase
+   (`DATABASE_URL`), les variables de stockage (`STORAGE_BACKEND=s3` +
+   `STORAGE_ENDPOINT_URL`, `STORAGE_REGION`, `STORAGE_ACCESS_KEY_ID`,
+   `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_BUCKET`), les clés LLM
+   (`GEMINI_API_KEY` / `GROQ_API_KEY`), `ADMIN_EMAILS`, `FILE_URL_SECRET`,
+   `AUTH_MODE=google` + `GOOGLE_CLIENT_ID` (voir sections ci-dessus pour
+   les obtenir).
 4. Déployer, puis vérifier : `/api/health` répond ; `/connexion` affiche le
-   bouton Google ; une image d'épreuve se charge (R2).
+   bouton Google ; une image d'épreuve se charge (stockage objet).
 
 ## Import massif des épreuves
 

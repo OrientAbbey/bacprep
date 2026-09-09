@@ -42,8 +42,8 @@ def get_file(
     - session valide : accès direct, soumis au même contrôle
       ``has_access`` que le détail de l'épreuve.
 
-    Backend local : le fichier est servi par FastAPI. Backend R2 :
-    redirection 302 vers une URL signée Cloudflare (les credentials ne
+    Backend local : le fichier est servi par FastAPI. Backend objet
+    (s3) : redirection 302 vers une URL signée (les credentials ne
     quittent jamais le serveur)."""
     f = _load_file_or_404(db, file_id)
 
@@ -54,10 +54,10 @@ def get_file(
         if not epreuve or not store.has_access(db, user.id, epreuve):
             raise HTTPException(403, "Accès non autorisé — un abonnement est requis")
 
-    # Backend R2 : on délègue le servir au stockage via une URL signée
-    # courte plutôt que de transiter par FastAPI (recommandation
+    # Backend objet (s3) : on délègue le servir au stockage via une URL
+    # signée courte plutôt que de transiter par FastAPI (recommandation
     # architecture : réduire la charge du backend sur les fichiers).
-    if get_storage().backend == "r2":
+    if get_storage().backend != "local":
         signed = presigned_url_or_none(f.storage_key, expires_seconds=300)
         if signed:
             return RedirectResponse(signed, status_code=302)

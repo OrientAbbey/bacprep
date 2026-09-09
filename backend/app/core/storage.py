@@ -6,17 +6,20 @@ le contenu. L'arborescence physique ne reflète que (niveau, année, épreuve) :
 toute la classification métier (classe, évaluation, matière, séries) vit en
 base, pas dans les dossiers.
 
-Deux backends, choisis par ``STORAGE_BACKEND`` :
+Backends, choisis par ``STORAGE_BACKEND`` :
 
 - ``local`` (développement) : la clé devient un chemin relatif sous
   ``backend/data/storage/`` — sémantique identique à un stockage objet, ce
-  qui permet de développer sans compte Cloudflare ;
-- ``r2`` (production) : Cloudflare R2 via l'API S3 compatible (boto3), avec
-  URL signées temporaires pour servir les fichiers privés sans exposer les
-  identifiants du bucket.
+  qui permet de développer sans compte cloud ;
+- ``s3`` (production) : stockage objet S3-compatible via boto3, paramétré
+  par les variables ``STORAGE_*`` (endpoint, région, clés, bucket). Un seul
+  client S3 sert indifféremment Supabase Storage, Tigris Data et Backblaze
+  B2 — le choix du fournisseur ne change que la valeur des variables.
 
 Le filesystem local du serveur FastAPI n'est PAS un stockage persistant en
-production ; seul le backend ``r2`` l'est (voir architecture technique).
+production ; seul un backend objet (``s3``) l'est. Les fichiers privés
+sont servis via des URL signées temporaires (``presigned_url``) afin de ne
+jamais exposer les identifiants du bucket.
 """
 from __future__ import annotations
 
@@ -116,32 +119,49 @@ class LocalStorage:
         return path if path.is_file() else None
 
 
-class R2Storage:
-    """Stockage production : Cloudflare R2 via l'API S3 (boto3).
+class S3CompatibleStorage:
+    """Stockage production : n'importe quel fournisseur S3-compatible (boto3).
+
+    Le même code sert Supabase Storage, Tigris Data et Backblaze B2 — seule
+    la configuration (endpoint, région, clés, bucket) change. Le bucket doit
+    exister (créé côté fournisseur, en accès PRIVÉ).
 
     Les URL signées permettent de servir un fichier privé pendant une durée
     limitée sans exposer les identifiants du bucket — la vérification des
     droits reste du côté FastAPI (voir GET /api/files/{id}).
+
+    Exemples de configuration :
+    - Supabase : endpoint ``https://<project_ref>.supabase.co/storage/v1/s3``,
+      région = région du projet, clés générées dans Project Settings → Storage
+      → S3 Access Keys ;
+    - Tigris : endpoint ``https://fly.storage.tigris.dev``, région ``auto`` ;
+    - Backblaze B2 : endpoint ``https://s3.<region>.backblazeb2.com`` (région
+      du bucket), clés = Application Key lecture/écriture.
     """
 
-    backend = "r2"
+    backend = "s3"
 
     def __init__(
         self,
-        account_id: str,
+        endpoint_url: str,
+        region_name: str,
         access_key_id: str,
         secret_access_key: str,
         bucket: str,
     ):
         import boto3  # import tardif : inutile en développement local
+        from botocore.config import Config
 
         self.bucket = bucket
         self._client = boto3.client(
             "s3",
-            endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+            endpoint_url=endpoint_url,
+            region_name=region_name,
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
-            region_name="auto",
+            # SigV4 + adressage par chemin : requis par Backblaze B2, pris en
+            # charge par tous les fournisseurs (Tigris, Supabase, B2).
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 
     def put_bytes(self, key: str, data: bytes, mime_type: str = "") -> None:
@@ -176,37 +196,39 @@ _storage: Optional[StorageService] = None
 
 
 def get_storage() -> StorageService:
-    """Fabrique singleton du backend de stockage (STORAGE_BACKEND=local|r2)."""
+    """Fabrique singleton du backend de stockage (STORAGE_BACKEND=local|s3)."""
     global _storage
     if _storage is not None:
         return _storage
 
     backend = os.getenv("STORAGE_BACKEND", "local").strip().lower()
-    if backend == "r2":
-        account_id = os.getenv("R2_ACCOUNT_ID", "")
-        access_key = os.getenv("R2_ACCESS_KEY_ID", "")
-        secret_key = os.getenv("R2_SECRET_ACCESS_KEY", "")
-        bucket = os.getenv("R2_BUCKET", "")
-        if not all([account_id, access_key, secret_key, bucket]):
+    if backend == "s3":
+        endpoint = os.getenv("STORAGE_ENDPOINT_URL", "")
+        region = os.getenv("STORAGE_REGION", "")
+        access_key = os.getenv("STORAGE_ACCESS_KEY_ID", "")
+        secret_key = os.getenv("STORAGE_SECRET_ACCESS_KEY", "")
+        bucket = os.getenv("STORAGE_BUCKET", "")
+        if not all([endpoint, region, access_key, secret_key, bucket]):
             raise StorageError(
-                "STORAGE_BACKEND=r2 exige R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, "
-                "R2_SECRET_ACCESS_KEY et R2_BUCKET dans l'environnement"
+                "STORAGE_BACKEND=s3 exige STORAGE_ENDPOINT_URL, STORAGE_REGION, "
+                "STORAGE_ACCESS_KEY_ID, STORAGE_SECRET_ACCESS_KEY et STORAGE_BUCKET "
+                "dans l'environnement (Tigris Data, Supabase Storage ou Backblaze B2)"
             )
-        _storage = R2Storage(account_id, access_key, secret_key, bucket)
+        _storage = S3CompatibleStorage(endpoint, region, access_key, secret_key, bucket)
     else:
         from ..db import STORAGE_LOCAL_DIR
 
         _storage = LocalStorage(STORAGE_LOCAL_DIR)
 
-    log.info("Backend de stockage actif: %s", _storage.backend)
+    log.info("Backend de stockage actif: %s (bucket=%s)", _storage.backend, getattr(_storage, "bucket", "-"))
     return _storage
 
 
 def presigned_url_or_none(key: str, expires_seconds: Optional[int] = None) -> Optional[str]:
-    """URL signée si le backend actif en produit (r2), sinon None —
+    """URL signée si le backend actif en produit (s3), sinon None —
     l'appelant retombe alors sur le streaming FastAPI."""
     if expires_seconds is None:
-        expires_seconds = int(os.getenv("R2_SIGNED_URL_EXPIRY", "900"))
+        expires_seconds = int(os.getenv("STORAGE_SIGNED_URL_EXPIRY", "900"))
     try:
         return get_storage().presigned_url(key, expires_seconds)
     except Exception as exc:  # jamais bloquant : le streaming reste possible
