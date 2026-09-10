@@ -159,13 +159,19 @@ L'assistant interroge Gemini et/ou Groq ; sans clé configurée, il répond en
 
 - **Gemini** ([Google AI Studio](https://aistudio.google.com)) : *Get API
   key → Create API key* (dans un projet Google Cloud) → `GEMINI_API_KEY`.
-  Modèle via `GEMINI_MODEL` (défaut `gemini-3.5-flash`).
+  Modèles via `GEMINI_MODELS` (CSV, fallback ordonné, défaut
+  `gemini-3.5-flash,gemini-3.6-flash,gemini-3.8-flash`).
 - **Groq** ([console.groq.com](https://console.groq.com)) : *API Keys →
-  Create API Key* → `GROQ_API_KEY`. Modèle via `GROQ_MODEL` (défaut
-  `llama-3.3-70b-versatile` ; alternatives commentées dans `.env.example`).
+  Create API Key* → `GROQ_API_KEY`. Modèles via `GROQ_MODELS` (CSV,
+  fallback ordonné, défaut `openai/gpt-oss-20b,qwen/qwen3.6-27b,
+  openai/gpt-oss-120b`).
 
 Configurer au moins une des deux clés ; `LLM_CONCURRENCY_LIMIT` borne le
-coût (20 questions / 5 min / utilisateur côté API).
+coût (20 questions / 5 min / utilisateur côté API). Le **fallback est
+ordonné** : chaque fournisseur essaie sa liste de modèles dans l'ordre
+déclaré, un échec (quota 429, indisponibilité) fait passer au modèle
+suivant, puis à l'autre fournisseur, puis au mode démonstration (aucune
+clé ou tous les modèles en échec).
 
 ## Base de données PostgreSQL (Supabase)
 

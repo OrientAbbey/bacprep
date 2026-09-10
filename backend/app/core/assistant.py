@@ -19,10 +19,28 @@ from .storage import get_storage
 log = get_logger("assistant")
 
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 
 MAX_CONTEXT_CHARS = 4000
 MAX_IMAGES_PAR_QUESTION = 3
+
+# --- Modèles par fournisseur (fallback ordonné) --------------------------
+#
+# Chaque fournisseur essaie sa liste de modèles DANS L'ORDRE déclaré
+# (GEMINI_MODELS / GROQ_MODELS, CSV) : en cas d'échec du premier — quota
+# 429, indisponibilité, erreur — on passe au suivant avant de basculer sur
+# l'autre fournisseur puis le mode démonstration. La variable simple
+# historique (GEMINI_MODEL / GROQ_MODEL) reste acceptée comme repli si la
+# liste n'est pas définie.
+
+
+def _provider_models(plural_env: str, single_env: str, default: str) -> list[str]:
+    """Modèles (fallback ordonné) d'un fournisseur : GEMINI_MODELS /
+    GROQ_MODELS (CSV, ordre = ordre d'essai), repli sur la variable simple
+    héritée puis sur le défaut du module."""
+    raw = os.getenv(plural_env, "").strip() or os.getenv(single_env, "").strip()
+    models = [m.strip() for m in raw.split(",") if m.strip()]
+    return models or [default]
 
 # --- Streaming ---------------------------------------------------------
 #
@@ -263,83 +281,90 @@ def _gemini_parts(prompt: str, image_paths: list[Path]) -> list[dict]:
 async def _call_gemini(prompt: str, image_paths: list[Path]) -> Optional[str]:
     """Appel Gemini non-streaming (réponse complète en un seul bloc) —
     conservé pour le endpoint `/api/assistant/ask` historique et comme
-    filet de secours si le streaming échoue avant le premier chunk."""
+    filet de secours si le streaming échoue avant le premier chunk.
+    Essaie chaque modèle de `GEMINI_MODELS` (fallback ordonné) ; rend
+    la main (None) pour basculer sur Groq si tous échouent."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None
-    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-
-    try:
-        client = _get_http_client()
-        resp = await client.post(
-            url,
-            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-            json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-    except httpx.HTTPStatusError as exc:
-        log.warning("Gemini a échoué (%s) : %s", exc.response.status_code, exc.response.text)
-        return None
-    except Exception as exc:
-        log.warning("Gemini a échoué (exception): %s", exc)
-        return None
+    client = _get_http_client()
+    for model in _provider_models("GEMINI_MODELS", "GEMINI_MODEL", DEFAULT_GEMINI_MODEL):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        try:
+            resp = await client.post(
+                url,
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except httpx.HTTPStatusError as exc:
+            log.warning("Gemini %s a échoué (%s) : %s", model, exc.response.status_code, exc.response.text)
+        except Exception as exc:
+            log.warning("Gemini %s a échoué (exception): %s", model, exc)
+    return None
 
 
 async def _stream_gemini(prompt: str, image_paths: list[Path]) -> AsyncIterator[str]:
     """Variante streaming de `_call_gemini` : consomme l'endpoint SSE
     `:streamGenerateContent?alt=sse` de Gemini et cède chaque fragment de
     texte au fur et à mesure de sa réception, plutôt que d'attendre la
-    réponse complète.
+    réponse complète. Essaie chaque modèle de `GEMINI_MODELS` dans l'ordre
+    (fallback) tant qu'aucun fragment n'a été cédé.
 
     Ne cède RIEN (générateur vide) si aucune clé n'est configurée ou si
-    l'appel échoue avant tout fragment — l'appelant (`ask_assistant_stream`)
-    détecte ce cas et bascule sur Groq. Si l'échec survient APRÈS que des
-    fragments ont déjà été envoyés au client, la réponse reste partielle
-    (compromis assumé pour ce prototype : on ne peut plus revenir en
-    arrière sur ce qui a déjà été affiché à l'écran)."""
+    tous les modèles échouent avant tout fragment — l'appelant
+    (`ask_assistant_stream`) détecte ce cas et bascule sur Groq. Si
+    l'échec survient APRÈS que des fragments ont déjà été envoyés au
+    client, la réponse reste partielle (compromis assumé pour ce
+    prototype : on ne peut plus revenir en arrière sur ce qui a déjà été
+    affiché à l'écran)."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return
-    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
-    if not _model_supports_streaming(model):
-        return
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
-
-    try:
-        client = _get_http_client()
-        async with client.stream(
-            "POST",
-            url,
-            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-            json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
-        ) as resp:
-            if resp.status_code >= 400:
-                body = await resp.aread()
-                log.warning(
-                    "Gemini (streaming) a échoué (%s) : %s",
-                    resp.status_code,
-                    body.decode(errors="replace"),
-                )
-                return
-            async for line in resp.aiter_lines():
-                if not line.startswith("data:"):
+    client = _get_http_client()
+    for model in _provider_models("GEMINI_MODELS", "GEMINI_MODEL", DEFAULT_GEMINI_MODEL):
+        if not _model_supports_streaming(model):
+            continue
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
+        produced = False
+        try:
+            async with client.stream(
+                "POST",
+                url,
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json={"contents": [{"parts": _gemini_parts(prompt, image_paths)}]},
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = await resp.aread()
+                    log.warning(
+                        "Gemini %s (streaming) a échoué (%s) : %s",
+                        model,
+                        resp.status_code,
+                        body.decode(errors="replace"),
+                    )
                     continue
-                raw = line[len("data:"):].strip()
-                if not raw:
-                    continue
-                try:
-                    data = json.loads(raw)
-                    text = data["candidates"][0]["content"]["parts"][0]["text"]
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
-                if text:
-                    yield text
-    except Exception as exc:
-        log.warning("Gemini (streaming) a échoué (exception): %s", exc)
-        return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    raw = line[len("data:"):].strip()
+                    if not raw:
+                        continue
+                    try:
+                        data = json.loads(raw)
+                        text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+                    if text:
+                        produced = True
+                        yield text
+                return  # modèle consommé jusqu'au bout : pas de repli nécessaire
+        except Exception as exc:
+            log.warning("Gemini %s (streaming) a échoué (exception): %s", model, exc)
+            if produced:
+                return  # réponse partielle déjà cédée : ne pas repartir sur un autre modèle
+            continue  # rien cédé avant l'échec : essayer le modèle suivant
 
 
 def _groq_prompt_with_image_note(prompt: str, nb_images_ignorees: int) -> str:
@@ -360,30 +385,29 @@ def _groq_prompt_with_image_note(prompt: str, nb_images_ignorees: int) -> str:
 
 async def _call_groq(prompt: str, nb_images_ignorees: int) -> Optional[str]:
     """Appel Groq non-streaming — conservé pour `/api/assistant/ask` et
-    comme filet de secours si le streaming échoue avant le premier chunk."""
+    comme filet de secours si le streaming échoue avant le premier chunk.
+    Essaie chaque modèle de `GROQ_MODELS` (fallback ordonné)."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return None
-    model = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
-    url = "https://api.groq.com/openai/v1/chat/completions"
+    client = _get_http_client()
     prompt = _groq_prompt_with_image_note(prompt, nb_images_ignorees)
-
-    try:
-        client = _get_http_client()
-        resp = await client.post(
-            url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": [{"role": "user", "content": prompt}]},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
-    except httpx.HTTPStatusError as exc:
-        log.warning("Groq a échoué (%s) : %s", exc.response.status_code, exc.response.text)
-        return None
-    except Exception as exc:
-        log.warning("Groq a échoué (exception): %s", exc)
-        return None
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    for model in _provider_models("GROQ_MODELS", "GROQ_MODEL", DEFAULT_GROQ_MODEL):
+        try:
+            resp = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as exc:
+            log.warning("Groq %s a échoué (%s) : %s", model, exc.response.status_code, exc.response.text)
+        except Exception as exc:
+            log.warning("Groq %s a échoué (exception): %s", model, exc)
+    return None
 
 
 async def _stream_groq(prompt: str, nb_images_ignorees: int) -> AsyncIterator[str]:
@@ -391,52 +415,59 @@ async def _stream_groq(prompt: str, nb_images_ignorees: int) -> AsyncIterator[st
     l'API compatible OpenAI de Groq (format SSE `data: {...}`, terminé par
     `data: [DONE]`) — supportée par l'ensemble du catalogue de modèles de
     chat Groq (voir l'avertissement sur `STREAMING_UNSUPPORTED_MODELS` en
-    tête de ce module concernant la vérification de cette page)."""
+    tête de ce module concernant la vérification de cette page). Essaie
+    chaque modèle de `GROQ_MODELS` dans l'ordre (fallback) tant qu'aucun
+    fragment n'a été cédé."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return
-    model = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
-    if not _model_supports_streaming(model):
-        return
-    url = "https://api.groq.com/openai/v1/chat/completions"
+    client = _get_http_client()
     prompt = _groq_prompt_with_image_note(prompt, nb_images_ignorees)
-
-    try:
-        client = _get_http_client()
-        async with client.stream(
-            "POST",
-            url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": True,
-            },
-        ) as resp:
-            if resp.status_code >= 400:
-                body = await resp.aread()
-                log.warning(
-                    "Groq (streaming) a échoué (%s) : %s",
-                    resp.status_code,
-                    body.decode(errors="replace"),
-                )
-                return
-            async for line in resp.aiter_lines():
-                if not line.startswith("data:"):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    for model in _provider_models("GROQ_MODELS", "GROQ_MODEL", DEFAULT_GROQ_MODEL):
+        if not _model_supports_streaming(model):
+            continue
+        produced = False
+        try:
+            async with client.stream(
+                "POST",
+                url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": True,
+                },
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = await resp.aread()
+                    log.warning(
+                        "Groq %s (streaming) a échoué (%s) : %s",
+                        model,
+                        resp.status_code,
+                        body.decode(errors="replace"),
+                    )
                     continue
-                raw = line[len("data:"):].strip()
-                if not raw or raw == "[DONE]":
-                    continue
-                try:
-                    data = json.loads(raw)
-                    delta = data["choices"][0]["delta"].get("content")
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    delta = None
-                if delta:
-                    yield delta
-    except Exception as exc:
-        log.warning("Groq (streaming) a échoué (exception): %s", exc)
-        return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    raw = line[len("data:"):].strip()
+                    if not raw or raw == "[DONE]":
+                        continue
+                    try:
+                        data = json.loads(raw)
+                        delta = data["choices"][0]["delta"].get("content")
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        delta = None
+                    if delta:
+                        produced = True
+                        yield delta
+                return  # modèle consommé jusqu'au bout : pas de repli nécessaire
+        except Exception as exc:
+            log.warning("Groq %s (streaming) a échoué (exception): %s", model, exc)
+            if produced:
+                return  # réponse partielle déjà cédée : ne pas repartir sur un autre modèle
+            continue  # rien cédé avant l'échec : essayer le modèle suivant
 
 
 def _demo_fallback(epreuve_meta: dict, question: str, image_paths: list[Path]) -> str:

@@ -67,14 +67,17 @@ services:
         value: "true" # requis en prod pour autoriser mock-login + paiement simulé
       - key: ADMIN_SESSION_TIMEOUT_MINUTES
         value: "3" # délai avant expiration du verrou admin après quitter /admin
-      - key: GEMINI_API_KEY
+- key: GEMINI_API_KEY
         sync: false
-      - key: GEMINI_MODEL
-        value: gemini-3.5-flash
+      # Modèles GRATUITS, fallback ordonné : essai dans l'ordre de la liste
+      # (échec → modèle suivant → Groq → mode démo). Autres modèles gratuits
+      # dans backend/.env.example.
+      - key: GEMINI_MODELS
+        value: "gemini-3.5-flash,gemini-3.6-flash,gemini-3.8-flash"
       - key: GROQ_API_KEY
         sync: false
-      - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
+      - key: GROQ_MODELS
+        value: "openai/gpt-oss-20b,qwen/qwen3.6-27b,openai/gpt-oss-120b"
       - key: LLM_CONCURRENCY_LIMIT
         value: "5"
       - key: CORS_ORIGINS
