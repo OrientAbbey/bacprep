@@ -23,6 +23,12 @@ services:
       # Le sslmode=require est ajouté automatiquement par backend/app/db.py.
       - key: DATABASE_URL
         sync: false
+      - key: DB_SSLMODE
+        value: require # ajouté automatiquement si absent, mais explicite vaut mieux
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_POOL_MAX_OVERFLOW
+        value: "10"
       # Docs API (/docs, /redoc, /openapi.json) : en prod, servies à ce
       # chemin secret unique ; vide ou absent = docs désactivées.
       - key: DOCS_PATH
@@ -45,6 +51,8 @@ services:
         sync: false
       - key: STORAGE_BUCKET
         sync: false
+      - key: STORAGE_SIGNED_URL_EXPIRY
+        value: "900" # URLs signées valables 15 min
       - key: ADMIN_TOKEN
         generateValue: true
       - key: FILE_URL_SECRET
@@ -52,13 +60,21 @@ services:
       - key: ADMIN_EMAILS
         value: admin@example.com
       - key: AUTH_MODE
-        value: mock # démo simulée — passer à "google" en production réelle
+        value: mock # démo simulée — passer à "google" + renseigner GOOGLE_CLIENT_ID
+      - key: GOOGLE_CLIENT_ID
+        sync: false # requis si AUTH_MODE=google (Client ID Google Cloud Console)
       - key: DEMO_MODE
         value: "true" # requis en prod pour autoriser mock-login + paiement simulé
+      - key: ADMIN_SESSION_TIMEOUT_MINUTES
+        value: "3" # délai avant expiration du verrou admin après quitter /admin
       - key: GEMINI_API_KEY
         sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
       - key: GROQ_API_KEY
         sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
       - key: LLM_CONCURRENCY_LIMIT
         value: "5"
       - key: CORS_ORIGINS
