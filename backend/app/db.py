@@ -57,22 +57,6 @@ if not IS_SQLITE and "sslmode" not in DATABASE_URL:
     DATABASE_URL = f"{DATABASE_URL}{_sep}sslmode={_db_sslmode}"
 
 
-def dsn_affiche() -> str:
-    """DATABASE_URL destinée aux logs — le mot de passe est masqué (la
-    chaîne complète, y compris sur Render, contient le secret de la base)."""
-    from urllib.parse import urlsplit, urlunsplit
-
-    try:
-        parts = urlsplit(DATABASE_URL)
-        auth, _, host = parts.netloc.rpartition("@")
-        if not auth:
-            return DATABASE_URL
-        user = auth.split(":", 1)[0]
-        return urlunsplit((parts.scheme, f"{user}:***@{host}", parts.path, parts.query, parts.fragment))
-    except Exception:
-        return "<DATABASE_URL indéchiffrable>"
-
-
 def _fold_for_search(value):
     """Normalise une chaîne pour une comparaison insensible à la casse ET
     aux accents (ex. "Éducation" et "education" doivent être considérés

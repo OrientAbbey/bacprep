@@ -28,7 +28,7 @@ from .core import store
 from .core.catalogue import seed_database_if_empty
 from .core.config import is_prod
 from .core.logging_config import get_logger, setup_logging
-from .db import Base, DATABASE_URL, SessionLocal, dsn_affiche, engine
+from .db import Base, SessionLocal, engine
 from .routers import (
     admin_epreuves,
     admin_import,
@@ -77,7 +77,10 @@ async def lifespan(app: FastAPI):
         )
     finally:
         db.close()
-    log.info("Démarrage backend — DATABASE_URL=%s", dsn_affiche())
+    log.info(
+        "Démarrage backend — DATABASE_URL=%s",
+        engine.url.render_as_string(hide_password=True),
+    )
     yield
     log.info("Arrêt backend")
 
@@ -86,25 +89,25 @@ async def lifespan(app: FastAPI):
 # un chemin secret (DOCS_PATH) ou totalement fermée si DOCS_PATH absent —
 # Voir DEPLOIEMENT.md/Render. Swagger UI (rechargé par le navigateur) suit
 # automatiquement openapi_url sous le même chemin secret.
-_prod = is_prod()
-_docs_path = os.getenv("DOCS_PATH", "").strip().strip("/")
-if _prod and not _docs_path:
-    _docs_url = _redoc_url = _openapi_url = None
-elif _docs_path:
-    _docs_url = f"/{_docs_path}"
-    _redoc_url = f"/{_docs_path}/redoc"
-    _openapi_url = f"/{_docs_path}/openapi.json"
+docs_path = os.getenv("DOCS_PATH", "").strip().strip("/")
+if is_prod() and not docs_path:
+    docs_url = redoc_url = openapi_url = None
 else:
-    _docs_url, _redoc_url, _openapi_url = "/docs", "/redoc", "/openapi.json"
+    docs_url = f"/{docs_path}" if docs_path else "/docs"
+    redoc_url = f"/{docs_path}/redoc" if docs_path else "/redoc"
+    openapi_url = f"/{docs_path}/openapi.json" if docs_path else "/openapi.json"
 
-log.info("Documentation OpenAPI active: %s", _docs_url if _docs_url else "désactivée en production (DOCS_PATH non défini)")
+log.info(
+    "Documentation OpenAPI active: %s",
+    docs_url or "désactivée en production (DOCS_PATH non défini)",
+)
 
 app = FastAPI(
     title="Copies & Corrigés API",
     lifespan=lifespan,
-    docs_url=_docs_url,
-    redoc_url=_redoc_url,
-    openapi_url=_openapi_url,
+    docs_url=docs_url,
+    redoc_url=redoc_url,
+    openapi_url=openapi_url,
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)
