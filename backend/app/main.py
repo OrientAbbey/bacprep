@@ -47,8 +47,7 @@ log = get_logger("main")
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
 FRONTEND_DIST = BASE_DIR.parent / "frontend" / "dist"
-ENV_FILE_FOUND = _ENV_FILE.exists()
-if not ENV_FILE_FOUND:
+if not _ENV_FILE.exists() and not is_prod():
     log.warning(
         "Aucun fichier .env trouvé à %s — copie backend/.env.example vers backend/.env "
         "si tu veux configurer ADMIN_EMAILS, les clés LLM, etc.",
