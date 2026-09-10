@@ -29,17 +29,14 @@ MAX_IMAGES_PAR_QUESTION = 3
 # Chaque fournisseur essaie sa liste de modèles DANS L'ORDRE déclaré
 # (GEMINI_MODELS / GROQ_MODELS, CSV) : en cas d'échec du premier — quota
 # 429, indisponibilité, erreur — on passe au suivant avant de basculer sur
-# l'autre fournisseur puis le mode démonstration. La variable simple
-# historique (GEMINI_MODEL / GROQ_MODEL) reste acceptée comme repli si la
-# liste n'est pas définie.
+# l'autre fournisseur puis le mode démonstration.
 
 
-def _provider_models(plural_env: str, single_env: str, default: str) -> list[str]:
+def _provider_models(env: str, default: str) -> list[str]:
     """Modèles (fallback ordonné) d'un fournisseur : GEMINI_MODELS /
-    GROQ_MODELS (CSV, ordre = ordre d'essai), repli sur la variable simple
-    héritée puis sur le défaut du module."""
-    raw = os.getenv(plural_env, "").strip() or os.getenv(single_env, "").strip()
-    models = [m.strip() for m in raw.split(",") if m.strip()]
+    GROQ_MODELS (CSV, ordre = ordre d'essai), repli sur le défaut du
+    module si la variable est vide."""
+    models = [m.strip() for m in os.getenv(env, "").split(",") if m.strip()]
     return models or [default]
 
 # --- Streaming ---------------------------------------------------------
@@ -288,7 +285,7 @@ async def _call_gemini(prompt: str, image_paths: list[Path]) -> Optional[str]:
     if not api_key:
         return None
     client = _get_http_client()
-    for model in _provider_models("GEMINI_MODELS", "GEMINI_MODEL", DEFAULT_GEMINI_MODEL):
+    for model in _provider_models("GEMINI_MODELS", DEFAULT_GEMINI_MODEL):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         try:
             resp = await client.post(
@@ -324,7 +321,7 @@ async def _stream_gemini(prompt: str, image_paths: list[Path]) -> AsyncIterator[
     if not api_key:
         return
     client = _get_http_client()
-    for model in _provider_models("GEMINI_MODELS", "GEMINI_MODEL", DEFAULT_GEMINI_MODEL):
+    for model in _provider_models("GEMINI_MODELS", DEFAULT_GEMINI_MODEL):
         if not _model_supports_streaming(model):
             continue
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
@@ -393,7 +390,7 @@ async def _call_groq(prompt: str, nb_images_ignorees: int) -> Optional[str]:
     client = _get_http_client()
     prompt = _groq_prompt_with_image_note(prompt, nb_images_ignorees)
     url = "https://api.groq.com/openai/v1/chat/completions"
-    for model in _provider_models("GROQ_MODELS", "GROQ_MODEL", DEFAULT_GROQ_MODEL):
+    for model in _provider_models("GROQ_MODELS", DEFAULT_GROQ_MODEL):
         try:
             resp = await client.post(
                 url,
@@ -424,7 +421,7 @@ async def _stream_groq(prompt: str, nb_images_ignorees: int) -> AsyncIterator[st
     client = _get_http_client()
     prompt = _groq_prompt_with_image_note(prompt, nb_images_ignorees)
     url = "https://api.groq.com/openai/v1/chat/completions"
-    for model in _provider_models("GROQ_MODELS", "GROQ_MODEL", DEFAULT_GROQ_MODEL):
+    for model in _provider_models("GROQ_MODELS", DEFAULT_GROQ_MODEL):
         if not _model_supports_streaming(model):
             continue
         produced = False

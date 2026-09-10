@@ -475,7 +475,7 @@ nettement plus réactif, en particulier sur une connexion mobile lente
   n'a pas pu être vérifiée en direct contre la documentation officielle
   des limites de débit de Groq au moment de la rédaction (environnement
   sans accès réseau sortant) — à revérifier avant mise en production si
-  un modèle Groq non standard est configuré via `GROQ_MODEL`.
+  un modèle Groq non standard est configuré via `GROQ_MODELS`.
 
 ## Limitations connues
 
