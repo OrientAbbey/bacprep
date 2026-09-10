@@ -23,6 +23,10 @@ services:
       # Le sslmode=require est ajouté automatiquement par backend/app/db.py.
       - key: DATABASE_URL
         sync: false
+      # Docs API (/docs, /redoc, /openapi.json) : en prod, servies à ce
+      # chemin secret unique ; vide ou absent = docs désactivées.
+      - key: DOCS_PATH
+        sync: false
       - key: STORAGE_BACKEND
         value: s3
       # Stockage objet S3-compatible — voir DEPLOIEMENT.md pour chaque

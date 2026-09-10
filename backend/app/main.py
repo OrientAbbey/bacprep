@@ -26,8 +26,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import store
 from .core.catalogue import seed_database_if_empty
+from .core.config import is_prod
 from .core.logging_config import get_logger, setup_logging
-from .db import Base, DATABASE_URL, SessionLocal, engine
+from .db import Base, DATABASE_URL, SessionLocal, dsn_affiche, engine
 from .routers import (
     admin_epreuves,
     admin_import,
@@ -76,12 +77,35 @@ async def lifespan(app: FastAPI):
         )
     finally:
         db.close()
-    log.info("Démarrage backend — DATABASE_URL=%s", DATABASE_URL)
+    log.info("Démarrage backend — DATABASE_URL=%s", dsn_affiche())
     yield
     log.info("Arrêt backend")
 
 
-app = FastAPI(title="Copies & Corrigés API", lifespan=lifespan)
+# Documentation OpenAPI : publique en développement, en production servie à
+# un chemin secret (DOCS_PATH) ou totalement fermée si DOCS_PATH absent —
+# Voir DEPLOIEMENT.md/Render. Swagger UI (rechargé par le navigateur) suit
+# automatiquement openapi_url sous le même chemin secret.
+_prod = is_prod()
+_docs_path = os.getenv("DOCS_PATH", "").strip().strip("/")
+if _prod and not _docs_path:
+    _docs_url = _redoc_url = _openapi_url = None
+elif _docs_path:
+    _docs_url = f"/{_docs_path}"
+    _redoc_url = f"/{_docs_path}/redoc"
+    _openapi_url = f"/{_docs_path}/openapi.json"
+else:
+    _docs_url, _redoc_url, _openapi_url = "/docs", "/redoc", "/openapi.json"
+
+log.info("Documentation OpenAPI active: %s", _docs_url if _docs_url else "désactivée en production (DOCS_PATH non défini)")
+
+app = FastAPI(
+    title="Copies & Corrigés API",
+    lifespan=lifespan,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
+)
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
@@ -90,9 +114,6 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # Identity Services injecte un iframe + scripts inline et KaTeX pose des
 # styles inline — une politique trop stricte casserait la connexion
 # Google et le rendu des formules ; à introduire en report-only d'abord.
-from .core.config import is_prod
-
-
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
