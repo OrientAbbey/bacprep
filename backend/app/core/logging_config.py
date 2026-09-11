@@ -15,8 +15,6 @@ BACKUP_COUNT = 5
 class _AccessQuietFilter(logging.Filter):
     """Filtre les lignes d'accès bruyantes émises par le serveur ASGI
     (uvicorn.access), sans perdre le reste des accès API :
-      - les pré-vols CORS (OPTIONS) émis par le navigateur avant CHAQUE
-        requête cross-origin en dev (origin :8000 vs :5173) ;
       - le battement de cœur admin (POST /api/admin/heartbeat toutes les
         30 s tant que la console /admin est ouverte).
     On se fie au message rendu (méthode + chemin), pas aux positions des
@@ -27,8 +25,6 @@ class _AccessQuietFilter(logging.Filter):
             message = record.getMessage()
         except Exception:
             return True
-        # if '"OPTIONS ' in message:
-        #     return False
         if "/api/admin/heartbeat" in message:
             return False
         return True
@@ -69,11 +65,11 @@ def setup_logging() -> None:
     root.addHandler(error_handler)
     root.addHandler(console_handler)
 
-    # Diminue le bruit de journal du serveur ASGI : pré-vols CORS (OPTIONS)
-    # doublés avec chaque requête en dev + heartbeat admin. uvicorn configure
-    # ses handlers après nous (dictConfig), mais les niveaux et filtres
-    # posés sur le logger sont conservés — le filtre s'applique donc aussi
-    # à la sortie console par défaut (`python -m uvicorn app.main:app`).
+    # Diminue le bruit de journal du serveur ASGI : battement de cœur admin
+    # (heartbeat toutes les 30 s). uvicorn configure ses handlers après nous
+    # (dictConfig), mais les niveaux et filtres posés sur le logger sont
+    # conservés — le filtre s'applique donc aussi à la sortie console par
+    # défaut (`python -m uvicorn app.main:app`).
     _quiet = _AccessQuietFilter()
     for _name in ("uvicorn", "uvicorn.access"):
         logging.getLogger(_name).addFilter(_quiet)

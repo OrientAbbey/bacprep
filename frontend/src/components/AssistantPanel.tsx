@@ -149,6 +149,25 @@ export function AssistantPanel({
 
   const active = conversations.find((c) => c.id === activeId) || null;
 
+  // Ref miroir de `conversations` : les closures créées par send() (handler
+  // SSE du streaming) liraient sinon une liste FIGÉE au moment de l'envoi —
+  // fausse le dédoublonnage du label d'onglet en fin de flux.
+  const conversationsRef = useRef<Conversation[]>([]);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  // Fermeture de l'onglet actif : au rendu suivant, activeId n'est plus dans
+  // la liste — on retombe sur le dernier onglet (ou aucun). Décision de
+  // synchronisation pure, SANS setActiveId dans un updater (les updaters
+  // doivent rester sans effet de bord ; StrictMode les relance deux fois).
+  useEffect(() => {
+    if (activeId && !conversations.some((c) => c.id === activeId)) {
+      setActiveId(conversations.length ? conversations[conversations.length - 1].id : null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, conversations]);
+
   // Garde contre le double-appel d'effet du mode strict de React (voir
   // commentaire détaillé dans une version antérieure — la ref persiste à
   // travers le double montage simulé de StrictMode et empêche de créer
@@ -303,12 +322,10 @@ export function AssistantPanel({
   }
 
   function closeConversation(id: string) {
+    // La bascule d'onglet (si on ferme l'actif) est gérée par l'effet de
+    // synchronisation ci-dessus — pas d'effet de bord dans les updaters.
     if (ephemere) {
-      setConversations((prev) => {
-        const next = prev.filter((c) => c.id !== id);
-        if (activeId === id) setActiveId(next.length ? next[next.length - 1].id : null);
-        return next;
-      });
+      setConversations((prev) => prev.filter((c) => c.id !== id));
       return;
     }
     (async () => {
@@ -318,11 +335,7 @@ export function AssistantPanel({
         showToast("La discussion n'a pas pu être fermée — réessaie.", "error");
         return;
       }
-      setConversations((prev) => {
-        const next = prev.filter((c) => c.id !== id);
-        if (activeId === id) setActiveId(next.length ? next[next.length - 1].id : null);
-        return next;
-      });
+      setConversations((prev) => prev.filter((c) => c.id !== id));
     })();
   }
 
@@ -349,7 +362,17 @@ export function AssistantPanel({
       )
     );
 
-    function appendToLastAssistantMessage(fragment: string) {
+    // Fragments SSE tamponnés : appliqués une fois par frame (rAF) au lieu
+    // de re-rendre à CHAQUE paquet réseau — le panneau reste fluide pendant
+    // qu'un long texte défile. `flushChunk` est aussi forcé avant toute
+    // réconciliation serveur (événement `done`).
+    let pendingChunkText = "";
+    let chunkRaf: number | null = null;
+    function flushChunk() {
+      chunkRaf = null;
+      if (!pendingChunkText) return;
+      const fragment = pendingChunkText;
+      pendingChunkText = "";
       setConversations((prev) =>
         prev.map((c) => {
           if (c.id !== convId) return c;
@@ -372,22 +395,29 @@ export function AssistantPanel({
         : { conversation_id: convId, message: question };
       await streamAssistantAsk(askPayload, async (event) => {
         if (event.type === "chunk") {
-          appendToLastAssistantMessage(event.text);
+          pendingChunkText += event.text;
+          if (chunkRaf === null) chunkRaf = requestAnimationFrame(flushChunk);
         } else if (event.type === "done") {
+          // Vider le tampon de chunks restants AVANT toute réconciliation,
+          // sinon le rAF en attente écraserait l'état serveur reçu.
+          if (chunkRaf !== null) cancelAnimationFrame(chunkRaf);
+          flushChunk();
           if (!event.conversation) return; // voie éphémère : rien à réconcilier
-          setConversations((prev) => prev.map((c) => (c.id === event.conversation.id ? event.conversation : c)));
+          const conversation = event.conversation;
+          setConversations((prev) => prev.map((c) => (c.id === conversation.id ? conversation : c)));
           // Premier échange : l'onglet prend le titre de la question de
           // l'élève (bien plus reconnaissable qu'un libellé générique),
-          // dédoublonné contre les onglets restants.
-          if (isDefaultLabel(event.conversation.label)) {
+          // dédoublonné contre les onglets restants — lu depuis la ref
+          // miroir, jamais depuis la closure figée de send().
+          if (isDefaultLabel(conversation.label)) {
             const nouveau = labelUnique(
               resumeLabel(question),
-              conversations.filter((c) => c.id !== convId)
+              conversationsRef.current.filter((c) => c.id !== convId)
             );
             try {
               const updated = await api.put<Conversation>(
                 `/api/epreuves/${epreuveId}/conversations/${convId}`,
-                { messages: event.conversation.messages, label: nouveau }
+                { messages: conversation.messages, label: nouveau }
               );
               setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
             } catch {

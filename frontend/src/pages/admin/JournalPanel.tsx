@@ -83,7 +83,7 @@ export function JournalPanel({
                       type="button"
                       onClick={() => onOuvrirEpreuve(e.epreuve_id!)}
                       title={e.epreuve_resume || `Ouvrir l'épreuve ${e.epreuve_id} dans la section Épreuves`}
-                      className="font-mono-tag text-[11px] text-ink underline decoration-dotted underline-offset-2 hover:text-highlight"
+                      className="font-mono-tag text-[11px] text-ink underline decoration-dotted underline-offset-2 hover:text-ink-soft"
                     >
                       épreuve {e.epreuve_id}
                     </button>

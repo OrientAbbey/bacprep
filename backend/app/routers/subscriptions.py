@@ -211,22 +211,34 @@ def _resolve_scope_fields(db: Session, payload: CheckoutIn) -> dict:
     scope="epreuve", filière/classe/évaluation sont déduites de l'épreuve
     elle-même plutôt que redemandées à l'utilisateur."""
     if payload.scope == "epreuve":
-        if not payload.epreuve_id:
-            raise HTTPException(400, "epreuve_id requis pour ce type d'abonnement")
-        e = db.query(EpreuveORM).filter(EpreuveORM.id == payload.epreuve_id).one_or_none()
-        if not e:
-            raise HTTPException(404, "Épreuve introuvable")
-        if not e.filieres:
-            raise HTTPException(400, "Cette épreuve n'a aucune série associée")
-        return {
-            "evaluation": e.evaluation,
-            "classe": e.classe,
-            "filiere": e.filieres[0],
-            "matiere": "ALL",
-            "annee": "ALL",
-            "epreuve_id": e.id,
-        }
+        return _resolve_epreuve_fields(db, payload)
+    return _resolve_classe_fields(payload)
 
+
+def _resolve_epreuve_fields(db: Session, payload: CheckoutIn) -> dict:
+    """Portée « épreuve précise » : filière, classe et évaluation déduites
+    de l'épreuve (jamais de sélection manuelle côté acheteur)."""
+    if not payload.epreuve_id:
+        raise HTTPException(400, "epreuve_id requis pour ce type d'abonnement")
+    e = db.query(EpreuveORM).filter(EpreuveORM.id == payload.epreuve_id).one_or_none()
+    if not e:
+        raise HTTPException(404, "Épreuve introuvable")
+    if not e.filieres:
+        raise HTTPException(400, "Cette épreuve n'a aucune série associée")
+    return {
+        "evaluation": e.evaluation,
+        "classe": e.classe,
+        "filiere": e.filieres[0],
+        "matiere": "ALL",
+        "annee": "ALL",
+        "epreuve_id": e.id,
+    }
+
+
+def _resolve_classe_fields(payload: CheckoutIn) -> dict:
+    """Portées à cadre de classe (matiere_annee, matiere, annee, filiere) :
+    la classe est requise et normalisée, chaque portée impose ses filtres
+    et choisit ses jokers "ALL"."""
     if not payload.filiere:
         raise HTTPException(400, "filiere requise")
     classe = referentiel.normalize_classe(payload.classe)
@@ -236,47 +248,28 @@ def _resolve_scope_fields(db: Session, payload: CheckoutIn) -> dict:
     if payload.scope == "matiere_annee":
         if not payload.matiere or not payload.annee:
             raise HTTPException(400, "matiere et annee requises")
-        return {
-            "evaluation": "ALL",
-            "classe": classe,
-            "filiere": payload.filiere,
-            "matiere": payload.matiere,
-            "annee": payload.annee,
-            "epreuve_id": None,
-        }
-    if payload.scope == "matiere":
+        matiere, annee = payload.matiere, payload.annee
+    elif payload.scope == "matiere":
         if not payload.matiere:
             raise HTTPException(400, "matiere requise")
-        return {
-            "evaluation": "ALL",
-            "classe": classe,
-            "filiere": payload.filiere,
-            "matiere": payload.matiere,
-            "annee": "ALL",
-            "epreuve_id": None,
-        }
-    if payload.scope == "annee":
+        matiere, annee = payload.matiere, "ALL"
+    elif payload.scope == "annee":
         if not payload.annee:
             raise HTTPException(400, "annee requise")
-        return {
-            "evaluation": "ALL",
-            "classe": classe,
-            "filiere": payload.filiere,
-            "matiere": "ALL",
-            "annee": payload.annee,
-            "epreuve_id": None,
-        }
-    if payload.scope == "filiere":
-        return {
-            "evaluation": "ALL",
-            "classe": classe,
-            "filiere": payload.filiere,
-            "matiere": "ALL",
-            "annee": "ALL",
-            "epreuve_id": None,
-        }
+        matiere, annee = "ALL", payload.annee
+    elif payload.scope == "filiere":
+        matiere, annee = "ALL", "ALL"
+    else:
+        raise HTTPException(400, "scope inconnu")
 
-    raise HTTPException(400, "scope inconnu")
+    return {
+        "evaluation": "ALL",
+        "classe": classe,
+        "filiere": payload.filiere,
+        "matiere": matiere,
+        "annee": annee,
+        "epreuve_id": None,
+    }
 
 
 @router.post("/subscriptions/checkout")

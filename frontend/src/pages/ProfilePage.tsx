@@ -20,7 +20,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { ActiviteItem, Note, SubscriptionOut } from "../api/types";
-import { useAuth } from "../auth/AuthProvider";
+import { useAuth, type User } from "../auth/AuthProvider";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NoteEditor } from "../components/NoteEditor";
 import { Skeleton } from "../components/Skeleton";
@@ -121,27 +121,41 @@ export function ProfilePage() {
     }
   }
 
-  // Charge le profil au montage, et notes/activité à chaque changement d'onglet.
+  // Charge le profil au montage, et notes/activité à chaque changement
+  // d'onglet. AbortController : un onglet changé (ou un démontage) pendant
+  // un aller-retour annule la requête — pas de setState sur composant
+  // sorti de l'arbre (É23).
   useEffect(() => {
+    const ac = new AbortController();
     api
-      .get<Profil>("/api/me/profil")
+      .get<Profil>("/api/me/profil", undefined, ac.signal)
       .then(applyProfil)
-      .catch(() => setErreurChargement(true));
+      .catch(() => {
+        if (!ac.signal.aborted) setErreurChargement(true);
+      });
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    const ac = new AbortController();
     if (onglet === "notes")
       api
-        .get<Note[]>("/api/me/notes")
+        .get<Note[]>("/api/me/notes", undefined, ac.signal)
         .then(setNotes)
         .then(() => setErreurChargement(false))
-        .catch(() => setErreurChargement(true));
+        .catch(() => {
+          if (!ac.signal.aborted) setErreurChargement(true);
+        });
     if (onglet === "activite")
       api
-        .get<ActiviteItem[]>("/api/me/activite")
+        .get<ActiviteItem[]>("/api/me/activite", undefined, ac.signal)
         .then(setActivite)
         .then(() => setErreurChargement(false))
-        .catch(() => setErreurChargement(true));
+        .catch(() => {
+          if (!ac.signal.aborted) setErreurChargement(true);
+        });
+    return () => ac.abort();
   }, [onglet]);
 
   async function saveProfil() {
@@ -390,236 +404,24 @@ export function ProfilePage() {
         aria-labelledby={`onglet-${onglet}`}
       >
 
-      {onglet === "abonnements" && (
-        <div className="space-y-4">
-          {profil.abonnements.length === 0 && (
-            <div className="rounded-lg border border-dashed border-ink-soft/25 bg-paper-raised p-6 text-center">
-              <p className="text-sm text-ink-soft">Aucun abonnement actif pour l'instant.</p>
-              <Link
-                to="/abonnement"
-                className="mt-3 inline-flex min-h-[40px] items-center rounded-full bg-ink px-5 text-sm font-medium text-paper hover:opacity-90"
-              >
-                Découvrir les forfaits
-              </Link>
-            </div>
-          )}
-          {profil.abonnements.map((s) => {
-            // Fenêtre de validité : jours restants + progression (bornée 0-100).
-            const debut = new Date(s.start_date).getTime();
-            const fin = new Date(s.end_date).getTime();
-            const maintenant = Date.now();
-            const joursRestants = Math.max(0, Math.ceil((fin - maintenant) / 86_400_000));
-            const progression = Math.min(100, Math.max(0, ((maintenant - debut) / Math.max(1, fin - debut)) * 100));
-            const expireBientot = joursRestants <= 14;
-            return (
-              <div key={s.id} className="overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised shadow-sm">
-                {/* Bandeau : portée + statut */}
-                <div className="flex flex-wrap items-center justify-between gap-2 bg-highlight-soft/60 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="font-mono-tag text-[10px] text-ink-soft">ABONNEMENT ACTIF</p>
-                    <p className="truncate font-serif-brand text-lg leading-tight">{s.scope_label}</p>
-                  </div>
-                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-valide px-2.5 py-1 font-mono-tag text-[10px] text-paper">
-                    <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
-                    Active
-                  </span>
-                </div>
-
-                <div className="p-4">
-                  {/* Validité : jours restants + barre de progression de la période */}
-                  <div>
-                    <div className="flex items-baseline justify-between text-xs">
-                      <span className={expireBientot ? "font-medium text-correction" : "font-medium text-ink"}>
-                        {joursRestants > 0 ? `${joursRestants} jour${joursRestants > 1 ? "s" : ""} restant${joursRestants > 1 ? "s" : ""}` : "Expire aujourd'hui"}
-                      </span>
-                      <span className="text-slate">jusqu'au {new Date(s.end_date).toLocaleDateString("fr-FR")}</span>
-                    </div>
-                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-soft/15" role="presentation">
-                      <div
-                        className={`h-full rounded-full ${expireBientot ? "bg-correction" : "bg-valide"}`}
-                        style={{ width: `${progression}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Portée en pastilles : chaque dimension couverte, lisible d'un coup d'œil */}
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {s.epreuve_label ? (
-                      <PuceAbonnement icone={FileText} label="Épreuve" valeur={s.epreuve_label} />
-                    ) : (
-                      <>
-                        <PuceAbonnement icone={GraduationCap} label="Classe" valeur={classeLabel(s.classe)} />
-                        <PuceAbonnement icone={GraduationCap} label="Série" valeur={s.filiere} />
-                        {s.matiere !== "ALL" && <PuceAbonnement icone={BookOpen} label="Matière" valeur={s.matiere} />}
-                        {s.annee !== "ALL" && <PuceAbonnement icone={Calendar} label="Année" valeur={s.annee} />}
-                      </>
-                    )}
-                  </div>
-
-                  {/* Ce que ça débloque, mis en avant */}
-                  <div className="mt-3 flex items-center gap-3 rounded-lg bg-paper px-4 py-3">
-                    <span className="font-serif-brand text-3xl text-ink">{s.epreuves_couvertes}</span>
-                    <span className="text-xs text-ink-soft">
-                      épreuve{s.epreuves_couvertes > 1 ? "s" : ""} débloquée
-                      {s.epreuves_couvertes > 1 ? "s" : ""} dans le catalogue
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-ink-soft/20 pt-3">
-                    <p className="font-mono-tag text-[10px] text-slate">
-                      Souscrite le {new Date(s.start_date).toLocaleDateString("fr-FR")}
-                    </p>
-                    <button
-                      onClick={() => cancel(s.id)}
-                      className="min-h-[36px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction-soft/40"
-                    >
-                      Annuler cet abonnement
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {onglet === "abonnements" && <PanneauAbonnements abonnements={profil.abonnements} onAnnuler={cancel} />}
 
       {onglet === "notes" && (
-        <div className="space-y-3">
-          {notes.length === 0 && (
-            <p className="text-sm text-slate">
-              Aucune note pour l'instant — sélectionne un passage dans une épreuve et clique « Prendre une note ».
-            </p>
-          )}
-          {notes.map((n) => (
-            <div key={n.id} className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-serif-brand text-base">
-                  {n.matiere ? `${n.matiere} — ${n.evaluation} ${n.annee}` : "Note personnelle"}
-                </p>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setNoteEdition(n)}
-                    aria-label="Modifier la note"
-                    title="Modifier"
-                    className="p-1.5 text-ink-soft hover:text-ink"
-                  >
-                    <Edit3 size={15} strokeWidth={1.75} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteNote(n.id)}
-                    aria-label="Supprimer la note"
-                    title="Supprimer"
-                    className="p-1.5 text-ink-soft hover:text-correction"
-                  >
-                    <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-              {n.contexte_extrait.trim() && (
-                <p className="mt-1 line-clamp-2 rounded border-l-4 border-highlight bg-highlight-soft/40 px-2 py-1 text-xs text-ink-soft">
-                  {n.contexte_extrait.replace(/\s+/g, " ")}
-                </p>
-              )}
-              <p className="mt-2 line-clamp-3 text-sm text-ink-soft">{n.contenu.replace(/\s+/g, " ")}</p>
-              <p className="mt-2 font-mono-tag text-[10px] text-slate">
-                Modifiée {formatRelativeTime(n.updated_at)}
-                {n.epreuve_id && (
-                  <>
-                    {" · "}
-                    <Link to={`/epreuve/${n.epreuve_id}`} className="underline hover:text-highlight">
-                      ouvrir l'épreuve
-                    </Link>
-                  </>
-                )}
-              </p>
-            </div>
-          ))}
-        </div>
+        <PanneauNotes notes={notes} onEditer={setNoteEdition} onSupprimer={deleteNote} />
       )}
 
-      {onglet === "activite" && (
-        <div className="space-y-1">
-          {activite.length === 0 && <p className="text-sm text-slate">Aucune activité enregistrée.</p>}
-          {activite.map((a, i) => {
-            const Icone = ICONE_ACTIVITE[a.type] ?? Activity;
-            // Les items reliés à une épreuve ouvrent le lecteur ; une
-            // discussion IA rouvre en plus SON onglet (?conv=).
-            const contenu = (
-              <>
-                <Icone size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-ink-soft" />
-                <p className="min-w-0 flex-1 truncate text-sm">{a.libelle}</p>
-                <p className="shrink-0 font-mono-tag text-[10px] text-slate">{formatRelativeTime(a.date)}</p>
-              </>
-            );
-            const base = "flex items-center gap-3 rounded-lg border border-ink-soft/10 bg-paper-raised px-3 py-2";
-            if (a.epreuve_id) {
-              const cible = a.conversation_id
-                ? `/epreuve/${a.epreuve_id}?conv=${a.conversation_id}`
-                : `/epreuve/${a.epreuve_id}`;
-              return (
-                <Link key={i} to={cible} className={`${base} transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50`}>
-                  {contenu}
-                </Link>
-              );
-            }
-            return (
-              <div key={i} className={base}>
-                {contenu}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {onglet === "activite" && <PanneauActivite activite={activite} />}
 
       {onglet === "donnees" && user && (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
-            <p className="flex items-center gap-2 font-serif-brand text-base">
-              <Database size={16} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
-              Mes données et confidentialité
-            </p>
-            <p className="mt-1 text-xs text-ink-soft">
-              Tu décides de ce qui est conservé sur nos serveurs. Un refus est effectif
-              immédiatement ; tu peux changer d'avis ici à tout moment.
-            </p>
-            <div className="mt-3 space-y-2">
-              <label className="flex cursor-pointer items-center gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={consentIa}
-                  onChange={(e) => setConsentIa(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--color-highlight)]"
-                />
-                Stocker mes conversations IA (refus = discussions éphémères, rien n'est enregistré)
-              </label>
-              <label className="flex cursor-pointer items-center gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={consentNotes}
-                  onChange={(e) => setConsentNotes(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--color-highlight)]"
-                />
-                Stocker mes notes personnelles (refus = la prise de note est masquée)
-              </label>
-            </div>
-            {(consentIa !== (user.consent_ia !== false) || consentNotes !== (user.consent_notes !== false)) && (
-              <button
-                type="button"
-                disabled={savingConsent}
-                onClick={() => saveConsentement(consentIa, consentNotes)}
-                className="mt-3 min-h-[36px] rounded-full bg-ink px-4 text-xs font-medium text-paper disabled:opacity-50"
-              >
-                {savingConsent ? "Enregistrement…" : "Enregistrer mes choix"}
-              </button>
-            )}
-          </div>
-          <p className="px-1 text-xs text-slate">
-            Ta demande de suppression de compte et de données peut être adressée à l'équipe
-            depuis l'adresse {user.email}.
-          </p>
-        </div>
+        <PanneauDonnees
+          user={user}
+          consentIa={consentIa}
+          consentNotes={consentNotes}
+          onConsentIa={setConsentIa}
+          onConsentNotes={setConsentNotes}
+          savingConsent={savingConsent}
+          onSauver={() => saveConsentement(consentIa, consentNotes)}
+        />
       )}
       </div>
 
@@ -688,6 +490,298 @@ function ErreurChargement({ onReessayer }: { onReessayer: () => void }) {
       >
         Réessayer
       </button>
+    </div>
+  );
+}
+
+/** Panneau « Abonnements » : liste des abonnements actifs avec fenêtre de
+ * validité et portée. Extrait de ProfilePage (É20) — pur affichage,
+ * l'annulation (bouton en bas de carte) reste gérée par la page via
+ * `onAnnuler` (ConfirmDialog). */
+function PanneauAbonnements({
+  abonnements,
+  onAnnuler,
+}: {
+  abonnements: SubscriptionOut[];
+  onAnnuler: (id: string) => void;
+}) {
+  if (abonnements.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-ink-soft/25 bg-paper-raised p-6 text-center">
+        <p className="text-sm text-ink-soft">Aucun abonnement actif pour l'instant.</p>
+        <Link
+          to="/abonnement"
+          className="mt-3 inline-flex min-h-[40px] items-center rounded-full bg-ink px-5 text-sm font-medium text-paper hover:opacity-90"
+        >
+          Découvrir les forfaits
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {abonnements.map((s) => {
+        // Fenêtre de validité : jours restants + progression (bornée 0-100).
+        const debut = new Date(s.start_date).getTime();
+        const fin = new Date(s.end_date).getTime();
+        const maintenant = Date.now();
+        const joursRestants = Math.max(0, Math.ceil((fin - maintenant) / 86_400_000));
+        const progression = Math.min(100, Math.max(0, ((maintenant - debut) / Math.max(1, fin - debut)) * 100));
+        const expireBientot = joursRestants <= 14;
+        return (
+          <div key={s.id} className="overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised shadow-sm">
+            {/* Bandeau : portée + statut */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-highlight-soft/60 px-4 py-3">
+              <div className="min-w-0">
+                <p className="font-mono-tag text-[10px] text-ink-soft">ABONNEMENT ACTIF</p>
+                <p className="truncate font-serif-brand text-lg leading-tight">{s.scope_label}</p>
+              </div>
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-valide px-2.5 py-1 font-mono-tag text-[10px] text-paper">
+                <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
+                Active
+              </span>
+            </div>
+
+            <div className="p-4">
+              {/* Validité : jours restants + barre de progression de la période */}
+              <div>
+                <div className="flex items-baseline justify-between text-xs">
+                  <span className={expireBientot ? "font-medium text-correction" : "font-medium text-ink"}>
+                    {joursRestants > 0 ? `${joursRestants} jour${joursRestants > 1 ? "s" : ""} restant${joursRestants > 1 ? "s" : ""}` : "Expire aujourd'hui"}
+                  </span>
+                  <span className="text-slate">jusqu'au {new Date(s.end_date).toLocaleDateString("fr-FR")}</span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-soft/15" role="presentation">
+                  <div
+                    className={`h-full rounded-full ${expireBientot ? "bg-correction" : "bg-valide"}`}
+                    style={{ width: `${progression}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Portée en pastilles : chaque dimension couverte, lisible d'un coup d'œil */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {s.epreuve_label ? (
+                  <PuceAbonnement icone={FileText} label="Épreuve" valeur={s.epreuve_label} />
+                ) : (
+                  <>
+                    <PuceAbonnement icone={GraduationCap} label="Classe" valeur={classeLabel(s.classe)} />
+                    <PuceAbonnement icone={GraduationCap} label="Série" valeur={s.filiere} />
+                    {s.matiere !== "ALL" && <PuceAbonnement icone={BookOpen} label="Matière" valeur={s.matiere} />}
+                    {s.annee !== "ALL" && <PuceAbonnement icone={Calendar} label="Année" valeur={s.annee} />}
+                  </>
+                )}
+              </div>
+
+              {/* Ce que ça débloque, mis en avant */}
+              <div className="mt-3 flex items-center gap-3 rounded-lg bg-paper px-4 py-3">
+                <span className="font-serif-brand text-3xl text-ink">{s.epreuves_couvertes}</span>
+                <span className="text-xs text-ink-soft">
+                  épreuve{s.epreuves_couvertes > 1 ? "s" : ""} débloquée
+                  {s.epreuves_couvertes > 1 ? "s" : ""} dans le catalogue
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-ink-soft/20 pt-3">
+                <p className="font-mono-tag text-[10px] text-slate">
+                  Souscrite le {new Date(s.start_date).toLocaleDateString("fr-FR")}
+                </p>
+                <button
+                  onClick={() => onAnnuler(s.id)}
+                  className="min-h-[36px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction-soft/40"
+                >
+                  Annuler cet abonnement
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Panneau « Mes notes » : liste des notes personnelles + actions
+ * modifier/supprimer. Extrait de ProfilePage (É20) — `onEditer` ouvre le
+ * NoteEditor, `onSupprimer` passe par la confirmation de la page. */
+function PanneauNotes({
+  notes,
+  onEditer,
+  onSupprimer,
+}: {
+  notes: Note[];
+  onEditer: (n: Note) => void;
+  onSupprimer: (id: string) => void;
+}) {
+  if (notes.length === 0) {
+    return (
+      <p className="text-sm text-slate">
+        Aucune note pour l'instant — sélectionne un passage dans une épreuve et clique « Prendre une note ».
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {notes.map((n) => (
+        <div key={n.id} className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-serif-brand text-base">
+              {n.matiere ? `${n.matiere} — ${n.evaluation} ${n.annee}` : "Note personnelle"}
+            </p>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onEditer(n)}
+                aria-label="Modifier la note"
+                title="Modifier"
+                className="p-1.5 text-ink-soft hover:text-ink"
+              >
+                <Edit3 size={15} strokeWidth={1.75} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSupprimer(n.id)}
+                aria-label="Supprimer la note"
+                title="Supprimer"
+                className="p-1.5 text-ink-soft hover:text-correction"
+              >
+                <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          {n.contexte_extrait.trim() && (
+            <p className="mt-1 line-clamp-2 rounded border-l-4 border-highlight bg-highlight-soft/40 px-2 py-1 text-xs text-ink-soft">
+              {n.contexte_extrait.replace(/\s+/g, " ")}
+            </p>
+          )}
+          <p className="mt-2 line-clamp-3 text-sm text-ink-soft">{n.contenu.replace(/\s+/g, " ")}</p>
+          <p className="mt-2 font-mono-tag text-[10px] text-slate">
+            Modifiée {formatRelativeTime(n.updated_at)}
+            {n.epreuve_id && (
+              <>
+                {" · "}
+                <Link to={`/epreuve/${n.epreuve_id}`} className="underline hover:text-ink">
+                  ouvrir l'épreuve
+                </Link>
+              </>
+            )}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Panneau « Activité » : journal chronologique des actions (consultations,
+ * abonnements, discussions IA…). Les items reliés à une épreuve ouvrent le
+ * lecteur (et l'onglet de discussion le cas échéant). Extrait de
+ * ProfilePage (É20). */
+function PanneauActivite({ activite }: { activite: ActiviteItem[] }) {
+  if (activite.length === 0) {
+    return <p className="text-sm text-slate">Aucune activité enregistrée.</p>;
+  }
+  return (
+    <div className="space-y-1">
+      {activite.map((a, i) => {
+        const Icone = ICONE_ACTIVITE[a.type] ?? Activity;
+        // Les items reliés à une épreuve ouvrent le lecteur ; une
+        // discussion IA rouvre en plus SON onglet (?conv=).
+        const contenu = (
+          <>
+            <Icone size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-ink-soft" />
+            <p className="min-w-0 flex-1 truncate text-sm">{a.libelle}</p>
+            <p className="shrink-0 font-mono-tag text-[10px] text-slate">{formatRelativeTime(a.date)}</p>
+          </>
+        );
+        const base = "flex items-center gap-3 rounded-lg border border-ink-soft/10 bg-paper-raised px-3 py-2";
+        if (a.epreuve_id) {
+          const cible = a.conversation_id
+            ? `/epreuve/${a.epreuve_id}?conv=${a.conversation_id}`
+            : `/epreuve/${a.epreuve_id}`;
+          return (
+            <Link key={i} to={cible} className={`${base} transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50`}>
+              {contenu}
+            </Link>
+          );
+        }
+        return (
+          <div key={i} className={base}>
+            {contenu}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Panneau « Confidentialité » : réglages de stockage (IA, notes) avec
+ * sauvegarde explicite. Les choix restent locaux jusqu'au clic
+ * « Enregistrer mes choix » — la page orchestre la mise à jour compte. */
+function PanneauDonnees({
+  user,
+  consentIa,
+  consentNotes,
+  onConsentIa,
+  onConsentNotes,
+  savingConsent,
+  onSauver,
+}: {
+  user: User;
+  consentIa: boolean;
+  consentNotes: boolean;
+  onConsentIa: (v: boolean) => void;
+  onConsentNotes: (v: boolean) => void;
+  savingConsent: boolean;
+  onSauver: () => void;
+}) {
+  const choixModifies =
+    consentIa !== (user.consent_ia !== false) || consentNotes !== (user.consent_notes !== false);
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+        <p className="flex items-center gap-2 font-serif-brand text-base">
+          <Database size={16} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+          Mes données et confidentialité
+        </p>
+        <p className="mt-1 text-xs text-ink-soft">
+          Tu décides de ce qui est conservé sur nos serveurs. Un refus est effectif
+          immédiatement ; tu peux changer d'avis ici à tout moment.
+        </p>
+        <div className="mt-3 space-y-2">
+          <label className="flex cursor-pointer items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={consentIa}
+              onChange={(e) => onConsentIa(e.target.checked)}
+              className="h-4 w-4 accent-[var(--color-highlight)]"
+            />
+            Stocker mes conversations IA (refus = discussions éphémères, rien n'est enregistré)
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={consentNotes}
+              onChange={(e) => onConsentNotes(e.target.checked)}
+              className="h-4 w-4 accent-[var(--color-highlight)]"
+            />
+            Stocker mes notes personnelles (refus = la prise de note est masquée)
+          </label>
+        </div>
+        {choixModifies && (
+          <button
+            type="button"
+            disabled={savingConsent}
+            onClick={onSauver}
+            className="mt-3 min-h-[36px] rounded-full bg-ink px-4 text-xs font-medium text-paper disabled:opacity-50"
+          >
+            {savingConsent ? "Enregistrement…" : "Enregistrer mes choix"}
+          </button>
+        )}
+      </div>
+      <p className="px-1 text-xs text-slate">
+        Ta demande de suppression de compte et de données peut être adressée à l'équipe
+        depuis l'adresse {user.email}.
+      </p>
     </div>
   );
 }

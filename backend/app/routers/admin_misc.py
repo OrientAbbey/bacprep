@@ -155,62 +155,17 @@ def admin_stats(db: Session = Depends(get_db), lock=Depends(require_admin)) -> d
     actifs, revenu confirmé, épreuves par statut et par classe) + indicateurs
     enrichis : stockage objet (poids total, répartition documents/images),
     revenus des 6 derniers mois, consultations, notes, signalements ouverts
-    et discussions IA."""
-    par_classe = dict(
-        db.query(EpreuveORM.classe, func.count(EpreuveORM.id))
-        .filter(EpreuveORM.statut == "publie")
-        .group_by(EpreuveORM.classe)
-        .all()
-    )
-
-    # La métrique « Utilisateurs » ne compte que les élèves : les comptes
-    # dont l'email est dans la liste blanche admin sont exclus (un admin
-    # connecté en élève pour tester ne doit pas gonfler le compteur).
-    admins = admin_session.allowed_emails()
-    utilisateurs = (
-        db.query(UserORM)
-        .filter(~func.lower(UserORM.email).in_(list(admins) or [""]))
-        .count()
-        if admins
-        else db.query(UserORM).count()
-    )
-
-    # Stockage objet : somme des tailles connues en base, répartition par format.
-    stockage_par_format = dict(
-        db.query(EpreuveFileORM.format, func.coalesce(func.sum(EpreuveFileORM.size_bytes), 0))
-        .group_by(EpreuveFileORM.format)
-        .all()
-    )
-    nb_fichiers = db.query(EpreuveFileORM.id).count()
-
-    # Revenus confirmés des 6 derniers mois (clé "AAAA-MM"), calculés en
-    # Python — le volume de paiements reste faible à ce stade.
-    revenus_par_mois: dict[str, int] = {}
-    paiements = db.query(PaymentORM).filter(PaymentORM.statut == "confirmed").all()
-    for p in paiements:
-        d = p.confirmed_at or p.created_at
-        if d is None:
-            continue
-        cle = f"{d.year:04d}-{d.month:02d}"
-        revenus_par_mois[cle] = revenus_par_mois.get(cle, 0) + p.montant
-    # 6 DERNIERS MOIS CALENDAIRES (mois vide = 0) : trier les seules clés
-    # présentes ferait disparaître d'un graphique un mois sans revenu et
-    # n'afficherait pas 6 points stables (corrigé 2026-09).
-    six_derniers: list[str] = []
-    now = utc_now()
-    for i in range(5, -1, -1):
-        y, m = (now.year, now.month - i) if now.month > i else (now.year - 1, now.month - i + 12)
-        six_derniers.append(f"{y:04d}-{m:02d}")
-
+    et discussions IA. Calcul réparti en petits compteurs dédiés (lisibilité,
+    même logique, mêmes requêtes)."""
+    paiements = _admin_paiements_confirmes(db)
+    revenus_par_mois, six_derniers = _admin_revenus_par_mois(paiements)
+    stockage_par_format, nb_fichiers = _admin_stockage(db)
     return {
-        "utilisateurs": utilisateurs,
+        "utilisateurs": _admin_nb_eleves(db),
         "abonnements_actifs": db.query(SubscriptionORM).filter(SubscriptionORM.statut == "active").count(),
         "revenu_total_fcfa": sum(p.montant for p in paiements),
-        "epreuves_par_statut": {
-            statut: db.query(EpreuveORM).filter(EpreuveORM.statut == statut).count()
-            for statut in ("brouillon", "a_reviser", "publie")
-        },
-        "epreuves_par_classe": par_classe,
+        "epreuves_par_statut": _admin_epreuves_par_statut(db),
+        "epreuves_par_classe": _admin_epreuves_par_classe(db),
         "stockage": {
             "total_octets": sum(stockage_par_format.values()),
             "par_format": stockage_par_format,
@@ -222,6 +177,72 @@ def admin_stats(db: Session = Depends(get_db), lock=Depends(require_admin)) -> d
         "discussions_ia": db.query(AIConversationORM).count(),
         "signalements_ouverts": db.query(SignalementORM).filter(SignalementORM.statut == "ouvert").count(),
     }
+
+
+def _admin_paiements_confirmes(db: Session) -> list[PaymentORM]:
+    return db.query(PaymentORM).filter(PaymentORM.statut == "confirmed").all()
+
+
+def _admin_epreuves_par_classe(db: Session) -> dict:
+    return dict(
+        db.query(EpreuveORM.classe, func.count(EpreuveORM.id))
+        .filter(EpreuveORM.statut == "publie")
+        .group_by(EpreuveORM.classe)
+        .all()
+    )
+
+
+def _admin_epreuves_par_statut(db: Session) -> dict:
+    return {
+        statut: db.query(EpreuveORM).filter(EpreuveORM.statut == statut).count()
+        for statut in ("brouillon", "a_reviser", "publie")
+    }
+
+
+def _admin_nb_eleves(db: Session) -> int:
+    """La métrique « Utilisateurs » ne compte que les élèves : les comptes
+    dont l'email est dans la liste blanche admin sont exclus (un admin
+    connecté en élève pour tester ne doit pas gonfler le compteur)."""
+    admins = admin_session.allowed_emails()
+    return (
+        db.query(UserORM)
+        .filter(~func.lower(UserORM.email).in_(list(admins) or [""]))
+        .count()
+        if admins
+        else db.query(UserORM).count()
+    )
+
+
+def _admin_stockage(db: Session) -> tuple[dict, int]:
+    """Stockage objet : somme des tailles connues en base, répartition par
+    format + nombre de fichiers."""
+    par_format = dict(
+        db.query(EpreuveFileORM.format, func.coalesce(func.sum(EpreuveFileORM.size_bytes), 0))
+        .group_by(EpreuveFileORM.format)
+        .all()
+    )
+    return par_format, db.query(EpreuveFileORM.id).count()
+
+
+def _admin_revenus_par_mois(paiements: list[PaymentORM]) -> tuple[dict[str, int], list[str]]:
+    """Revenus agrégés par mois (clé "AAAA-MM"), calculés en Python — le
+    volume de paiements reste faible à ce stade — ET la liste ordonnée des
+    6 derniers mois calendaires (un mois vide vaut 0) : trier les seules
+    clés présentes ferait disparaître d'un graphique un mois sans revenu et
+    n'afficherait pas 6 points stables (corrigé 2026-09)."""
+    revenus: dict[str, int] = {}
+    for p in paiements:
+        d = p.confirmed_at or p.created_at
+        if d is None:
+            continue
+        cle = f"{d.year:04d}-{d.month:02d}"
+        revenus[cle] = revenus.get(cle, 0) + p.montant
+    six_derniers: list[str] = []
+    now = utc_now()
+    for i in range(5, -1, -1):
+        y, m = (now.year, now.month - i) if now.month > i else (now.year - 1, now.month - i + 12)
+        six_derniers.append(f"{y:04d}-{m:02d}")
+    return revenus, six_derniers
 
 
 @router.get("/events")
@@ -370,60 +391,77 @@ def admin_list_utilisateurs(
     codes — et il n'existe pas de mot de passe local."""
     users = _compte_hors_admins(db.query(UserORM)).order_by(UserORM.created_at.desc()).limit(500).all()
     ids = [u.id for u in users]
+    notes = _admin_comptes_par_user(db, NoteORM, ids)
+    convs = _admin_comptes_par_user(db, AIConversationORM, ids)
+    consults = _admin_comptes_par_user(db, ConsultationORM, ids)
+    subs_actifs = _admin_comptes_par_user(db, SubscriptionORM, ids, SubscriptionORM.statut == "active")
+    depenses = _admin_depenses_par_user(db, ids)
+    sessions = _admin_derniere_connexion_par_user(db, ids)
+    return [_admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, sessions) for u in users]
 
-    def _counts(model, extra=None):
-        q = db.query(model.user_id, func.count(model.id))
-        if extra is not None:
-            q = q.filter(extra)
-        grouped = q.filter(model.user_id.in_(ids or [""])).group_by(model.user_id).all() if ids else []
-        return dict(grouped)
 
-    notes = _counts(NoteORM)
-    convs = _counts(AIConversationORM)
-    consults = _counts(ConsultationORM)
-    subs_actifs = _counts(SubscriptionORM, SubscriptionORM.statut == "active")
-    depenses = {
+def _admin_comptes_par_user(db: Session, model, ids: list, extra=None) -> dict[str, int]:
+    """Nombre de lignes `model` par user_id (hors admins) pour le top-500,
+    avec filtre optionnel (ex. abonnements actifs)."""
+    q = db.query(model.user_id, func.count(model.id))
+    if extra is not None:
+        q = q.filter(extra)
+    grouped = q.filter(model.user_id.in_(ids or [""])).group_by(model.user_id).all() if ids else []
+    return dict(grouped)
+
+
+def _admin_depenses_par_user(db: Session, ids: list) -> dict[str, int]:
+    """Somme des paiements confirmés par utilisateur — même logique que
+    `ProfilePage.total_depense_fcfa` mais sur tout le tank admin."""
+    if not ids:
+        return {}
+    return {
         r[0]: r[1]
         for r in db.query(PaymentORM.user_id, func.coalesce(func.sum(PaymentORM.montant), 0))
-        .filter(PaymentORM.user_id.in_(ids or [""]), PaymentORM.statut == "confirmed")
+        .filter(PaymentORM.user_id.in_(ids), PaymentORM.statut == "confirmed")
         .group_by(PaymentORM.user_id)
         .all()
-    } if ids else {}
-    sessions = {
+    }
+
+
+def _admin_derniere_connexion_par_user(db: Session, ids: list) -> dict[str, object]:
+    """Horodatage de la dernière session (issued_at) — utilisée en repli
+    pour `derniere_connexion` si la colonne persistante est vide."""
+    if not ids:
+        return {}
+    return {
         r[0]: r[1]
         for r in db.query(SessionORM.user_id, func.max(SessionORM.issued_at))
-        .filter(SessionORM.user_id.in_(ids or [""]))
+        .filter(SessionORM.user_id.in_(ids))
         .group_by(SessionORM.user_id)
         .all()
-    } if ids else {}
+    }
 
-    out = []
-    for u in users:
-        out.append(
-            {
-                "id": u.id,
-                "nom": u.nom,
-                "email": u.email,
-                "niveau": u.niveau,
-                "classe": u.classe,
-                "etablissement": u.etablissement,
-                "consent_ia": u.consent_ia,
-                "consent_notes": u.consent_notes,
-                "banni": u.banni,
-                "banni_motif": u.banni_motif,
-                "created_at": u.created_at,
-                # Horodatage persistant posé à chaque login (survit à la
-                # déconnexion — la table `sessions`, elle, est purgée) ;
-                # repli sur la session courante pour les comptes antérieurs.
-                "derniere_connexion": u.derniere_connexion or sessions.get(u.id),
-                "notes": notes.get(u.id, 0),
-                "discussions_ia": convs.get(u.id, 0),
-                "consultations": consults.get(u.id, 0),
-                "abonnements_actifs": subs_actifs.get(u.id, 0),
-                "total_depense_fcfa": depenses.get(u.id, 0),
-            }
-        )
-    return out
+
+def _admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, sessions) -> dict:
+    """Formate une ligne utilisateur pour le tableau du back-office."""
+    return {
+        "id": u.id,
+        "nom": u.nom,
+        "email": u.email,
+        "niveau": u.niveau,
+        "classe": u.classe,
+        "etablissement": u.etablissement,
+        "consent_ia": u.consent_ia,
+        "consent_notes": u.consent_notes,
+        "banni": u.banni,
+        "banni_motif": u.banni_motif,
+        "created_at": u.created_at,
+        # Horodatage persistant posé à chaque login (survit à la
+        # déconnexion — la table `sessions`, elle, est purgée) ;
+        # repli sur la session courante pour les comptes antérieurs.
+        "derniere_connexion": u.derniere_connexion or sessions.get(u.id),
+        "notes": notes.get(u.id, 0),
+        "discussions_ia": convs.get(u.id, 0),
+        "consultations": consults.get(u.id, 0),
+        "abonnements_actifs": subs_actifs.get(u.id, 0),
+        "total_depense_fcfa": depenses.get(u.id, 0),
+    }
 
 
 @router.post("/utilisateurs/{user_id}/bannir")

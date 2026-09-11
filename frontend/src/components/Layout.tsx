@@ -59,10 +59,10 @@ export function Layout({ children }: { children?: React.ReactNode }) {
           </form>
 
           <nav className="ml-auto flex items-center gap-4 text-sm">
-            <Link to="/" className="hover:text-highlight">
+            <Link to="/" className="hover:text-ink">
               Accueil
             </Link>
-            <Link to="/abonnement" className="hidden sm:inline hover:text-highlight">
+            <Link to="/abonnement" className="hidden sm:inline hover:text-ink">
               Abonnement
             </Link>
             {/* Console admin : réservée aux comptes de la liste blanche
@@ -70,7 +70,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 pour les autres ; la route reste de toute façon protégée par
                 le jeton admin vérifié à chaque appel API. */}
             {user?.is_admin && (
-              <Link to="/admin" className="hidden sm:inline hover:text-highlight">
+              <Link to="/admin" className="hidden sm:inline hover:text-ink">
                 Admin
               </Link>
             )}

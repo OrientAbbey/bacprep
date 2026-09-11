@@ -1,4 +1,5 @@
 import { BASE_URL } from "../api/client";
+import type { Conversation } from "../components/AssistantPanel";
 
 /**
  * Consomme un flux Server-Sent Events produit par `POST /api/assistant/ask/stream`.
@@ -26,9 +27,14 @@ export interface AssistantAskPayload {
   message: string;
 }
 
+export type AssistantStreamEvent =
+  | { type: "chunk"; text: string }
+  | { type: "done"; conversation: Conversation | null }
+  | { type: "error"; message: string };
+
 export async function streamAssistantAsk(
   payload: AssistantAskPayload,
-  onEvent: (event: { type: "chunk"; text: string } | { type: "done"; conversation: any } | { type: "error"; message: string }) => void
+  onEvent: (event: AssistantStreamEvent) => void
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/assistant/ask/stream`, {
     method: "POST",
@@ -46,6 +52,20 @@ export async function streamAssistantAsk(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  function parseEvent(raw: string): void {
+    const dataLine = raw.split("\n").find((line) => line.startsWith("data:"));
+    if (!dataLine) return;
+    const jsonText = dataLine.slice("data:".length).trim();
+    if (!jsonText) return;
+
+    try {
+      onEvent(JSON.parse(jsonText));
+    } catch {
+      // Fragment JSON incomplet ou invalide — ignoré plutôt que de
+      // faire planter tout le flux pour une ligne malformée.
+    }
+  }
+
   function processBuffer(): void {
     // Normaliser CRLF → LF pour que le découpage sur "\n\n" fonctionne
     // même si le serveur envoie des\r\n (certains implémentations SSE).
@@ -53,18 +73,7 @@ export async function streamAssistantAsk(
     while ((boundary = buffer.indexOf("\n\n")) !== -1) {
       const rawEvent = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + 2);
-
-      const dataLine = rawEvent.split("\n").find((line) => line.startsWith("data:"));
-      if (!dataLine) continue;
-      const jsonText = dataLine.slice("data:".length).trim();
-      if (!jsonText) continue;
-
-      try {
-        onEvent(JSON.parse(jsonText));
-      } catch {
-        // Fragment JSON incomplet ou invalide — ignoré plutôt que de
-        // faire planter tout le flux pour une ligne malformée.
-      }
+      parseEvent(rawEvent);
     }
   }
 
@@ -75,6 +84,8 @@ export async function streamAssistantAsk(
     if (done) break;
   }
 
-  // Traiter le résidu éventuel du buffer (dernier SSE sans \n\n final).
-  if (buffer.trim()) processBuffer();
+  // Dernier événement : le serveur peut fermer le flux après le dernier
+  // champ `data:` SANS le séparateur "\n\n" final. `processBuffer` n'a
+  // alors rien consommé — on parse le résidu tel quel.
+  if (buffer.trim()) parseEvent(buffer);
 }

@@ -137,7 +137,7 @@ export function LoginPage() {
           )}
 
           <p className="mt-6 text-xs text-slate">
-            <Link to="/" className="underline hover:text-highlight">
+            <Link to="/" className="underline hover:text-ink">
               ← Retour à l'accueil
             </Link>
           </p>

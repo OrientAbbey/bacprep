@@ -149,16 +149,16 @@ tokens de design uniques, découpage router/core sobre). Les écarts identifiés
 
 ### PHASE 4 — Qualité / politique (🟢 optionnel, au choix)
 
-- [ ] **É16. `AuthProvider` : helper `completeLogin(me)`** — déduplique `loginMock`/`loginGoogle`.
-- [ ] **É17. `create_note` → `NoteOut`** — `epreuves.py:444-475`.
-- [ ] **É18. `streaming.ts` : dernier événement SSE + type `conversation`** — buffer final + type explicite.
-- [ ] **É19. `AssistantPanel` : closures/updaters + flush chunk SSE** — ref stable des conversations
+- [x] **É16. `AuthProvider` : helper `completeLogin(me)`** — déduplique `loginMock`/`loginGoogle`.
+- [x] **É17. `create_note` → `NoteOut`** — `epreuves.py:444-475`.
+- [x] **É18. `streaming.ts` : dernier événement SSE + type `conversation`** — buffer final + type explicite.
+- [x] **É19. `AssistantPanel` : closures/updaters + flush chunk SSE** — ref stable des conversations
   (renommage d'onglet), `setActiveId` hors updater, buffer chunk en `requestAnimationFrame`.
-- [ ] **É20. Découpage `AssistantPanel`/`ProfilePage`** (onglets → composants séparés).
-- [ ] **É21. Split des 8 fonctions backend > 60 lignes** (priorité : `activite`, `admin_stats`,
+- [x] **É20. Découpage `AssistantPanel`/`ProfilePage`** (onglets → composants séparés).
+- [x] **É21. Split des 8 fonctions backend > 60 lignes** (priorité : `activite`, `admin_stats`,
   `admin_list_utilisateurs`, `_resolve_scope_fields`).
-- [ ] **É22. Règle de couverture unique** — `store.py` : un seul chemin de comptage (GROUP BY) au lieu de 3.
-- [ ] **É23. Nits mineurs** — code mort commenté `logging_config.py:30-31`, Combobox listeners, hook
+- [x] **É22. Règle de couverture unique** — `store.py` : un seul chemin de comptage (GROUP BY) au lieu de 3.
+- [x] **É23. Nits mineurs** — code mort commenté `logging_config.py:30-31`, Combobox listeners, hook
   `useClickOutside`, AbortController ProfilePage, `hover:text-highlight` → couleur lisible.
 
 ---

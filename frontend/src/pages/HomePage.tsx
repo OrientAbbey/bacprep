@@ -101,7 +101,7 @@ export function HomePage() {
         {!user && (
           <p className="mt-3 text-xs text-slate">
             Consultation libre du catalogue —{" "}
-            <Link to="/connexion" className="underline hover:text-highlight">
+            <Link to="/connexion" className="underline hover:text-ink">
               se connecter
             </Link>{" "}
             pour ouvrir les épreuves.
@@ -113,7 +113,7 @@ export function HomePage() {
         <section aria-label="Consultées récemment">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="font-mono-tag text-xs text-ink-soft">CONSULTÉES RÉCEMMENT</h2>
-            <Link to="/profil" className="text-xs text-ink-soft underline-offset-2 hover:text-highlight hover:underline">
+            <Link to="/profil" className="text-xs text-ink-soft underline-offset-2 hover:text-ink hover:underline">
               Tout voir dans ton profil
             </Link>
           </div>
@@ -143,7 +143,7 @@ export function HomePage() {
               <button
                 type="button"
                 onClick={() => setNiveauActif(null)}
-                className="shrink-0 text-ink-soft underline-offset-2 hover:text-highlight hover:underline focus-visible:text-highlight"
+                className="shrink-0 text-ink-soft underline-offset-2 hover:text-ink hover:underline focus-visible:text-ink"
               >
                 Niveaux
               </button>

@@ -248,42 +248,59 @@ def matching_epreuves_count(
     epreuve_id: Optional[str] = None,
 ) -> int:
     """Nombre d'épreuves publiées correspondant à une combinaison de
-    filtres — sert à la fois au récapitulatif d'abonnement et à
-    l'enrichissement des souscriptions affichées au profil. Les compteurs
-    sont calculés dans le cadre d'une classe (le `classe` d'un abonnement
-    ne vaut jamais "ALL" pour les scopes achetés depuis la refonte)."""
-    query = db.query(EpreuveORM).filter(EpreuveORM.statut == "publie")
-    if evaluation:
-        query = query.filter(EpreuveORM.evaluation == evaluation)
-    if classe:
-        query = query.filter(EpreuveORM.classe == classe)
-    if filiere:
-        query = query.join(EpreuveFiliereORM, EpreuveFiliereORM.epreuve_id == EpreuveORM.id).filter(
-            EpreuveFiliereORM.filiere == filiere
-        )
-    if matiere:
-        query = query.filter(EpreuveORM.matiere == matiere)
-    if annee:
-        query = query.filter(EpreuveORM.annee == annee)
-    if epreuve_id:
-        query = query.filter(EpreuveORM.id == epreuve_id)
-    return query.distinct().count()
+    filtres — sert à la fois au récapitulatif d'abonnement (page
+    Abonnement) et, via `sub_to_out`, à l'enrichissement des souscriptions
+    du profil. Délègue au chemin GROUPÉ unique (`matching_epreuves_counts`) :
+    la règle de correspondance n'existe qu'EN UN SEUL endroit — une dérive
+    entre comptage unitaire et comptage groupé est impossible."""
+    return matching_epreuves_counts(
+        db,
+        [
+            {
+                "_key": "single",
+                "evaluation": evaluation,
+                "classe": classe,
+                "filiere": filiere,
+                "matiere": matiere,
+                "annee": annee,
+                "epreuve_id": epreuve_id,
+            }
+        ],
+    )["single"]
 
 
 def matching_epreuves_counts(
     db: Session, criteria: list[dict]
 ) -> dict[str, int]:
-    """Compteurs couverts par CHAQUE souscription en UNE requête groupée —
+    """Compteurs couverts par CHAQUE souscription en UNE passe groupée —
     remplace le N+1 de `sub_to_out` (core/subscriptions.py) qui faisait une
-    requête SQL de comptage par abonnement affiché au profil (2 appels : me.py
-    et subscriptions.py). Charge TOUTES les épreuves publiées et leurs
-    filières en un seul passage, puis applique en mémoire exactement les
-    mêmes règles que `matching_epreuves_count` — même source de vérité, aucune
-    dérive entre le chemin unitaire et le chemin groupé.
+    requête SQL de comptage par abonnement affiché au profil (2 appels :
+    me.py et subscriptions.py). Charge TOUTES les épreuves publiées et leurs
+    filières en un seul passage, puis applique en mémoire exactement la
+    même règle que `matching_epreuves_count` — chemin unique, aucune
+    dérive entre le comptage unitaire et le comptage groupé.
 
-    `criteria` : listes de dictionnaires {classe, filiere, matiere, annee,
-    epreuve_id} (les jokers "ALL" déjà résolus par l'appelant : `sub_to_out`
-    ne passe jamais matiere/annee sans valeur ou "ALL" mélangé)."""
+    `criteria` : listes de dictionnaires {evaluation, classe, filiere,
+    matiere, annee, epreuve_id, _key} (jokers "ALL" et absences acceptés)."""
+    epreuves, filieres = _published_epreuves_index(db)
+
+    out: dict[str, int] = {}
+    for crit in criteria:
+        count = 0
+        for eid in epreuves:
+            if _epreuve_matches(epreuves, filieres, eid, crit):
+                count += 1
+        out[crit["_key"]] = count
+    return out
+
+
+def _published_epreuves_index(
+    db: Session,
+) -> tuple[dict[str, tuple[str, str, str, str]], dict[str, set[str]]]:
+    """Base de TOUT comptage d'épreuves, construite en un seul endroit :
+    les épreuves publiées (id → evaluation, classe, matiere, annee) et
+    leurs filières (id → set), chargées en deux requêtes. Unitaire et
+    groupé passent par ici."""
     epreuves: dict[str, tuple[str, str, str, str]] = {}
     filieres: dict[str, set[str]] = {}
     for eid, evaluation, classe, matiere, annee in (
@@ -304,27 +321,29 @@ def matching_epreuves_counts(
     ):
         if eid in epreuves:
             filieres[eid].add(filiere)
+    return epreuves, filieres
 
-    out: dict[str, int] = {}
-    for crit in criteria:
-        count = 0
-        for eid, (evaluation, classe, matiere, annee) in epreuves.items():
-            if crit["epreuve_id"] and crit["epreuve_id"] != eid:
-                continue
-            if crit["evaluation"] and crit["evaluation"] != "ALL" and crit["evaluation"] != evaluation:
-                continue
-            if crit["classe"] and crit["classe"] != "ALL" and crit["classe"] != classe:
-                continue
-            if crit["matiere"] and crit["matiere"] != "ALL" and crit["matiere"] != matiere:
-                continue
-            if crit["annee"] and crit["annee"] != "ALL" and crit["annee"] != annee:
-                continue
-            f = crit.get("filiere")
-            if f and f != "ALL" and f not in filieres[eid]:
-                continue
-            count += 1
-        out[crit["_key"]] = count
-    return out
+
+def _epreuve_matches(epreuves, filieres: dict[str, set[str]], eid: str, crit: dict) -> bool:
+    """Applique un critère de sélection à une épreuve : "ALL" ou absence =
+    pas de contrainte ; la série est une appartenance (set), jamais une
+    égalité stricte. Règle UNIQUE utilisée par le comptage unitaire ET le
+    comptage groupé."""
+    evaluation, classe, matiere, annee = epreuves[eid]
+    if crit["epreuve_id"] and crit["epreuve_id"] != eid:
+        return False
+    if crit["evaluation"] and crit["evaluation"] != "ALL" and crit["evaluation"] != evaluation:
+        return False
+    if crit["classe"] and crit["classe"] != "ALL" and crit["classe"] != classe:
+        return False
+    if crit["matiere"] and crit["matiere"] != "ALL" and crit["matiere"] != matiere:
+        return False
+    if crit["annee"] and crit["annee"] != "ALL" and crit["annee"] != annee:
+        return False
+    f = crit["filiere"]
+    if f and f != "ALL" and f not in filieres[eid]:
+        return False
+    return True
 
 
 def scope_already_covered(

@@ -333,116 +333,164 @@ def activite(db: Session = Depends(get_db), user=Depends(require_user)) -> list[
     Chaque source est bornée en SQL (LIMIT 50, les plus récentes) et les
     épreuves référencées préchargées en une requête `IN` — la version
     antérieure chargeait TOUTES les lignes de 6 tables puis interrogeait
-    l'épreuve une par une (centaines de requêtes sur un compte ancien)."""
-    items: list[dict] = []
+    l'épreuve une par une (centaines de requêtes sur un compte ancien).
 
-    def _recent(model, order_col, n=50):
-        return (
-            db.query(model)
-            .filter(model.user_id == user.id)
-            .order_by(order_col.desc())
-            .limit(n)
-            .all()
-        )
+    Réordonnancée en petits bâtisseurs dédiés (un par source) pour la
+    lisibilité — même logique, même tri, même plafond."""
+    consultations = _activite_recent(db, user, ConsultationORM, ConsultationORM.consulted_at)
+    subscriptions = _activite_recent(db, user, SubscriptionORM, SubscriptionORM.start_date)
+    notes = _activite_recent(db, user, NoteORM, NoteORM.updated_at)
+    conversations = _activite_recent(db, user, AIConversationORM, AIConversationORM.updated_at)
 
-    for s in _recent(SessionORM, SessionORM.issued_at):
-        items.append(
-            {"type": "connexion", "date": s.issued_at, "libelle": "Connexion à ton compte", "epreuve_id": None, "details": s.platform or "web", "conversation_id": None}
-        )
+    epreuves = _activite_map_epreuves(db, consultations, notes, conversations)
 
-    consultations = _recent(ConsultationORM, ConsultationORM.consulted_at)
-    subscriptions = _recent(SubscriptionORM, SubscriptionORM.start_date)
-    notes = _recent(NoteORM, NoteORM.updated_at)
-    conversations = _recent(AIConversationORM, AIConversationORM.updated_at)
+    items = (
+        _activite_connexions(db, user)
+        + _activite_consultations(consultations, epreuves)
+        + _activite_abonnements(subscriptions)
+        + _activite_paiements(db, user)
+        + _activite_notes(notes, epreuves)
+        + _activite_discussions(conversations, epreuves)
+    )
+    items.sort(key=lambda i: i["date"] or utc_now(), reverse=True)
+    return items[:_MAX_ACTIVITE]
 
-    epreuve_ids = {c.epreuve_id for c in consultations}
-    epreuve_ids |= {n.epreuve_id for n in notes}
-    epreuve_ids |= {conv.epreuve_id for conv in conversations}
-    epreuves = {
-        e.id: e
-        for e in db.query(EpreuveORM).filter(EpreuveORM.id.in_(list(epreuve_ids) or [""])).all()
+
+def _activite_item(type_, date, libelle, *, epreuve_id=None, details="", conversation_id=None) -> dict:
+    """Canonise une entrée de timeline — tous les bâtisseurs ci-dessous
+    utilisent cette forme, le tri et le plafonnement sont centralisés dans
+    `activite`."""
+    return {
+        "type": type_,
+        "date": date,
+        "libelle": libelle,
+        "epreuve_id": epreuve_id,
+        "details": details,
+        "conversation_id": conversation_id,
     }
 
+
+def _activite_recent(db: Session, user, model, order_col):
+    """Les `_MAX_ACTIVITE` lignes les plus récentes de `model` pour l'utilisateur."""
+    return (
+        db.query(model)
+        .filter(model.user_id == user.id)
+        .order_by(order_col.desc())
+        .limit(_MAX_ACTIVITE)
+        .all()
+    )
+
+
+def _activite_map_epreuves(db: Session, *sources) -> dict[str, EpreuveORM]:
+    """Précharge les épreuves référencées par les sources en une requête `IN`."""
+    ids: set[str] = set()
+    for rows in sources:
+        for row in rows:
+            if getattr(row, "epreuve_id", None):
+                ids.add(row.epreuve_id)
+    return {e.id: e for e in db.query(EpreuveORM).filter(EpreuveORM.id.in_(list(ids) or [""])).all()}
+
+
+def _activite_connexions(db: Session, user) -> list[dict]:
+    return [
+        _activite_item("connexion", s.issued_at, "Connexion à ton compte", details=s.platform or "web")
+        for s in _activite_recent(db, user, SessionORM, SessionORM.issued_at)
+    ]
+
+
+def _activite_consultations(consultations, epreuves) -> list[dict]:
+    items = []
     for c in consultations:
         e = epreuves.get(c.epreuve_id)
         if not e:
             continue
         series = ", ".join(e.filieres)
         items.append(
-            {
-                "type": "consultation",
-                "date": c.consulted_at,
+            _activite_item(
+                "consultation",
+                c.consulted_at,
                 # Contexte complet : matière, classe, séries, évaluation, année.
-                "libelle": f"Consultation de {e.matiere} — {e.classe} ({e.evaluation} {e.annee})",
-                "epreuve_id": e.id,
-                "details": f"Séries : {series}" if series else "",
-                "conversation_id": None,
-            }
+                f"Consultation de {e.matiere} — {e.classe} ({e.evaluation} {e.annee})",
+                epreuve_id=e.id,
+                details=f"Séries : {series}" if series else "",
+            )
         )
+    return items
 
+
+def _activite_abonnements(subscriptions) -> list[dict]:
+    items = []
     for s in subscriptions:
         # Libellé de portée SANS sub_to_out (qui recalcule les épreuves
         # couvertes par requête — un N+1 inutile ici) : la timeline se
         # contente du libellé, pas du décompte.
         scope_label = SCOPE_LABELS[scope_of(s)]
         items.append(
-            {
-                "type": "abonnement",
-                "date": s.start_date,
-                "libelle": f"Abonnement {s.statut} — {scope_label}",
-                "epreuve_id": s.epreuve_id,
-                "details": "",
-                "conversation_id": None,
-            }
+            _activite_item(
+                "abonnement",
+                s.start_date,
+                f"Abonnement {s.statut} — {scope_label}",
+                epreuve_id=s.epreuve_id,
+            )
         )
+    return items
 
-    for p in db.query(PaymentORM).filter(PaymentORM.user_id == user.id, PaymentORM.statut == "confirmed").order_by(PaymentORM.confirmed_at.desc()).limit(50).all():
-        items.append(
-            {
-                "type": "paiement",
-                "date": p.confirmed_at or p.created_at,
-                "libelle": f"Paiement confirmé — {p.montant} FCFA ({p.provider})",
-                "epreuve_id": None,
-                "details": p.reference_agregateur,
-                "conversation_id": None,
-            }
+
+def _activite_paiements(db: Session, user) -> list[dict]:
+    return [
+        _activite_item(
+            "paiement",
+            p.confirmed_at or p.created_at,
+            f"Paiement confirmé — {p.montant} FCFA ({p.provider})",
+            details=p.reference_agregateur,
         )
+        for p in (
+            db.query(PaymentORM)
+            .filter(PaymentORM.user_id == user.id, PaymentORM.statut == "confirmed")
+            .order_by(PaymentORM.confirmed_at.desc())
+            .limit(_MAX_ACTIVITE)
+            .all()
+        )
+    ]
 
+
+def _activite_notes(notes, epreuves) -> list[dict]:
+    items = []
     for n in notes:
         e = epreuves.get(n.epreuve_id)
         items.append(
-            {
-                "type": "note",
-                "date": n.updated_at,
-                "libelle": (
+            _activite_item(
+                "note",
+                n.updated_at,
+                (
                     f"Note sur {e.matiere} — {e.classe} ({e.evaluation} {e.annee})"
                     if e
                     else "Note personnelle"
                 ),
-                "epreuve_id": n.epreuve_id,
-                "details": "",
-                "conversation_id": None,
-            }
+                epreuve_id=n.epreuve_id,
+            )
         )
+    return items
 
+
+def _activite_discussions(conversations, epreuves) -> list[dict]:
+    items = []
     for conv in conversations:
         e = epreuves.get(conv.epreuve_id)
         items.append(
-            {
-                "type": "discussion_ia",
-                "date": conv.updated_at,
-                "libelle": (
+            _activite_item(
+                "discussion_ia",
+                conv.updated_at,
+                (
                     f"Discussion « {conv.label} » — {e.matiere} ({e.evaluation} {e.annee})"
                     if e
                     else f"Discussion « {conv.label} »"
                 ),
-                "epreuve_id": conv.epreuve_id,
+                epreuve_id=conv.epreuve_id,
                 # Permet de rouvrir l'onglet de discussion exact depuis le
                 # profil (lecteur : /epreuve/{id}?conv={id}).
-                "details": e.matiere if e else "",
-                "conversation_id": conv.id,
-            }
+                details=e.matiere if e else "",
+                conversation_id=conv.id,
+            )
         )
-
-    items.sort(key=lambda i: i["date"] or utc_now(), reverse=True)
-    return items[:_MAX_ACTIVITE]
+    return items

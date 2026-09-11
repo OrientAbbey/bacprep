@@ -104,24 +104,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Post-traitement commun aux modes de connexion (mock, Google) : état
+  // utilisateur, reconnexion du websocket de session, notification.
+  const completeLogin = useCallback(
+    (me: User) => {
+      setUser(me);
+      closeSocket(false);
+      intentionalClose.current = false;
+      reconnectAttempt.current = 0;
+      openSocket();
+      showToast(`Bienvenue, ${me.nom} !`, "success");
+    },
+    [closeSocket, openSocket, showToast],
+  );
+
   const loginMock = async (email: string, nom: string) => {
-    const me = await api.post<User>("/api/auth/mock-login", { email, nom, platform: "web" });
-    setUser(me);
-    closeSocket(false);
-    intentionalClose.current = false;
-    reconnectAttempt.current = 0;
-    openSocket();
-    showToast(`Bienvenue, ${me.nom} !`, "success");
+    completeLogin(await api.post<User>("/api/auth/mock-login", { email, nom, platform: "web" }));
   };
 
   const loginGoogle = async (idToken: string) => {
-    const me = await api.post<User>("/api/auth/google-login", { id_token: idToken, platform: "web" });
-    setUser(me);
-    closeSocket(false);
-    intentionalClose.current = false;
-    reconnectAttempt.current = 0;
-    openSocket();
-    showToast(`Bienvenue, ${me.nom} !`, "success");
+    completeLogin(await api.post<User>("/api/auth/google-login", { id_token: idToken, platform: "web" }));
   };
 
   const logout = async () => {

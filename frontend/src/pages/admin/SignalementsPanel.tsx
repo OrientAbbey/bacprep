@@ -95,7 +95,7 @@ export function SignalementsPanel({ token }: { token: string }) {
           {s.message && <p className="mt-2 text-sm text-ink-soft">« {s.message} »</p>}
           <p className="mt-2 font-mono-tag text-[10px] text-slate">
             {s.auteur_email} · {formatRelativeTime(s.created_at)} ·{" "}
-            <Link to={`/epreuve/${s.epreuve_id}`} className="underline hover:text-highlight">
+            <Link to={`/epreuve/${s.epreuve_id}`} className="underline hover:text-ink">
               ouvrir l'épreuve
             </Link>
           </p>

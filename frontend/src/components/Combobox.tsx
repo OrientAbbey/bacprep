@@ -7,6 +7,28 @@ export interface ComboOption {
   label: string;
 }
 
+/** Ferme `onOutside` quand un clic survient hors de `rootRef`. L'écouteur
+ * document n'est posé QUE tant que `active` est vrai — aucune routine
+ * dormante au niveau global entre deux ouvertures (É23). Hook local dans ce
+ * fichier ; à extraire le jour d'une seconde utilisation (contrainte
+ * « aucun nouveau fichier » du plan). */
+function useClickOutside(
+  rootRef: React.RefObject<HTMLElement | null>,
+  onOutside: () => void,
+  active: boolean
+) {
+  useEffect(() => {
+    if (!active) return;
+    function onClick(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        onOutside();
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [rootRef, onOutside, active]);
+}
+
 /**
  * Menu déroulant accessible avec recherche tapée.
  *
@@ -58,15 +80,7 @@ export function Combobox({
     [filtered]
   );
 
-  useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
+  useClickOutside(rootRef, () => setOpen(false), open);
 
   useEffect(() => {
     if (open) {

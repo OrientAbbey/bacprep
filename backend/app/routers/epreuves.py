@@ -26,6 +26,7 @@ from ..models import (
     EpreuveFileOut,
     EpreuveListItem,
     NoteIn,
+    NoteOut,
     SignalementIn,
 )
 from .auth import optional_user, require_user
@@ -447,7 +448,7 @@ def create_note(
     payload: NoteIn,
     db: Session = Depends(get_db),
     user=Depends(require_user),
-) -> dict:
+) -> NoteOut:
     """Crée une note personnelle de l'utilisateur sur cette épreuve (rédaction
     manuelle ou réponse de l'assistant sauvegardée). Garde serveur du
     consentement : un utilisateur ayant REFUSÉ le stockage de ses notes
@@ -464,15 +465,15 @@ def create_note(
     )
     db.add(note)
     db.commit()
-    return {
-        "id": note.id,
-        "epreuve_id": note.epreuve_id,
-        "cible": note.cible,
-        "contexte_extrait": note.contexte_extrait,
-        "contenu": note.contenu,
-        "created_at": note.created_at,
-        "updated_at": note.updated_at,
-    }
+    return NoteOut(
+        id=note.id,
+        epreuve_id=note.epreuve_id,
+        cible=note.cible,
+        contexte_extrait=note.contexte_extrait,
+        contenu=note.contenu,
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
 
 
 @router.post("/{epreuve_id}/signalements")
