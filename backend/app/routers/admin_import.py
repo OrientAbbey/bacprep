@@ -12,6 +12,7 @@ Fiabilité des jobs (bugs corrigés) :
 from __future__ import annotations
 
 import json
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -118,6 +119,9 @@ def _run_import_job(job_id: str, extract_dir: str) -> None:
         log.info("Job d'import %s terminé (%s)", job_id, job.status)
     finally:
         db.close()
+        # Purge du contenu extrait une fois le traitement fini (succès ou
+        # échec) : seuls le zip source et la table jobs restent sur disque.
+        shutil.rmtree(Path(extract_dir).parent, ignore_errors=True)
 
 
 @router.post("/import")
@@ -168,11 +172,10 @@ def admin_import_zip(
 
     try:
         with zipfile.ZipFile(upload_path) as zf:
-            # Extraction sécurisée : rejette les entrées absolues ou avec
-            # '..' (zip slip), plafonne la taille décompressée ET le nombre
-            # de fichiers (un zip de millions de petits fichiers créerait
-            # une explosion du nombre d'inodes / du temps d'extraction).
-            total = 0
+            # Extraction sécurisée : rejette d'abord les entrées absolues ou
+            # avec '..' (zip slip) et plafonne le nombre de fichiers (un zip
+            # de millions de petits fichiers créerait une explosion du nombre
+            # d'inodes / du temps d'extraction).
             count = 0
             for info in zf.infolist():
                 if info.is_dir():
@@ -187,18 +190,36 @@ def admin_import_zip(
                 except ValueError:
                     _fail_job(db, job, f"chemin d'archive invalide: {info.filename}")
                     raise HTTPException(400, f"Chemin d'archive invalide: {info.filename}")
-                total += info.file_size
-                if total > MAX_ZIP_BYTES:
-                    _fail_job(db, job, "contenu décompressé trop volumineux (200 Mo max)")
-                    raise HTTPException(400, "Contenu décompressé trop volumineux (200 Mo max)")
-            zf.extractall(extract_dir)
+            # Extraction membre par membre avec compteur d'octets RÉELS écrits
+            # sur disque : le champ `info.file_size` est déclaré dans
+            # l'archive et forgeable (zip-bomb), seule la taille réellement
+            # écrite au fil de l'eau fait foi. Un zip chiffré ou corrompu
+            # lève ici RuntimeError/OSError -> 400 générique, job en erreur.
+            total = 0
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                target = (extract_dir / info.filename).resolve()
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, target.open("wb") as dst:
+                    while True:
+                        chunk = src.read(_CHUNK)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > MAX_ZIP_BYTES:
+                            _fail_job(db, job, "contenu décompressé trop volumineux (200 Mo max)")
+                            raise HTTPException(400, "Contenu décompressé trop volumineux (200 Mo max)")
+                        dst.write(chunk)
     except HTTPException:
         upload_path.unlink(missing_ok=True)
+        shutil.rmtree(job_dir, ignore_errors=True)
         raise
-    except zipfile.BadZipFile as exc:
-        _fail_job(db, job, "archive zip invalide")
+    except Exception as exc:
+        _fail_job(db, job, "archive zip invalide ou chiffrée")
         upload_path.unlink(missing_ok=True)
-        raise HTTPException(400, "Archive zip invalide") from exc
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(400, "Archive zip invalide ou chiffrée") from exc
 
     upload_path.unlink(missing_ok=True)
 

@@ -127,22 +127,23 @@ async def security_headers(request: Request, call_next):
     return response
 
 # Origines autorisées : configurable via CORS_ORIGINS (liste séparée par des
-# virgules). Défaut : le serveur de dev Vite. En production, le regex
-# `https://*.onrender.com` s'y ajoute : Render réattribue à chaque
-# déploiement/redémarrage du plan gratuit un nom d'hôte au suffixe aléatoire
-# (ex. bacprep-frontend-abc1.onrender.com) — une liste figée déclencherait
-# des pré-vols OPTIONS sans en-tête Access-Control-Allow-Origin. La sécurité
-# ne repose pas sur CORS mais sur l'authentification (cookies SameSite +
-# id_token Google) : un site tiers ne peut pas lire les réponses ni piloter
-# l'API sans identité possédée.
+# virgules). Défaut : le serveur de dev Vite (frontend et backend ont des
+# origines distinctes en local, d'où allow_credentials=True pour le dev).
+# En production, le déploiement est un service UNIFIÉ (backend sert le
+# frontend build sur la même origine) : CORS n'intervient pas — l'origine
+# exacte du domaine est déclarée via CORS_ORIGINS si besoin. Plus de regex
+# `https://*.onrender.com` ici : tous les sous-domaines onrender.com
+# partagent le même site (SameSite=Lax ne bloque donc rien), ainsi
+# autoriser n'importe quelle app gratuite onrender.com en origine
+# permettrait à un site tiers d'envoyer des requêtes credentialées
+# (lecture du profil/des notes, URLs signées des corrigés) sans jamais
+# être bloqué par le navigateur.
 _cors_origins = [
     o.strip() for o in (os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")) if o.strip()
 ]
-_cors_origin_regex = r"https://[a-z0-9-]+\.onrender\.com$" if is_prod() else None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-Admin-Session"],

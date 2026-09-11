@@ -14,6 +14,8 @@ import time
 
 from fastapi import HTTPException, Request
 
+from .config import is_prod
+
 
 class SlidingWindowLimiter:
     """Compteur par clé (typiquement l'IP cliente) avec purge des
@@ -57,8 +59,19 @@ class SlidingWindowLimiter:
 
 
 def client_ip(request: Request) -> str:
-    """Clé de comptage : IP cliente telle que vue par le serveur (les
-    proxies Render positionnent X-Forwarded-For, que uvicorn ne fait pas
-    suivre dans request.client — compter l'IP socket reste suffisant pour
-    freiner un brute-force depuis une même source)."""
+    """Clé de comptage : l'IP cliente. En production, Render positionne
+    ``X-Forwarded-For`` sur chaque requête — compter l'IP socket
+    (``request.client``) donnerait alors la MÊME clé pour tous les clients
+    (l'adresse du proxy), donc un seuil global trivial à saturer
+    (10 tentatives = login bloqué pour tout le monde). On prend donc le
+    premier saut de ``X-Forwarded-For`` (l'IP d'origine, la plus à gauche
+    de la chaîne) — uniquement en ``ENV=prod`` où le header est posé par
+    le proxy de confiance. Hors prod, l'IP socket reste la clé : un client
+    local pourrait sinon forger le header pour contourner son quota."""
+    if is_prod():
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
     return request.client.host if request.client else "?"

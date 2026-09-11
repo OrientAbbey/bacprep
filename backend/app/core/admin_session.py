@@ -53,15 +53,17 @@ def _is_expired(lock: AdminLockORM) -> bool:
 
 
 def attempt_login(db: Session, email: str, force: bool = False) -> tuple[Optional[AdminLockORM], Optional[dict]]:
-    """Persisté en base (table `admin_lock`, une seule ligne) plutôt qu'en
-    mémoire : un redémarrage du backend ne libère plus silencieusement
-    l'accès admin — seule l'expiration par inactivité (30 min) ou une
+    """Ouvre une session admin (une ligne unique dans `admin_lock`, id
+    fixe ``singleton``), ou retourne le bloqueur si un autre admin est
+    actif sans `force`. Persisté en base plutot qu'en mémoire : un
+    redémarrage du backend ne libère plus silencieusement l'accès —
+    seule l'expiration par inactivité (session_timeout) ou une
     déconnexion explicite le fait."""
     email = email.strip().lower()
     lock = _get_lock(db)
 
     if lock is not None and _is_expired(lock):
-        log.info("Session admin de %s expirée (inactivité > 30 min) — verrou libéré", lock.email)
+        log.info("Session admin de %s expirée (inactivité > %s) — verrou libéré", lock.email, session_timeout())
         db.delete(lock)
         db.commit()
         lock = None
@@ -85,23 +87,35 @@ def attempt_login(db: Session, email: str, force: bool = False) -> tuple[Optiona
         lock.since = now
         lock.last_activity = now
     else:
-        lock = AdminLockORM(id=LOCK_ID, email=email, token=token, since=now, last_activity=now)
-        db.add(lock)
+        # Création ATOMIQUE de la ligne singleton : UPDATE conditionnel
+        # d'abord (id fixe, jamais plus d'une ligne), l'INSERT n'a lieu que
+        # si aucune ligne n'a été mise à jour. Deux logins simultanés sur
+        # base vide ne déclenchent plus d'IntegrityError de la contrainte
+        # PK : successifs, ils reprennent simplement la ligne de l'autre.
+        from sqlalchemy import update
+
+        changed = db.execute(
+            update(AdminLockORM)
+            .where(AdminLockORM.id == LOCK_ID)
+            .values(email=email, token=token, since=now, last_activity=now)
+        ).rowcount
+        if changed == 0:
+            db.add(AdminLockORM(id=LOCK_ID, email=email, token=token, since=now, last_activity=now))
     db.commit()
-    db.refresh(lock)
+    lock = _get_lock(db)
     log.info("Session admin ouverte pour %s (persistée en base)", email)
     return lock, None
 
 
 def touch(db: Session, token: str) -> Optional[AdminLockORM]:
     """Valide un jeton de session admin et rafraîchit son horodatage
-    d'activité (glissement de la fenêtre de 30 min) ; libère et retourne
-    None si le verrou a expiré."""
+    d'activité (glissement de la fenêtre de `session_timeout`) ; libère et
+    retourne None si le verrou a expiré."""
     lock = _get_lock(db)
     if lock is None or lock.token != token:
         return None
     if _is_expired(lock):
-        log.info("Session admin de %s expirée (inactivité > 30 min) — verrou libéré", lock.email)
+        log.info("Session admin de %s expirée (inactivité > %s) — verrou libéré", lock.email, session_timeout())
         db.delete(lock)
         db.commit()
         return None

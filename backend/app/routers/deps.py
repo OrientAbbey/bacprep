@@ -45,7 +45,8 @@ def get_public_epreuve_or_404(db: Session, epreuve_id: str, user=None) -> Epreuv
 def require_admin(x_admin_session: str = Header(default=""), db: Session = Depends(get_db)):
     """Dépendance FastAPI protégeant toutes les routes admin : valide
     l'en-tête X-Admin-Session contre le verrou persisté en base et
-    rafraîchit son horodatage d'activité (glissement des 30 min)."""
+    rafraîchit son horodatage d'activité (glissement de la fenêtre
+    d'inactivité configurée, par défaut 3 min)."""
     lock = admin_session.touch(db, x_admin_session)
     if not lock:
         raise HTTPException(401, "Session admin invalide ou expirée")

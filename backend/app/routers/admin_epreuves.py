@@ -22,6 +22,8 @@ from ..db_models import (
     EpreuveFiliereORM,
     EpreuveFileORM,
     EpreuveORM,
+    NoteORM,
+    SignalementORM,
     SubscriptionORM,
 )
 from ..models import EpreuveIn, EpreuveUpdate
@@ -345,16 +347,22 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
     # Tables référençant l'épreuve et SANS cascade ORM — à traiter à la main
     # avant la suppression, sinon la contrainte de clé étrangère la fait
     # échouer (liste exhaustive : subscriptions, ai_conversations,
-    # consultations ; filières et fichiers partent en cascade ORM) :
+    # consultations, notes, signalements ; filières et fichiers partent en
+    # cascade ORM) :
     # - les abonnements « épreuve précise » perdent leur cible (le paiement,
     #   lui, reste dans l'historique) ;
     # - l'historique de consultation et les discussions IA de cette épreuve
-    #   sont supprimés (plus de sens sans leur épreuve).
+    #   sont supprimés (plus de sens sans leur épreuve) ;
+    # - les notes personnelles et signalements pointent sur l'épreuve (FK
+    #   NOT NULL) : tout essai de suppression échouait sinon en 500 à la
+    #   validation SQL, et leur contenu n'aurait plus de support.
     db.query(SubscriptionORM).filter(SubscriptionORM.epreuve_id == epreuve_id).update(
         {SubscriptionORM.epreuve_id: None}
     )
     db.query(AIConversationORM).filter(AIConversationORM.epreuve_id == epreuve_id).delete()
     db.query(ConsultationORM).filter(ConsultationORM.epreuve_id == epreuve_id).delete()
+    db.query(NoteORM).filter(NoteORM.epreuve_id == epreuve_id).delete()
+    db.query(SignalementORM).filter(SignalementORM.epreuve_id == epreuve_id).delete()
     for f in list(e.files_rel):
         epreuve_files.delete_file(db, f)
     db.delete(e)  # cascade ORM : filières et fichiers restants supprimés avec l'épreuve

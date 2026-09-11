@@ -88,7 +88,8 @@ class AdminLockORM(Base):
     plus dans une simple variable Python en mémoire) pour survivre à un
     redémarrage du backend : un redémarrage ne doit plus libérer
     silencieusement l'accès admin tant que la session n'a pas expiré
-    (30 min d'inactivité) ou été explicitement fermée."""
+    (fenêtre d'inactivité configurée, par défaut 3 min) ou été
+    explicitement fermée."""
 
     __tablename__ = "admin_lock"
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.requests import ClientDisconnect
 
 from ..core import store
 from ..core.assistant import ask_assistant, ask_assistant_stream
@@ -148,6 +149,13 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
             async for chunk in ask_assistant_stream(epreuve_meta, contexte, payload.message, messages, user_id=user.id):
                 accumulated += chunk
                 yield f"data: {json.dumps({'type': 'chunk', 'text': chunk}, ensure_ascii=False)}\n\n"
+        except ClientDisconnect:
+            # Fermeture de la page/onglet pendant le streaming : situation
+            # normale, pas une erreur — sans ce cas en tête du except,
+            # Starlette levait un traceback complet + un faux évènement
+            # `error` à chaque déconnexion.
+            log.debug("Client disconnect pendant le streaming (conversation=%s)", conv_id)
+            return
         except Exception as exc:
             log.exception("Erreur pendant le streaming assistant (conversation=%s): %s", conv_id, exc)
             yield f"data: {json.dumps({'type': 'error', 'message': 'Une erreur est survenue côté serveur.'})}\n\n"

@@ -109,27 +109,32 @@ tokens de design uniques, découpage router/core sobre). Les écarts identifiés
 
 ### PHASE 2 — Backend : correctifs + sécurité (🔴 requis, avant prod)
 
-- [ ] **É6. Suppression d'épreuve** — `backend/app/routers/admin_epreuves.py:338-364`
+- [x] **É6. Suppression d'épreuve** — `backend/app/routers/admin_epreuves.py:338-364`
   Purger explicitement `NoteORM` et `SignalementORM` (FK NOT NULL) avant `db.delete(e)` ; compléter le docstring. (Critical)
-- [ ] **É7. Import zip robuste** — `backend/app/routers/admin_import.py`
-  - `except zipfile.BadZipFile` → `except Exception` : `_fail_job` + `upload_path.unlink` + 400.
-  - Remplacer `zf.extractall` par une extraction **membre par membre avec compteur d'octets réels**
-    (plafond `MAX_ZIP_BYTES` vérifié pendant l'écriture, zip-slip conservée).
-  - `finally: shutil.rmtree(job_dir.parent, ignore_errors=True)` dans `_run_import_job` (purge `jobs/*`).
-- [ ] **É8. Rate-limit derrière proxy** — `backend/app/core/rate_limit.py`
-  `client_ip()` : parser `X-Forwarded-For` (premier saut) **uniquement si un header de proxy de confiance
-  est présent**, sinon IP socket. Vérifier `is_prod()` en dev ne reste pas cassé (env local inchangé).
-- [ ] **É9. CORS durci** — `backend/app/main.py:138-149`
-  Retirer le regex `*.onrender.com` ; l'origine exacte de prod est déclarée via `CORS_ORIGINS`
-  (service unifié → CORS inutile en prod). Garder `allow_credentials=True` pour dev.
-- [ ] **É10. Exceptions streaming** — `backend/app/routers/assistant.py:141-154`
+- [x] **É7. Import zip robuste** — `backend/app/routers/admin_import.py`
+  - `except zipfile.BadZipFile` → `except Exception` : `_fail_job` + `upload_path.unlink` + 400
+    (« zip invalide ou chiffré », les zips chiffrés lèvent RuntimeError/OSError).
+  - Extraction **membre par membre avec compteur d'octets RÉELS** pendant l'écriture on-disk
+    (plafond `MAX_ZIP_BYTES` appliqué au fil de l'eau — `info.file_size` est déclaratif, forgeable : zip-bomb) ;
+    zip-slip conservée (pré-validation de chaque cible).
+  - Nettoyage partiel de `job_dir` sur échec d'extraction + `finally: shutil.rmtree(job_dir)` dans
+    `_run_import_job` (fini `jobs/*` qui s'accumulait sur disque).
+- [x] **É8. Rate-limit derrière proxy** — `backend/app/core/rate_limit.py`
+  `client_ip()` : premier saut de `X-Forwarded-For` **uniquement en `ENV=prod`** (proxy de confiance
+  = Render ; sinon l'IP socket reste la clé pour éviter le spoof local).
+- [x] **É9. CORS durci** — `backend/app/main.py:138-149`
+  Regex `*.onrender.com` retirée (tous les `.onrender.com` partagent le même site : SameSite=Lax ne
+  bloquerait pas une app gratuite tiers) ; origine exacte uniquement via `CORS_ORIGINS`
+  (service unifié → CORS inutile en prod) ; `allow_credentials=True` conservé pour le dev.
+- [x] **É10. Exceptions streaming** — `backend/app/routers/assistant.py:141-154`
   `except ClientDisconnect: log.debug + return` AVANT le `except Exception` (fini le traceback complet
   + faux évènement `error` à chaque fermeture d'onglet pendant un streaming).
-- [ ] **É11. attempt_login atomique** — `backend/app/core/admin_session.py:55-93`
-  Privilégier `UPDATE … WHERE id='singleton'` puis `INSERT` seulement si rowcount = 0 (plus d'IntegrityError
-  à la concurrence).
-- [ ] **É12. [x] Correction « 30 min » → délai effectif** — `admin_session.py:58,64,98,104`, `deps.py:48`,
-  `db_models.py:91` : remplacer par le délai configuré (logs/docstrings trompeurs).
+- [x] **É11. attempt_login atomique** — `backend/app/core/admin_session.py:55-110`
+  `UPDATE admin_lock SET ... WHERE id='singleton'` d'abord puis `INSERT` seulement si `rowcount = 0`
+  (plus d'IntegrityError de PK à la concurrence) ; relecture du verrou après commit.
+- [x] **É12. Correction « 30 min » → délai effectif** — `admin_session.py` (docstrings + logs
+  paramétrés `session_timeout()`), `deps.py:48`, `db_models.py:91` : le délai réel est 3 min par défaut
+  (configurable `ADMIN_SESSION_TIMEOUT_MINUTES`), les messages qui annonçaient 30 min étaient trompeurs.
 
 ### PHASE 3 — Sécurité / RGPD / bornes (🟠 recommandé)
 
