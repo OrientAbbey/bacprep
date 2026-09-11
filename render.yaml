@@ -67,7 +67,7 @@ services:
         value: "false" # paywall réel : checkout exige un paiement agrégateur, pas de webhook simulé
       - key: ADMIN_SESSION_TIMEOUT_MINUTES
         value: "3" # délai avant expiration du verrou admin après quitter /admin
-- key: GEMINI_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       # Modèles GRATUITS, fallback ordonné : essai dans l'ordre de la liste
       # (échec → modèle suivant → Groq → mode démo). Autres modèles gratuits
