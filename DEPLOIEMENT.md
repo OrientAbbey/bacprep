@@ -75,8 +75,8 @@ Pas-à-pas (console [Google Cloud](https://console.cloud.google.com)) :
    - *Application type* : **Web application** ;
    - *Authorized JavaScript origins* : **les origines EXACTES qui servent la
      page de connexion** —
-     `http://localhost:5173` (dev) et l'URL de production, ex.
-     `https://bacprep-frontend.onrender.com` (ou l'URL du service unifié).
+     `http://localhost:5173` (dev) et l'URL du service unifié en production
+     (ex. `https://bacprep-web.onrender.com` ou votre domaine personnalisé).
      Aucune URI de redirection n'est requise ;
    - valider puis copier l'ID client (finit par `.apps.googleusercontent.com`).
 4. **Configurer le backend** :
@@ -237,18 +237,20 @@ admin n'apparaît que pour ces comptes).
 
 ## Déploiement Render
 
-Le `render.yaml` décrit un Blueprint avec **deux services conformes à
-l'architecture cible** :
+Le `render.yaml` décrit un **service unifié** (un seul Web Service Python /
+**`bacprep-web`**) : le build compile d'abord le frontend
+(`npm --prefix ../frontend ci && npm --prefix ../frontend run build`), puis
+pip install ; quand `frontend/dist` existe, FastAPI le sert en SPA
+(catch-all + `/assets`). Une seule origine → aucun CORS, pas de cookie
+cross-origine, pas de dépendance au suffixe onrender.com (Rot change
+l'URL au plan gratuit : l'ancienne architecture « 2 services » cassait
+l'authentification à chaque rotation). `VITE_API_URL` reste **vide**
+(même origine, `BASE_URL` = "" dans `frontend/src/api/client.ts`).
 
-- `bacprep-web` (Web Service Python) : FastAPI, sert l'API ;
-- `bacprep-frontend` (Static Site) : `npm run build` du dossier frontend,
-  `VITE_API_URL` pointant vers l'URL du backend, règle SPA renvoyant
-  `index.html`.
-
-Alternative service unifié (un seul service, comme le prototype
-précédent) : construire le frontend (`npm run build`) avant de démarrer le
-backend ; quand `frontend/dist` existe, le backend le sert en SPA
-catch-all.
+> En développement : frontend Vite (`npm run dev`, port 5173) + backend
+> (`uvicorn`, port 8000) sur des origines différentes — c'est là que le CORS
+> et `VITE_API_URL=http://localhost:8000` sont utiles ; en production, le
+> service unifié les rend sans effet.
 
 Étapes :
 

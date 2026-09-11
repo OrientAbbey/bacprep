@@ -1,14 +1,19 @@
 services:
-  # Backend FastAPI (process persistant : WebSocket de kick-out, tâches
-  # de fond d'import massif). Les fichiers d'épreuves vivent dans un
-  # stockage objet S3-compatible (STORAGE_BACKEND=s3) — le disque éphémère
-  # du service n'héberge plus de données persistantes.
+  # SERVICE UNIFIÉ : le backend FastAPI sert l'API ET le site React buildé
+  # (frontend/dist). Une seule origine → pas de CORS, pas de cookie
+  # cross-origine, pas de dépendance à un sous-domaine onrender.com précis.
+  # (Ancienne architecture 2 services : l'authentification cassait à chaque
+  # rotation d'URL du plan gratuit — cookie posé sur un hôte, frontend buildé
+  # vers un autre. Vite : VITE_API_URL absent = BASE_URL vide = même origine.)
   - type: web
     name: bacprep-web
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    # Node est fourni par l'image de build Render : on compile le frontend
+    # (../frontend vu depuis rootDir=backend) AVANT pip install — main.py
+    # monte frontend/dist à l'import.
+    buildCommand: npm --prefix ../frontend ci && npm --prefix ../frontend run build && pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
@@ -62,7 +67,7 @@ services:
       - key: AUTH_MODE
         value: google # authentification Google vérifiée ; "mock" réservé au dev/démo local
       - key: GOOGLE_CLIENT_ID
-        sync: false # requis (Client ID Google Cloud Console)
+        sync: false # requis ; origem Authorized JS = l'URL du service (voir DEPLOIEMENT.md)
       - key: DEMO_MODE
         value: "false" # paywall réel : checkout exige un paiement agrégateur, pas de webhook simulé
       - key: ADMIN_SESSION_TIMEOUT_MINUTES
@@ -80,25 +85,3 @@ services:
         value: "openai/gpt-oss-20b,qwen/qwen3.6-27b,openai/gpt-oss-120b,qwen/qwen3.8-27b"
       - key: LLM_CONCURRENCY_LIMIT
         value: "5"
-      - key: CORS_ORIGINS
-        # Helm oublié : Render réattribue un suffixe aléatoire au nom d'hôte
-        # (plan gratuit) — le regex https://*.onrender.com côté backend couvre
-        # tous les cas ; cette liste reste explicite par référence.
-        value: https://bacprep-frontend-hpad.onrender.com
-
-  # Frontend React/Vite déployé comme site statique — communique avec le
-  # backend via HTTPS (architecture technique).
-  - type: web
-    name: bacprep-frontend
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    envVars:
-      - key: VITE_API_URL
-        value: https://bacprep-web.onrender.com
-    routes:
-      # SPA : toute route inconnue renvoie index.html (navigation client).
-      - type: rewrite
-        source: /*
-        destination: /index.html
