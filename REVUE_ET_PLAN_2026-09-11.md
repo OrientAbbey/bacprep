@@ -138,11 +138,14 @@ tokens de design uniques, découpage router/core sobre). Les écarts identifiés
 
 ### PHASE 3 — Sécurité / RGPD / bornes (🟠 recommandé)
 
-- [ ] **É13. Bornes de saisie** — `models.py` (`SignalementIn.message` `max_length`, `contenu_markdown`/`corrige_markdown` `max_length=2_000_000`).
-- [ ] **É14. Harmonies compte** — `me.py` vs `admin_misc.py` : unifier le comportement
+- [x] **É13. Bornes de saisie** — `models.py` (`SignalementIn.message` `max_length`, `contenu_markdown`/`corrige_markdown` `max_length=2_000_000`).
+- [x] **É14. Harmonies compte** — `me.py` vs `admin_misc.py` : unifier le comportement
   (effacement strict d'un côté, anonymisation de l'autre) — divergence comptable documentée (faible).
-- [ ] **É15. Jeton admin cookie httpOnly** — migration `AdminPage` sessionStorage → cookie géré par le
+- [x] **É15. Jeton admin cookie httpOnly** — migration `AdminPage` sessionStorage → cookie géré par le
   serveur (réutilise le verrou existant). *Plus invasif (touch tous les appels admin) — à planifier à part si accepté.*
+  Migration complète choisie : `admin_session` httpOnly (SameSite=Strict, Secure en prod) posé à la connexion,
+  plus aucun jeton en JS (`authHeaders()` ne renvoie plus d'en-tête), rehydratation par probe `/api/admin/stats`,
+  repli en-tête `X-Admin-Session` conservé côté API (curl/tests).
 
 ### PHASE 4 — Qualité / politique (🟢 optionnel, au choix)
 

@@ -100,8 +100,8 @@ class EpreuveIn(BaseModel):
     gratuit: bool = False
     statut: str = "brouillon"
     filieres: list[str] = Field(default_factory=list)
-    contenu_markdown: str = ""
-    corrige_markdown: Optional[str] = ""
+    contenu_markdown: str = Field(default="", max_length=2_000_000)
+    corrige_markdown: Optional[str] = Field(default=None, max_length=2_000_000)
 
 
 class EpreuveUpdate(BaseModel):
@@ -116,8 +116,8 @@ class EpreuveUpdate(BaseModel):
     gratuit: Optional[bool] = None
     statut: Optional[str] = None
     filieres: Optional[list[str]] = None
-    contenu_markdown: Optional[str] = None
-    corrige_markdown: Optional[str] = None
+    contenu_markdown: Optional[str] = Field(default=None, max_length=2_000_000)
+    corrige_markdown: Optional[str] = Field(default=None, max_length=2_000_000)
 
 
 # ---------- Subscriptions ----------
@@ -296,7 +296,7 @@ class NoteWithEpreuveOut(NoteOut):
 
 class SignalementIn(BaseModel):
     motif: str  # contenu_illisible|erreur_enonce|corrige_manquant|image_cassee|autre
-    message: str = ""
+    message: str = Field(default="", max_length=1000)
 
 
 class BannirIn(BaseModel):

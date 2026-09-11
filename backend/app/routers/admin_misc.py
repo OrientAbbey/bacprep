@@ -13,7 +13,7 @@ import os
 import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -57,13 +57,20 @@ _login_limiter = SlidingWindowLimiter(
 @router.post("/login")
 def admin_login(
     payload: AdminLoginIn,
+    response: Response,
     request: Request,
     db: Session = Depends(get_db),
 ) -> dict:
     """Connexion admin : jeton partagé (ADMIN_TOKEN) + email dans la liste
     blanche (ADMIN_EMAILS). Si un autre admin est déjà connecté (verrou
     persisté en base, voir admin_session.py), répond 409 avec qui est
-    connecté depuis quand — sauf si `force=true`, qui prend le contrôle."""
+    connecté depuis quand — sauf si `force=true`, qui prend le contrôle.
+
+    Le jeton de session part dans un cookie httpOnly (SameSite=Strict,
+    Secure en prod) : il n'est JAMAIS restitué au JavaScript — un XSS
+    même-origine ne peut plus l'exfiltrer. Le champ session_token reste
+    dans la réponse pour les clients non-navigateur (curl/tests) qui
+    l'utilisent via l'en-tête X-Admin-Session."""
     _login_limiter.check(client_ip(request))
 
     expected_token = os.getenv("ADMIN_TOKEN", "")
@@ -91,18 +98,37 @@ def admin_login(
     lock, blocker = admin_session.attempt_login(db, email, force=payload.force)
     if blocker:
         raise HTTPException(409, detail=blocker)
+    response.set_cookie(
+        "admin_session",
+        lock.token,
+        httponly=True,
+        samesite="strict",
+        secure=is_prod(),
+        path="/",
+        max_age=int(admin_session.session_timeout().total_seconds()),
+    )
     log_admin_event(db, None, "admin_login", email=email, details={"force": payload.force})
     return {"session_token": lock.token, "email": lock.email}
 
 
 @router.post("/logout")
-def admin_logout(x_admin_session: str = Header(default=""), db: Session = Depends(get_db)) -> dict:
-    """Libère le verrou admin s'il correspond au jeton fourni."""
+def admin_logout(
+    response: Response,
+    x_admin_session: str = Header(default=""),
+    admin_session_cookie: str = Cookie(default=""),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Libère le verrou admin s'il correspond au jeton fourni et efface le
+    cookie de session. Le jeton est lu dans le cookie httpOnly (chemin
+    normal du navigateur) avec repli sur l'en-tête X-Admin-Session
+    (curl / tests), l'ancien canal de transport."""
+    token = x_admin_session or admin_session_cookie
     from ..db_models import AdminLockORM
 
-    lock = db.query(AdminLockORM).filter(AdminLockORM.token == x_admin_session).one_or_none()
+    lock = db.query(AdminLockORM).filter(AdminLockORM.token == token).one_or_none()
     email = lock.email if lock else ""
-    admin_session.logout(db, x_admin_session)
+    admin_session.logout(db, token)
+    response.delete_cookie("admin_session", path="/")
     if lock:
         log_admin_event(db, None, "admin_logout", email=email)
     return {"ok": True}

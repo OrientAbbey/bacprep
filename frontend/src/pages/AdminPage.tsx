@@ -17,7 +17,7 @@ type Onglet = "epreuves" | "import" | "utilisateurs" | "journal" | "signalements
  * (pages/admin/*) — ce fichier ne fait que le routage interne. */
 export function AdminPage() {
   const { showToast } = useToast();
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem("admin_session"));
+  const [token, setToken] = useState("");
   const [email, setEmail] = useState("");
   const [loginToken, setLoginToken] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -58,38 +58,47 @@ export function AdminPage() {
       ?.focus();
   }
 
-  /** Session admin expirée côté serveur (401) : purge le jeton local pour
-   * repasser par le formulaire de connexion. Retourne vrai si c'était un
-   * 401 — les autres erreurs restent à la charge de l'appelant. */
+  /** Session admin expirée côté serveur (401) : repasse par le formulaire
+   * de connexion. Retourne vrai si c'était un 401 — les autres erreurs
+   * restent à la charge de l'appelant. */
   function handle401(err: unknown): boolean {
     if (!(err instanceof ApiError && err.status === 401)) return false;
-    setToken(null);
-    sessionStorage.removeItem("admin_session");
+    setToken("");
     return true;
   }
 
   // Même purge, sans valeur de retour — à passer aux panneaux qui n'ont pas
   // accès à setToken (EpreuvesPanel gère ses 401 localement).
   function onSessionExpiree() {
-    setToken(null);
-    sessionStorage.removeItem("admin_session");
+    setToken("");
   }
 
-  async function loadStats(t: string) {
+  async function loadStats(t: string): Promise<boolean> {
     try {
       const s = await api.get<AdminStats>("/api/admin/stats", authHeaders(t));
       setStats(s);
+      return true;
     } catch (err) {
       handle401(err);
+      return false;
     }
   }
 
-  // Charge les statistiques à la connexion ET après chaque changement
-  // d'épreuves (publication/suppression) signalé par le panneau.
+  // À l'ouverture de la page, le jeton de session (cookie httpOnly) n'est
+  // pas lisible par le JavaScript : on sonde le verrou via /stats —
+  // succès = la session a survécu au rechargement, 401 = formulaire de
+  // connexion. Chargement des stats initié ici UNIQUEMENT (pas d'effet
+  // [token], qui rechargerait deux fois à l'ouverture).
   useEffect(() => {
-    if (token) loadStats(token);
+    let alive = true;
+    loadStats("actif").then((ok) => {
+      if (alive && ok) setToken("actif");
+    });
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
 
   // Battement de cœur : tant que la console est ouverte, signale au serveur
   // que l'admin est actif (l'endpoint rafraîchit le verrou). Sans lui,
@@ -116,14 +125,15 @@ export function AdminPage() {
     setError(null);
     setBlocker(null);
     try {
-      const res = await api.post<{ session_token: string; email: string }>("/api/admin/login", {
+      await api.post<{ session_token: string; email: string }>("/api/admin/login", {
         email,
         token: loginToken,
         force,
       });
-      sessionStorage.setItem("admin_session", res.session_token);
-      setToken(res.session_token);
-      showToast(`Connecté en tant que ${res.email}.`, "success");
+      // Le serveur a posé le cookie httpOnly : la session est active, mais
+      // le jeton reste invisible pour le JS — `token` n'est qu'un drapeau.
+      setToken("actif");
+      showToast(`Connecté en tant que ${email}.`, "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setBlocker(err.detail as { message: string; active_email: string });
@@ -140,13 +150,13 @@ export function AdminPage() {
 
   async function logoutAdmin() {
     try {
-      if (token) await api.post("/api/admin/logout", undefined, authHeaders(token));
+      // La session part par le cookie httpOnly ; le serveur l'efface.
+      await api.post("/api/admin/logout", undefined, authHeaders(token));
     } finally {
       // Reset complet du formulaire : sans lui, les identifiants de la
       // session précédente restaient affichés au retour à l'écran de
       // connexion (risque sur poste partagé).
-      sessionStorage.removeItem("admin_session");
-      setToken(null);
+      setToken("");
       setEmail("");
       setLoginToken("");
       setError(null);

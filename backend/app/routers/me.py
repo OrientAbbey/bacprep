@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -293,28 +291,29 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
 @router.delete("/compte")
 def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
     """Suppression du compte par l'utilisateur lui-même (droit à
-    l'effacement, Art. 17) : purge des notes, conversations IA,
-    consultations, signalements et sessions — les paiements/abonnements et
-    la ligne utilisateur sont ANONYMISÉS (conservés pour la comptabilité,
-    sans plus rien d'identifiant, cf. obligations légales de conservation).
-    La session courante et les autres sessions sont révoquées."""
-    anonyme = f"supprime-{uuid.uuid4().hex[:12]}"
-    db.query(SessionORM).filter(SessionORM.user_id == user.id).delete()
-    db.query(KickoutNoticeORM).filter(KickoutNoticeORM.user_id == user.id).delete()
-    db.query(NoteORM).filter(NoteORM.user_id == user.id).delete()
-    db.query(AIConversationORM).filter(AIConversationORM.user_id == user.id).delete()
-    db.query(ConsultationORM).filter(ConsultationORM.user_id == user.id).delete()
-    db.query(SignalementORM).filter(SignalementORM.user_id == user.id).delete()
-    user.email = f"{anonyme}@supprime.local"
-    user.nom = "Compte supprimé"
-    user.niveau = None
-    user.classe = None
-    user.etablissement = None
-    user.consent_ia = None
-    user.consent_notes = None
-    db.add(user)
+    l'effacement, Art. 17) : purge de TOUTES les données personnelles —
+    sessions, notes, conversations IA, consultations, signalements,
+    abonnements et paiements — puis suppression de la ligne utilisateur.
+    Comportement unifié avec la suppression admin
+    (admin_misc.admin_supprimer_utilisateur) : les deux voies effacent
+    strictement, plus de divergence anonymisation/effacement. La session
+    courante et les autres sessions sont révoquées."""
+    u_id = user.id
+    db.query(SessionORM).filter(SessionORM.user_id == u_id).delete()
+    db.query(KickoutNoticeORM).filter(KickoutNoticeORM.user_id == u_id).delete()
+    db.query(NoteORM).filter(NoteORM.user_id == u_id).delete()
+    db.query(AIConversationORM).filter(AIConversationORM.user_id == u_id).delete()
+    db.query(ConsultationORM).filter(ConsultationORM.user_id == u_id).delete()
+    # Ordre important : les paiements référencent les abonnements
+    # (payments.subscription_id → subscriptions.id, FK RESTRICT) — il faut
+    # donc purger les paiements AVANT les abonnements, sinon le DELETE des
+    # abonnements échoue en FOREIGN KEY constraint failed.
+    db.query(PaymentORM).filter(PaymentORM.user_id == u_id).delete()
+    db.query(SubscriptionORM).filter(SubscriptionORM.user_id == u_id).delete()
+    db.query(SignalementORM).filter(SignalementORM.user_id == u_id).delete()
+    db.delete(user)
     db.commit()
-    log.info("Compte supprimé (anonymisé) — %s@supprime.local", anonyme)
+    log.info("Compte supprimé (effacement strict) — user %s", u_id)
     return {"ok": True}
 
 

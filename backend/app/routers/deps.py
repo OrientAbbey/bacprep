@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from ..core import admin_session
@@ -42,12 +42,19 @@ def get_public_epreuve_or_404(db: Session, epreuve_id: str, user=None) -> Epreuv
     return e
 
 
-def require_admin(x_admin_session: str = Header(default=""), db: Session = Depends(get_db)):
-    """Dépendance FastAPI protégeant toutes les routes admin : valide
-    l'en-tête X-Admin-Session contre le verrou persisté en base et
-    rafraîchit son horodatage d'activité (glissement de la fenêtre
-    d'inactivité configurée, par défaut 3 min)."""
-    lock = admin_session.touch(db, x_admin_session)
+def require_admin(
+    x_admin_session: str = Header(default=""),
+    admin_session_cookie: str = Cookie(default=""),
+    db: Session = Depends(get_db),
+):
+    """Dépendance FastAPI protégeant toutes les routes admin : valide la
+    session contre le verrou persisté en base et rafraîchit son horodatage
+    d'activité (glissement de la fenêtre d'inactivité configurée, par
+    défaut 3 min). Le jeton est lu dans le cookie httpOnly `admin_session`
+    (posé à la connexion — illisible par le JavaScript) avec repli sur
+    l'en-tête X-Admin-Session (curl / tests, ancien canal)."""
+    token = x_admin_session or admin_session_cookie
+    lock = admin_session.touch(db, token)
     if not lock:
         raise HTTPException(401, "Session admin invalide ou expirée")
     return lock

@@ -66,16 +66,22 @@ export const EMPTY_FORM: EpreuveForm = {
   documents: [],
 };
 
-export function authHeaders(token: string): Record<string, string> {
-  return { "X-Admin-Session": token };
+/** Authentification admin — DEPUIS la migration sécurité É15, le jeton de
+ * session voyage dans un cookie httpOnly (SameSite=Strict) posé par le
+ * serveur à la connexion : il n'existe PLUS en JavaScript (un XSS
+ * même-origine ne peut plus l'exfiltrer) et part automatiquement avec
+ * chaque requête même-origine (credentials: "include" du client API). Ce
+ * helper ne renvoie donc plus d'en-tête : il est conservé pour ne pas
+ * modifier les dizaines d'appels existants. */
+export function authHeaders(_token?: string): Record<string, string> {
+  return {};
 }
 
-/** 401 dans un panneau (verrou admin expiré pendant l'inactivité) : purge la
- * session locale et recharge — la page repasse par le formulaire de connexion
- * AU LIEU d'afficher une « liste vide » trompeuse. */
+/** 401 dans un panneau (verrou admin expiré pendant l'inactivité) : purge
+ * la session locale et recharge — la page repasse par le formulaire de
+ * connexion AU LIEU d'afficher une « liste vide » trompeuse. */
 export function purgerSessionExpiree(err: unknown): boolean {
   if (!(err instanceof ApiError && err.status === 401)) return false;
-  sessionStorage.removeItem("admin_session");
   window.location.reload();
   return true;
 }
