@@ -81,7 +81,10 @@ services:
       - key: LLM_CONCURRENCY_LIMIT
         value: "5"
       - key: CORS_ORIGINS
-        value: https://bacprep-frontend.onrender.com
+        # Helm oublié : Render réattribue un suffixe aléatoire au nom d'hôte
+        # (plan gratuit) — le regex https://*.onrender.com côté backend couvre
+        # tous les cas ; cette liste reste explicite par référence.
+        value: https://bacprep-frontend-hpad.onrender.com
 
   # Frontend React/Vite déployé comme site statique — communique avec le
   # backend via HTTPS (architecture technique).
