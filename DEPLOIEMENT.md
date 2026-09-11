@@ -115,7 +115,7 @@ quittent jamais le serveur et la charge de servir ne repose pas sur FastAPI.
 
 ### Tigris Data (défaut)
 
-1. Compte sur [console.tigrisdata.com](https://console.tigrisdata.com) (aucune
+1. Compte sur [console.storage.dev](https://console.storage.dev) (aucune
    carte bancaire requise) → créer un bucket (ex. `bacprep`, accès privé).
 2. Onglet *Access Keys* → générer une paire `Access Key ID` / `Secret`.
 3. Renseigner :
@@ -123,7 +123,7 @@ quittent jamais le serveur et la charge de servir ne repose pas sur FastAPI.
 
 ### Supabase Storage
 
-1. **Project Settings → Storage → S3 Access Keys → Generate new key**
+1. **Storage → Configuration → S3 → Generate new key**
    (accès serveur, contourne les politiques RLS — usage uniquement côté
    backend).
 2. **Storage → New bucket** : nom = `STORAGE_BUCKET` (ex. `bacprep`),
