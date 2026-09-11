@@ -158,6 +158,33 @@ def test_suppression_utilisateur_efface_donnees(client, admin):
     assert client.post("/api/auth/mock-login", json={"email": "supprime@test.cm", "nom": "Temp"}).status_code == 200
 
 
+def test_suppression_utilisateur_avec_paiement_confirme(visiteur, admin, epreuve_payante):
+    """Régression : la suppression d'un compte ayant un abonnement PAYÉ
+    échouait en `FOREIGN KEY constraint failed` — les paiements référencent
+    les abonnements (payments.subscription_id → subscriptions.id), il faut
+    donc purger les paiements AVANT les abonnements."""
+    r = visiteur.post("/api/auth/mock-login", json={"email": "efface-fk@test.cm", "nom": "FK"})
+    assert r.status_code == 200, r.text
+    uid = visiteur.get("/api/auth/me").json()["id"]
+
+    # Abonnement créé puis confirmé via le webhook de simulation → une
+    # ligne PaymentORM référençant la subscription est créée.
+    r = visiteur.post(
+        "/api/subscriptions/checkout",
+        json={"scope": "epreuve", "epreuve_id": epreuve_payante, "provider": "orange"},
+    )
+    assert r.status_code == 200, r.text
+    ref = r.json()["reference_agregateur"]
+    assert (
+        visiteur.post("/api/payments/simulate-webhook", json={"reference_agregateur": ref}).status_code
+        == 200
+    )
+
+    assert admin.delete(f"/api/admin/utilisateurs/{uid}").status_code == 200, "suppression du compte"
+    emails = [u["email"] for u in admin.get("/api/admin/utilisateurs").json()]
+    assert "efface-fk@test.cm" not in emails
+
+
 def test_admin_ne_peut_pas_bannir_sa_liste_blanche(admin):
     u = admin.get("/api/auth/me").json()  # eleve@test.cm — pas admin
     # Bannir un email de la liste blanche : créons-le comme user puis tentons.
@@ -276,3 +303,51 @@ def test_session_ttl_glissant_et_maximum(client):
 def test_login_admin_inclut_is_admin(eleve):
     me = eleve.get("/api/auth/me").json()
     assert me["is_admin"] is False  # eleve@test.cm n'est pas dans ADMIN_EMAILS
+
+
+# ---------- RGPD (H1) : portabilité & effacement ----------
+
+def test_export_et_suppression_compte(client, epreuve_payante):
+    """Export complet des données personnelles, puis suppression du compte :
+    données purgées, identité anonymisée, paiements conservés (compta)."""
+    from fastapi.testclient import TestClient
+    import app.main as app_main
+
+    with TestClient(app_main.app) as u:
+        r = u.post("/api/auth/mock-login", json={"email": "rgpd@test.cm", "nom": "RGPD Test"})
+        assert r.status_code == 200, r.text
+
+        assert u.put("/api/me/consentement", json={"partage_conversations_ia": True, "partage_notes": True}).status_code == 200
+
+        # Épreuve payante non achetée → création de note refusée (garde G2).
+        r = u.post(f"/api/epreuves/{epreuve_payante}/notes", json={"cible": "sujet", "contenu": "Ma note RGPD"})
+        assert r.status_code == 403
+
+        # Export : structure complète attendue.
+        r = u.get("/api/me/export")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["profil"]["email"] == "rgpd@test.cm"
+        assert set(body) == {"profil", "notes", "conversations_ia", "consultations", "abonnements", "paiements"}
+
+        # Suppression du compte → sessions révoquées (401 ensuite).
+        assert u.delete("/api/me/compte").status_code == 200
+        assert u.get("/api/me/profil").status_code == 401
+
+
+def test_revocation_ia_purge_les_conversations(client, epreuve_gratuite):
+    """Révoguer le consentement IA supprime les conversations déjà stockées."""
+    from fastapi.testclient import TestClient
+    import app.main as app_main
+
+    with TestClient(app_main.app) as u:
+        u.post("/api/auth/mock-login", json={"email": "rgpd-ia@test.cm", "nom": "RGPD IA"})
+        assert u.put("/api/me/consentement", json={"partage_conversations_ia": True, "partage_notes": True}).status_code == 200
+        r = u.post(f"/api/epreuves/{epreuve_gratuite}/conversations", json={"contexte": "", "label": "Discussion 1"})
+        assert r.status_code == 200, r.text
+
+        # Révocation IA → conversations purgées.
+        assert u.put("/api/me/consentement", json={"partage_conversations_ia": False, "partage_notes": True}).status_code == 200
+        r = u.get(f"/api/epreuves/{epreuve_gratuite}/conversations")
+        assert r.status_code == 200
+        assert r.json() == []

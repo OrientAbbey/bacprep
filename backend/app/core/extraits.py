@@ -7,13 +7,19 @@ import re
 
 _MAX_LEN = 280
 
+# Référence Markdown d'image, avec ses deux groupes utiles : (1) l'alt,
+# (2) l'URL. Source unique pour la génération d'extraits (ici), la
+# signature des URLs (core/epreuve_files) et l'extraction d'images pour le
+# LLM (core/assistant) — une seule regex à maintenir.
+IMAGE_MD_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
+
 # Ordre de nettoyage : ce qui doit disparaître en premier d'abord.
 # (motif, remplacement) — le remplacement explicite évite de deviner le
 # comportement en inspectant la source du motif.
 _PATTERNS = [
     (re.compile(r"^---\n.*?\n---\n", re.DOTALL), ""),  # frontmatter
     (re.compile(r"```[\s\S]*?```"), ""),  # blocs de code
-    (re.compile(r"!\[[^\]]*\]\([^)]*\)"), ""),  # images
+    (IMAGE_MD_RE, ""),  # images (même regex que la signature/le LLM)
     (re.compile(r"\$\$[\s\S]*?\$\$"), ""),  # LaTeX bloc
     (re.compile(r"\$[^$\n]+\$"), ""),  # LaTeX inline
     (re.compile(r"^\s*\|.*\|\s*$", re.MULTILINE), ""),  # tableaux

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
@@ -12,6 +12,7 @@ interface AuthConfig {
 
 export function LoginPage() {
   const [config, setConfig] = useState<AuthConfig | null>(null);
+  const [configError, setConfigError] = useState(false);
   const [email, setEmail] = useState("");
   const [nom, setNom] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,9 +24,16 @@ export function LoginPage() {
   // authentification (transmise par RequireAuth), accueil sinon.
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/";
 
-  useEffect(() => {
-    api.get<AuthConfig>("/api/auth/config").then(setConfig);
+  const fetchConfig = useCallback(() => {
+    setConfigError(false);
+    api.get<AuthConfig>("/api/auth/config")
+      .then(setConfig)
+      .catch(() => setConfigError(true));
   }, []);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
 
   useEffect(() => {
     if (user) navigate(from, { replace: true });
@@ -60,7 +68,24 @@ export function LoginPage() {
             Connecte-toi pour ouvrir les épreuves et tes abonnements.
           </p>
 
-          {!config && <p className="text-sm text-slate">Chargement…</p>}
+          {!config && !configError && (
+            <div className="skeleton h-10 w-full rounded-[2px]" role="status" aria-label="Chargement de la configuration" />
+          )}
+
+          {configError && (
+            <div className="text-center">
+              <p role="alert" className="text-sm text-correction">
+                Impossible de contacter le serveur. Vérifie ta connexion.
+              </p>
+              <button
+                type="button"
+                onClick={fetchConfig}
+                className="mt-3 min-h-[44px] rounded-full border border-ink-soft/25 bg-paper-raised px-6 text-sm font-medium hover:opacity-80"
+              >
+                Réessayer
+              </button>
+            </div>
+          )}
 
           {config?.mode === "google" && config.google_client_id && (
             <div className="flex justify-center">
@@ -80,6 +105,8 @@ export function LoginPage() {
                   value={nom}
                   onChange={(e) => setNom(e.target.value)}
                   placeholder="ex. Franck Albert"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "login-error" : undefined}
                   className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
                 />
               </div>
@@ -91,10 +118,12 @@ export function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="ex. franck.albert@exemple.com"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "login-error" : undefined}
                   className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
                 />
               </div>
-              {error && <p className="text-sm text-correction">{error}</p>}
+              {error && <p id="login-error" role="alert" className="text-sm text-correction">{error}</p>}
               <button
                 type="submit"
                 className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper"

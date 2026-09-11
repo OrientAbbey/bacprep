@@ -46,12 +46,9 @@ export async function streamAssistantAsk(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    // Les évènements SSE sont séparés par une ligne vide ("\n\n").
+  function processBuffer(): void {
+    // Normaliser CRLF → LF pour que le découpage sur "\n\n" fonctionne
+    // même si le serveur envoie des\r\n (certains implémentations SSE).
     let boundary: number;
     while ((boundary = buffer.indexOf("\n\n")) !== -1) {
       const rawEvent = buffer.slice(0, boundary);
@@ -70,4 +67,14 @@ export async function streamAssistantAsk(
       }
     }
   }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+    processBuffer();
+    if (done) break;
+  }
+
+  // Traiter le résidu éventuel du buffer (dernier SSE sans \n\n final).
+  if (buffer.trim()) processBuffer();
 }

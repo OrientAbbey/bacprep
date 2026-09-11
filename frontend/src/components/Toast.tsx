@@ -1,5 +1,5 @@
 import { CheckCircle2, Info, X, XCircle } from "lucide-react";
-import React, { createContext, useCallback, useContext, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 type ToastKind = "success" | "error" | "info";
 
@@ -39,13 +39,22 @@ const KIND_ICON: Record<ToastKind, React.ComponentType<{ size?: number; strokeWi
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Nettoyage des minuteries au démontage du provider (évite un setState
+  // sur un composant démonté si l'app se ferme avant les 4 s).
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
 
   const showToast = useCallback((message: string, kind: ToastKind = "info") => {
     const id = nextId.current++;
     setToasts((prev) => [...prev, { id, message, kind }]);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, AUTO_DISMISS_MS);
+    timersRef.current.push(timer);
   }, []);
 
   const dismiss = (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id));

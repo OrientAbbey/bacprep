@@ -167,7 +167,14 @@ def admin_stats(db: Session = Depends(get_db), lock=Depends(require_admin)) -> d
             continue
         cle = f"{d.year:04d}-{d.month:02d}"
         revenus_par_mois[cle] = revenus_par_mois.get(cle, 0) + p.montant
-    six_derniers = sorted(revenus_par_mois.keys())[-6:]
+    # 6 DERNIERS MOIS CALENDAIRES (mois vide = 0) : trier les seules clés
+    # présentes ferait disparaître d'un graphique un mois sans revenu et
+    # n'afficherait pas 6 points stables (corrigé 2026-09).
+    six_derniers: list[str] = []
+    now = utc_now()
+    for i in range(5, -1, -1):
+        y, m = (now.year, now.month - i) if now.month > i else (now.year - 1, now.month - i + 12)
+        six_derniers.append(f"{y:04d}-{m:02d}")
 
     return {
         "utilisateurs": utilisateurs,
@@ -183,7 +190,7 @@ def admin_stats(db: Session = Depends(get_db), lock=Depends(require_admin)) -> d
             "par_format": stockage_par_format,
             "nb_fichiers": nb_fichiers,
         },
-        "revenus_par_mois": {m: revenus_par_mois[m] for m in six_derniers},
+        "revenus_par_mois": {m: revenus_par_mois.get(m, 0) for m in six_derniers},
         "consultations": db.query(ConsultationORM).count(),
         "notes": db.query(NoteORM).count(),
         "discussions_ia": db.query(AIConversationORM).count(),
@@ -463,9 +470,13 @@ def admin_supprimer_utilisateur(
     db.query(NoteORM).filter(NoteORM.user_id == u.id).delete()
     db.query(AIConversationORM).filter(AIConversationORM.user_id == u.id).delete()
     db.query(ConsultationORM).filter(ConsultationORM.user_id == u.id).delete()
+    # Ordre important : les paiements référencent les abonnements
+    # (payments.subscription_id → subscriptions.id, FK RESTRICT) — il faut
+    # donc purger les paiements AVANT les abonnements, sinon le DELETE des
+    # abonnements échoue en FOREIGN KEY constraint failed.
+    db.query(PaymentORM).filter(PaymentORM.user_id == u.id).delete()
     db.query(SubscriptionORM).filter(SubscriptionORM.user_id == u.id).delete()
     db.query(SignalementORM).filter(SignalementORM.user_id == u.id).delete()
-    db.query(PaymentORM).filter(PaymentORM.user_id == u.id).delete()
     db.delete(u)
     db.commit()
     log_admin_event(db, None, "utilisateur_supprime", email=lock.email, details=details)

@@ -2,6 +2,7 @@ import { Database, MessagesSquare, StickyNote } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { useModalFocus } from "../lib/useModalFocus";
 
 /**
  * Consentement granulaire recueilli À LA PREMIÈRE CONNEXION (pratique RGPD :
@@ -19,10 +20,16 @@ import { useAuth } from "../auth/AuthProvider";
  */
 export function ConsentModal() {
   const { user, refreshConsentement } = useAuth();
-  const [iaOk, setIaOk] = useState(true);
-  const [notesOk, setNotesOk] = useState(true);
+  const [iaOk, setIaOk] = useState(false);
+  const [notesOk, setNotesOk] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState(false);
+
+  // Piège le focus Tab à l'intérieur de la modale ; Échap ne ferme RIEN
+  // ici (modale bloquante tant que le choix n'est pas enregistré) — le
+  // hook ne fait donc qu'empêcher la Tab d'en sortir et rendre le focus
+  // à la page à la fermeture.
+  const dialogRef = useModalFocus<HTMLDivElement>({ open: true, onClose: () => {} });
 
   // La modale ne s'affiche que tant que l'utilisateur n'a jamais répondu
   // (les deux choix restent à null après la première réponse, même refus).
@@ -58,7 +65,10 @@ export function ConsentModal() {
       aria-modal="true"
       aria-labelledby="consent-titre"
     >
-      <div className="w-full max-w-md rounded-lg border border-ink-soft/15 bg-paper-raised p-5 shadow-2xl">
+      <div
+        ref={dialogRef}
+        className="w-full max-w-md rounded-lg border border-ink-soft/15 bg-paper-raised p-5 shadow-2xl"
+      >
         <div className="flex items-center gap-2">
           <Database size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
           <h2 id="consent-titre" className="font-serif-brand text-lg">

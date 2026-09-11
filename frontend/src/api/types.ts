@@ -13,6 +13,7 @@ export interface EpreuveListItem {
   statut: string;
   filieres: string[];
   corrige_disponible: boolean;
+  acces: "gratuit" | "ouvert" | "payant";
 }
 
 export interface EpreuveFile {

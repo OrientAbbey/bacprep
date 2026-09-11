@@ -46,11 +46,18 @@ def get_file(
     (s3) : redirection 302 vers une URL signée (les credentials ne
     quittent jamais le serveur)."""
     f = _load_file_or_404(db, file_id)
+    epreuve = db.query(EpreuveORM).filter(EpreuveORM.id == f.epreuve_id).one_or_none()
 
-    if not (token and verify_file_token(file_id, token)):
+    # Jeton signé : il doit correspondre au fichier ET à l'épreuve ET à son
+    # statut COURANT (la dépublication révoque donc immédiatement les URLs
+    # déjà répandues, voir core/signing.py) — l'épreuve supprimée ou retirée
+    # laisse le jeton invalide quelle que soit sa fraîcheur.
+    token_ok = bool(token) and epreuve is not None and verify_file_token(
+        file_id=f.id, epreuve_id=epreuve.id, statut=epreuve.statut, token=token
+    )
+    if not token_ok:
         if user is None:
             raise HTTPException(401, "Non authentifié")
-        epreuve = db.query(EpreuveORM).filter(EpreuveORM.id == f.epreuve_id).one_or_none()
         if not epreuve or not store.has_access(db, user.id, epreuve):
             raise HTTPException(403, "Accès non autorisé — un abonnement est requis")
 
@@ -90,5 +97,5 @@ def get_file(
     return Response(
         content=data,
         media_type=media_type,
-        headers={"Cache-Control": "no-store"} if f.format == "md" else {"Cache-Control": "private, max-age=86400"},
+        headers={"Cache-Control": "no-store"},
     )

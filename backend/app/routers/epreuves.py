@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import false as sql_false
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -29,15 +29,22 @@ from ..models import (
     SignalementIn,
 )
 from .auth import optional_user, require_user
-from .deps import get_epreuve_or_404
+from .deps import get_public_epreuve_or_404
 
 router = APIRouter(prefix="/api/epreuves", tags=["epreuves"])
 log = get_logger("epreuves")
 
 
-def _to_list_item(e: EpreuveORM) -> EpreuveListItem:
+def _to_list_item(e: EpreuveORM, covered_ids: set[str] | None = None) -> EpreuveListItem:
     """Projette une épreuve ORM vers le schéma de liste (sans le contenu,
-    chargé séparément depuis le stockage pour un catalogue léger)."""
+    chargé séparément depuis le stockage pour un catalogue léger).
+    Si `covered_ids` est fourni, calcule le champ `acces` côté serveur."""
+    if e.gratuit:
+        acces = "gratuit"
+    elif covered_ids is not None and e.id in covered_ids:
+        acces = "ouvert"
+    else:
+        acces = "payant"
     return EpreuveListItem(
         id=e.id,
         niveau=e.niveau,
@@ -53,6 +60,7 @@ def _to_list_item(e: EpreuveORM) -> EpreuveListItem:
         statut=e.statut,
         filieres=e.filieres,
         corrige_disponible=e.corrige_disponible,
+        acces=acces,
     )
 
 
@@ -183,8 +191,8 @@ def list_epreuves(
     q: Optional[str] = None,
     corrige: Optional[str] = None,
     acces_type: Optional[str] = None,
-    limit: int = 24,
-    offset: int = 0,
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user=Depends(optional_user),
 ) -> list[EpreuveListItem]:
@@ -214,11 +222,16 @@ def list_epreuves(
         query = query.filter(EpreuveORM.classe == classe)
     epreuves = (
         query.order_by(EpreuveORM.annee.desc(), EpreuveORM.matiere.asc())
-        .offset(max(0, offset))
-        .limit(max(1, min(limit, 100)))
+        .offset(offset)
+        .limit(limit)
         .all()
     )
-    return [_to_list_item(e) for e in epreuves]
+    # Précalculer les ids couverts par un abonnement actif (UNE seule
+    # requête) pour alimenter le champ `acces` côté serveur.
+    covered_ids: set[str] | None = None
+    if user:
+        covered_ids = {row[0] for row in _covered_epreuve_ids(db, user.id).all()}
+    return [_to_list_item(e, covered_ids) for e in epreuves]
 
 
 @router.get("/filtres")
@@ -313,12 +326,12 @@ def get_epreuve(
         store.record_consultation(db, user.id, epreuve_id)
 
     return EpreuveDetail(
-        **_to_list_item(e).model_dump(),
+        **_to_list_item(e, {e.id} if user and store.has_access(db, user.id, e) else None).model_dump(),
         contenu_markdown=epreuve_files.sign_image_urls(
-            epreuve_files.read_document_content(db, e.id, "sujet")
+            epreuve_files.read_document_content(db, e.id, "sujet"), e,
         ),
         corrige_markdown=epreuve_files.sign_image_urls(
-            epreuve_files.read_document_content(db, e.id, "corrige")
+            epreuve_files.read_document_content(db, e.id, "corrige"), e,
         ),
         assets=[
             EpreuveFileOut(
@@ -326,7 +339,7 @@ def get_epreuve(
                 cible=f.cible,
                 format=f.format,
                 filename=f.filename,
-                url=signing.signed_file_url(f.id),
+                url=signing.signed_file_url(f.id, e.id, e.statut),
                 size_bytes=f.size_bytes,
                 width=f.width,
                 height=f.height,
@@ -363,7 +376,7 @@ def create_conversation(
     persistée — 403 (le frontend fonctionne alors en mode éphémère)."""
     if user.consent_ia is False:
         raise HTTPException(403, "Tu as refusé le stockage de tes conversations IA — révoque ou modifie ton choix dans ton profil.")
-    get_epreuve_or_404(db, epreuve_id)
+    get_public_epreuve_or_404(db, epreuve_id, user)
     try:
         conv = store.create_conversation(db, user.id, epreuve_id, payload.contexte, payload.label)
     except ValueError as exc:
@@ -441,7 +454,7 @@ def create_note(
     (consent_notes=False) ne peut pas en créer — 403."""
     if user.consent_notes is False:
         raise HTTPException(403, "Tu as refusé le stockage de tes notes — révoque ou modifie ton choix dans ton profil.")
-    e = get_epreuve_or_404(db, epreuve_id)
+    e = get_public_epreuve_or_404(db, epreuve_id, user)
     note = NoteORM(
         user_id=user.id,
         epreuve_id=e.id,
@@ -472,7 +485,7 @@ def create_signalement(
     """Signale un problème sur cette épreuve (contenu illisible, erreur
     d'énoncé, corrigé manquant, image cassée, autre). Un même utilisateur ne
     peut pas ouvrir deux fois le même motif sur la même épreuve (409)."""
-    get_epreuve_or_404(db, epreuve_id)
+    get_public_epreuve_or_404(db, epreuve_id, user)
     if payload.motif not in MOTIFS_SIGNALEMENT:
         raise HTTPException(400, "Motif de signalement inconnu")
     doublon = (

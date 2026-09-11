@@ -1,12 +1,12 @@
 import { Moon, Search, Sun } from "lucide-react";
 import React, { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
 import { getInitials } from "../lib/initials";
 import { Logo } from "./Logo";
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export function Layout({ children }: { children?: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -110,7 +110,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children ?? <Outlet />}</main>
 
       <footer className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
         Copies &amp; Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)

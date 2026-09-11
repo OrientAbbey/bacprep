@@ -2,16 +2,20 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 
+export function LoadingScreen() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-paper text-ink-soft font-mono-tag text-sm">
+      Chargement…
+    </div>
+  );
+}
+
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-paper text-ink-soft font-mono-tag text-sm">
-        Chargement…
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user) {

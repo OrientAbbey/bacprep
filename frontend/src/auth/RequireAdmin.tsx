@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import { LoadingScreen } from "./RequireAuth";
 
 /**
  * Garde de la route /admin : réserve la page aux utilisateurs CONNECTÉS dont
@@ -14,11 +15,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-paper text-ink-soft font-mono-tag text-sm">
-        Chargement…
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user) {

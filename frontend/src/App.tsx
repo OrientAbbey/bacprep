@@ -1,9 +1,10 @@
 import React, { Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { RequireAdmin } from "./auth/RequireAdmin";
 import { RequireAuth } from "./auth/RequireAuth";
 import { ConsentModal } from "./components/ConsentModal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Layout } from "./components/Layout";
 import { ToastProvider } from "./components/Toast";
 import { ThemeProvider } from "./theme/ThemeProvider";
@@ -41,83 +42,53 @@ function KickoutBanner() {
  * - `/abonnement` : grille des forfaits — publique, la souscription exige
  *   elle un compte ;
  * - `/connexion` : page de connexion ;
- * - `/profil` : connexion requise ;
- * - `/admin` : réservé aux comptes de la liste blanche admin (RequireAdmin).
+ *   - `/profil` : connexion requise ;
+ *   - `/admin` : réservé aux comptes de la liste blanche admin (RequireAdmin).
  */
 export default function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <AuthProvider>
-          <KickoutBanner />
-          <ConsentModal />
-          <Routes>
-            <Route
-              path="/"
-              element={
-                <Layout>
-                  <HomePage />
-                </Layout>
-              }
-            />
-            <Route path="/connexion" element={<LoginPage />} />
-            <Route
-              path="/admin"
-              element={
-                <RequireAdmin>
-                  <Layout>
-                    <Suspense fallback={<p className="text-sm text-slate">Chargement…</p>}>
-                      <AdminPage />
-                    </Suspense>
-                  </Layout>
-                </RequireAdmin>
-              }
-            />
-            <Route
-              path="/secondaire/:classe"
-              element={
-                <Layout>
-                  <CataloguePage />
-                </Layout>
-              }
-            />
-            <Route
-              path="/catalogue"
-              element={
-                <Layout>
-                  <CataloguePage />
-                </Layout>
-              }
-            />
-            <Route
-              path="/epreuve/:id"
-              element={
-                <Layout>
-                  <ViewerPage />
-                </Layout>
-              }
-            />
-            <Route
-              path="/abonnement"
-              element={
-                <Layout>
-                  <SubscribePage />
-                </Layout>
-              }
-            />
-            <Route
-              path="/profil"
-              element={
-                <RequireAuth>
-                  <Layout>
-                    <ProfilePage />
-                  </Layout>
-                </RequireAuth>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <KickoutBanner />
+            <ConsentModal />
+            <Routes>
+              {/* Routes avec Layout commun (Outlet) */}
+              <Route element={<Layout />}>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/secondaire/:classe" element={<CataloguePage />} />
+                <Route path="/catalogue" element={<CataloguePage />} />
+                <Route path="/epreuve/:id" element={<ViewerPage />} />
+                <Route path="/abonnement" element={<SubscribePage />} />
+              </Route>
+
+              {/* Routes sans Layout */}
+              <Route path="/connexion" element={<LoginPage />} />
+
+              {/* Routes protégées auth avec Layout */}
+              <Route element={<RequireAuth><Layout /></RequireAuth>}>
+                <Route path="/profil" element={<ProfilePage />} />
+              </Route>
+
+              {/* Admin : RequireAdmin + Layout + Suspense */}
+              <Route
+                path="/admin"
+                element={
+                  <RequireAdmin>
+                    <Layout>
+                      <Suspense fallback={<p className="text-sm text-slate">Chargement…</p>}>
+                        <AdminPage />
+                      </Suspense>
+                    </Layout>
+                  </RequireAdmin>
+                }
+              />
+
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AuthProvider>
+        </ErrorBoundary>
       </ToastProvider>
     </ThemeProvider>
   );

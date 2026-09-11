@@ -147,7 +147,7 @@ def admin_get_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=Depen
                 "cible": f.cible,
                 "format": f.format,
                 "filename": f.filename,
-                "url": signing.signed_file_url(f.id),
+                "url": signing.signed_file_url(f.id, e.id, e.statut),
                 "size_bytes": f.size_bytes,
                 "width": f.width,
                 "height": f.height,
@@ -281,7 +281,16 @@ def _relocate_files(db: Session, e: EpreuveORM) -> None:
         if f.format == epreuve_files.DOCUMENT_FORMAT:
             new_key = epreuve_files.document_key(e, f.cible)
         else:
-            new_key = epreuve_files.image_key(e, f.cible, os.path.basename(f.storage_key))
+            # Relocalisation d'une image : retirer les préfixes `{cible}-`
+            # répétés des clés héritées (corrigé 2026-09 — l'ancienne
+            # version re-préfixait le basename déjà préfixé, produisant
+            # `sujet-sujet-…` qui se dégradait à chaque déplacement) puis
+            # reconstruire la clé canonique via image_key.
+            basename = os.path.basename(f.storage_key)
+            prefix = f"{f.cible}-"
+            while basename.startswith(prefix):
+                basename = basename[len(prefix):]
+            new_key = epreuve_files.image_key(e, f.cible, basename)
         if new_key == f.storage_key:
             continue
         try:
@@ -408,7 +417,7 @@ def admin_upload_image(
     )
     return {
         "id": row.id,
-        "url": signing.signed_file_url(row.id),
+        "url": signing.signed_file_url(row.id, row.epreuve_id, e.statut),
         "filename": row.filename,
         "cible": cible,
         "doublon_de": doublon.epreuve_id if doublon else None,

@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..core import referentiel, store
 from ..core.logging_config import get_logger
-from ..core.subscriptions import SCOPE_LABELS, scope_of, sub_to_out
+from ..core.subscriptions import SCOPE_LABELS, scope_of, subs_to_out
 from ..db import get_db, utc_now
 from ..db_models import (
     AIConversationORM,
     ConsultationORM,
     EpreuveORM,
+    KickoutNoticeORM,
     NoteORM,
     PaymentORM,
     SessionORM,
+    SignalementORM,
     SubscriptionORM,
 )
 from ..models import ConsentementIn, NoteUpdateIn, NoteWithEpreuveOut, ProfilUpdateIn
@@ -47,7 +51,7 @@ def profil(db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
         "classe": user.classe,
         "etablissement": user.etablissement,
         "membre_depuis": user.created_at,
-        "abonnements": [sub_to_out(db, s).model_dump() for s in subs],
+        "abonnements": [o.model_dump() for o in subs_to_out(db, subs)],
         "total_depense_fcfa": total_depense,
     }
 
@@ -83,11 +87,18 @@ def update_consentement(
     chaque finalité étant acceptée ou refusée séparément (pratique RGPD :
     libre, spécifique, univoque et révocable). Un refus est effectif
     immédiatement : les gardes serveur bloquent toute nouvelle écriture, et
-    le frontend passe l'assistant en mode éphémère."""
+    le frontend passe l'assistant en mode éphémère. RÉVOQUER le consentement
+    IA purge aussitôt les conversations déjà stockées (Art. 17) — c'était un
+    trou du cycle de vie : les données restaient conservées alors que la
+    finalité avait été retirée (corrigé 2026-09)."""
+    revoque_ia = payload.partage_conversations_ia is False and user.consent_ia is True
     user.consent_ia = payload.partage_conversations_ia
     user.consent_notes = payload.partage_notes
     user.consent_given_at = utc_now()
     db.add(user)
+    if revoque_ia:
+        db.query(AIConversationORM).filter(AIConversationORM.user_id == user.id).delete()
+        log.info("Consentement IA révoqué pour %s — conversations purgées", user.email)
     db.commit()
     log.info(
         "Consentement mis à jour pour %s (ia=%s notes=%s)",
@@ -214,6 +225,96 @@ def delete_note(note_id: str, db: Session = Depends(get_db), user=Depends(requir
         raise HTTPException(404, "Note introuvable")
     db.delete(note)
     db.commit()
+    return {"ok": True}
+
+
+# ---------- RGPD : portabilité & effacement ----------
+
+
+@router.get("/export")
+def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
+    """Export de TOUTES les données personnelles de l'utilisateur au format
+    JSON lisible (droit à la portabilité, Art. 20 GDPR) — un seul appel,
+    tout est renvoyé : profil, notes, conversations IA, consultations,
+    abonnements et paiements."""
+    epreuves_ids = {
+        n.epreuve_id
+        for n in db.query(NoteORM).filter(NoteORM.user_id == user.id).all()
+    }
+    epreuves_ids |= {
+        c.epreuve_id
+        for c in db.query(AIConversationORM).filter(AIConversationORM.user_id == user.id).all()
+    }
+    epreuves = {
+        e.id: {"matiere": e.matiere, "annee": e.annee, "classe": e.classe, "evaluation": e.evaluation}
+        for e in db.query(EpreuveORM).filter(EpreuveORM.id.in_(list(epreuves_ids) or [""])).all()
+    }
+    return {
+        "profil": {
+            "email": user.email,
+            "nom": user.nom,
+            "niveau": user.niveau,
+            "classe": user.classe,
+            "etablissement": user.etablissement,
+            "membre_depuis": user.created_at,
+            "consent_ia": user.consent_ia,
+            "consent_notes": user.consent_notes,
+            "banni": user.banni,
+        },
+        "notes": [
+            _note_to_out(n, None) | {"epreuve": epreuves.get(n.epreuve_id)}
+            for n in db.query(NoteORM).filter(NoteORM.user_id == user.id).all()
+        ],
+        "conversations_ia": [
+            store.conversation_to_dict(c) | {"epreuve": epreuves.get(c.epreuve_id)}
+            for c in db.query(AIConversationORM).filter(AIConversationORM.user_id == user.id).all()
+        ],
+        "consultations": [
+            {"epreuve_id": c.epreuve_id, "epreuve": epreuves.get(c.epreuve_id), "consulted_at": c.consulted_at}
+            for c in db.query(ConsultationORM).filter(ConsultationORM.user_id == user.id).all()
+        ],
+        "abonnements": [
+            {"id": s.id, "scope": scope_of(s), "statut": s.statut, "start_date": s.start_date, "end_date": s.end_date}
+            for s in db.query(SubscriptionORM).filter(SubscriptionORM.user_id == user.id).all()
+        ],
+        "paiements": [
+            {
+                "provider": p.provider,
+                "montant": p.montant,
+                "reference": p.reference_agregateur,
+                "statut": p.statut,
+                "confirmed_at": p.confirmed_at,
+            }
+            for p in db.query(PaymentORM).filter(PaymentORM.user_id == user.id).all()
+        ],
+    }
+
+
+@router.delete("/compte")
+def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
+    """Suppression du compte par l'utilisateur lui-même (droit à
+    l'effacement, Art. 17) : purge des notes, conversations IA,
+    consultations, signalements et sessions — les paiements/abonnements et
+    la ligne utilisateur sont ANONYMISÉS (conservés pour la comptabilité,
+    sans plus rien d'identifiant, cf. obligations légales de conservation).
+    La session courante et les autres sessions sont révoquées."""
+    anonyme = f"supprime-{uuid.uuid4().hex[:12]}"
+    db.query(SessionORM).filter(SessionORM.user_id == user.id).delete()
+    db.query(KickoutNoticeORM).filter(KickoutNoticeORM.user_id == user.id).delete()
+    db.query(NoteORM).filter(NoteORM.user_id == user.id).delete()
+    db.query(AIConversationORM).filter(AIConversationORM.user_id == user.id).delete()
+    db.query(ConsultationORM).filter(ConsultationORM.user_id == user.id).delete()
+    db.query(SignalementORM).filter(SignalementORM.user_id == user.id).delete()
+    user.email = f"{anonyme}@supprime.local"
+    user.nom = "Compte supprimé"
+    user.niveau = None
+    user.classe = None
+    user.etablissement = None
+    user.consent_ia = None
+    user.consent_notes = None
+    db.add(user)
+    db.commit()
+    log.info("Compte supprimé (anonymisé) — %s@supprime.local", anonyme)
     return {"ok": True}
 
 

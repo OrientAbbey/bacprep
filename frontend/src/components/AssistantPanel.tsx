@@ -135,9 +135,12 @@ export function AssistantPanel({
   // place au fil de discussion (le contexte complet reste transmis à
   // l'assistant quoi qu'il arrive — ce n'est qu'un choix d'affichage).
   const [contextOpen, setContextOpen] = useState(false);
+  // Erreur de streaming affichée EN DEHORS du fil (jamais injectée en
+  // italique dans la dernière bulle, où elle était indiscernable d'une
+  // vraie réponse de l'assistant).
+  const [erreurStream, setErreurStream] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const { user } = useAuth();
   const { showToast } = useToast();
   const userNom = user?.nom?.trim() || "Toi";
@@ -204,20 +207,31 @@ export function AssistantPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [epreuveId]);
 
+  // Focus du champ de saisie dès que le panneau est prêt (init terminée,
+  // discussion éphémère y compris) — la frappe immédiate doit répondre
+  // sans clic supplémentaire.
+  useEffect(() => {
+    if (loading) return;
+    const raf = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [loading]);
+
+  // Échap ferme le mode agrandi (plein écran) ou la feuille mobile ; en
+  // bureau inline, le panneau ne bouge pas.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (expanded) setExpanded(false);
+      else if (mobile) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, mobile, onClose]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.messages.length, active?.messages.reduce((acc, m) => acc + m.content.length, 0)]);
-
-  // Fait défiler l'onglet actif dans la zone visible à chaque changement
-  // (nouvel onglet créé, ou changement d'onglet actif) — sans ça, un
-  // nouvel onglet ajouté au-delà de la largeur visible restait
-  // sélectionné mais invisible tant qu'on ne faisait pas défiler
-  // manuellement.
-  useEffect(() => {
-    if (!activeId) return;
-    tabRefs.current.get(activeId)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-  }, [activeId]);
 
   // Une nouvelle sélection de texte arrive pendant que le panneau est déjà
   // ouvert : elle est COLLÉE dans le champ de saisie (pas dans le contexte
@@ -264,6 +278,7 @@ export function AssistantPanel({
       };
       setConversations((prev) => [...prev, local]);
       setActiveId(local.id);
+      requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
     try {
@@ -273,6 +288,7 @@ export function AssistantPanel({
       });
       setConversations((prev) => [...prev, conv]);
       setActiveId(conv.id);
+      requestAnimationFrame(() => inputRef.current?.focus());
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         // Refus de consentement enregistré pendant la session : bascule
@@ -320,6 +336,7 @@ export function AssistantPanel({
     const question = input.trim();
     setInput("");
     setSending(true);
+    setErreurStream(null);
 
     setConversations((prev) =>
       prev.map((c) =>
@@ -378,11 +395,11 @@ export function AssistantPanel({
             }
           }
         } else if (event.type === "error") {
-          appendToLastAssistantMessage(`\n\n*[${event.message}]*`);
+          setErreurStream(event.message);
         }
       });
     } catch {
-      appendToLastAssistantMessage("\n\n*[Connexion au serveur interrompue.]*");
+      setErreurStream("Connexion au serveur interrompue.");
     } finally {
       setSending(false);
     }
@@ -417,7 +434,12 @@ export function AssistantPanel({
           aria-hidden="true"
         />
       )}
-      <div className={containerClass}>
+      <div
+        className={containerClass}
+        role={expanded ? "dialog" : undefined}
+        aria-modal={expanded ? "true" : undefined}
+        aria-label={expanded ? ASSISTANT_TITRE : undefined}
+      >
         {/* En-tête en deux rangées : titre du produit (Tuteur IA Prep) avec
             les actions à droite, puis la barre d'onglets de discussion.
             La grille `minmax(0,1fr)` de la rangée d'onglets garantit que
@@ -426,7 +448,7 @@ export function AssistantPanel({
         <div className="border-b border-ink-soft/15 bg-paper">
           <div className="flex items-center justify-between gap-2 px-3 pt-2">
             <div className="min-w-0">
-              <p className="font-serif-brand text-sm leading-tight">{ASSISTANT_TITRE}</p>
+              <h2 className="font-serif-brand text-sm leading-tight">{ASSISTANT_TITRE}</h2>
               <p className="font-mono-tag text-[10px] text-slate">
                 {ephemere ? `${ASSISTANT_SIGNATURE} · éphémère (non enregistré)` : ASSISTANT_SIGNATURE}
               </p>
@@ -467,39 +489,21 @@ export function AssistantPanel({
             </div>
           </div>
           {conversations.length > 0 && (
-            <div className="scrollbar-hover flex gap-2 overflow-x-auto px-3 py-2">
-              {conversations.map((c) => (
-                <button
-                  key={c.id}
-                  ref={(el) => {
-                    if (el) tabRefs.current.set(c.id, el);
-                    else tabRefs.current.delete(c.id);
-                  }}
-                  onClick={() => setActiveId(c.id)}
-                  className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs ${
-                    activeId === c.id ? "bg-highlight text-highlight-ink" : "bg-transparent text-ink-soft"
-                  }`}
-                >
-                  <span className="max-w-[110px] truncate">{c.label}</span>
-                  <span
-                    role="button"
-                    tabIndex={-1}
-                    aria-label={`Fermer la discussion ${c.label}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeConversation(c.id);
-                    }}
-                    className="flex items-center"
-                  >
-                    <X size={12} strokeWidth={2} aria-hidden="true" />
-                  </span>
-                </button>
-              ))}
-            </div>
+            <ConversationTabs
+              conversations={conversations}
+              activeId={activeId}
+              onOpen={setActiveId}
+              onClose={closeConversation}
+            />
           )}
         </div>
 
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-4">
+        <div
+          ref={scrollRef}
+          role="log"
+          aria-label={`Discussion avec ${ASSISTANT_TITRE}`}
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-4"
+        >
           {loading && <p className="text-sm text-slate">Chargement…</p>}
           {erreurChargement && !loading && (
             <p className="rounded-lg border border-correction/30 bg-correction-soft p-3 text-sm text-correction">
@@ -534,46 +538,25 @@ export function AssistantPanel({
             </div>
           )}
 
-          {active?.messages.map((m, i) => (
-            <div
-              key={i}
-              className={`flex items-end gap-2 ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}
-            >
-              <Avatar role={m.role} nom={m.role === "user" ? userNom : ASSISTANT_SIGNATURE} />
-              <div className={`max-w-[78%] min-w-0`}>
-                <p className={`mb-0.5 font-mono-tag text-[10px] text-slate ${m.role === "user" ? "text-right" : ""}`}>
-                  {m.role === "user" ? userNom : ASSISTANT_SIGNATURE}
-                </p>
-                <div
-                  className={`rounded-2xl px-3 py-2 ${
-                    m.role === "user"
-                      ? "bg-highlight-soft text-ink"
-                      : "border border-ink-soft/15 bg-paper text-ink"
-                  }`}
-                >
-                  <MarkdownContent content={m.content} variant="chat" />
-                </div>
-                {/* Sauvegarde d'une réponse en note personnelle (uniquement
-                    les réponses non vides de l'assistant, une fois
-                    l'acheminement possible fourni par le lecteur ; masquée
-                    si l'élève a refusé le stockage de ses notes). */}
-                {m.role === "assistant" && m.content.trim() && onSaveAsNote && user?.consent_notes !== false && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // La question qui précède sert de contexte à la note.
-                      const question = i > 0 ? active.messages[i - 1]?.content ?? "" : "";
-                      onSaveAsNote(m.content, question);
-                    }}
-                    title="Sauvegarder cette réponse dans tes notes"
-                    className="mt-1 flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink"
-                  >
-                    <StickyNote size={11} strokeWidth={1.75} aria-hidden="true" />
-                    Sauvegarder en note
-                  </button>
-                )}
-              </div>
+          {active && active.messages.length === 0 && (
+            <div className="pt-6 text-center">
+              <Bot size={28} strokeWidth={1.5} aria-hidden="true" className="mx-auto text-slate" />
+              <p className="mt-2 text-sm font-medium">Pose ta première question</p>
+              <p className="mt-1 text-xs text-slate">
+                Demande une explication, une méthode, ou la correction d'un exercice de cette épreuve.
+              </p>
             </div>
+          )}
+
+          {active?.messages.map((m, i) => (
+            <ChatBubble
+              key={`${m.role}-${i}`}
+              m={m}
+              questionContexte={i > 0 ? active.messages[i - 1]?.content ?? "" : ""}
+              userNom={userNom}
+              onSaveAsNote={onSaveAsNote}
+              peutSauvegarder={user?.consent_notes !== false}
+            />
           ))}
           {sending &&
             active &&
@@ -584,31 +567,206 @@ export function AssistantPanel({
                 <p className="text-sm text-slate">{ASSISTANT_SIGNATURE} réfléchit…</p>
               </div>
             )}
+          {erreurStream && (
+            <p role="status" className="rounded-lg border border-correction/30 bg-correction-soft px-3 py-2 text-sm text-correction">
+              {erreurStream} — relance ta question pour réessayer.
+            </p>
+          )}
         </div>
 
-        <div className="flex items-end gap-2 border-t border-ink-soft/15 bg-paper p-3">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onInputKeyDown}
-            placeholder="Pose ta question… (Maj+Entrée pour une nouvelle ligne)"
-            rows={1}
-            style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
-            className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-2xl border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
-          />
-          <button
-            type="button"
-            onClick={send}
-            disabled={sending || !input.trim()}
-            aria-label="Envoyer"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
-          >
-            <Send size={18} strokeWidth={1.75} aria-hidden="true" />
-          </button>
-        </div>
+        <MessageComposer
+          inputRef={inputRef}
+          input={input}
+          onChange={setInput}
+          onKeyDown={onInputKeyDown}
+          onSend={send}
+          disabled={sending}
+        />
       </div>
     </>
+  );
+}
+
+/** Barre d'onglets de discussion (WAI-ARIA tabs) : navigation par
+ * Flèches gauche/droite + Home/End, fermeture par un VRAI bouton séparé
+ * (l'ancien `<span role="button">` imbriqué dans un `<button>` était
+ * invalide et injoignable au clavier). L'onglet actif scroll dans la zone
+ * visible à chaque changement. */
+function ConversationTabs({
+  conversations,
+  activeId,
+  onOpen,
+  onClose,
+}: {
+  conversations: Conversation[];
+  activeId: string | null;
+  onOpen: (id: string) => void;
+  onClose: (id: string) => void;
+}) {
+  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  useEffect(() => {
+    if (!activeId) return;
+    tabRefs.current.get(activeId)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [activeId]);
+
+  function focusTab(id: string) {
+    tabRefs.current.get(id)?.focus();
+  }
+
+  function onKeyDown(e: React.KeyboardEvent, id: string) {
+    const idx = conversations.findIndex((c) => c.id === id);
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const delta = e.key === "ArrowRight" ? 1 : -1;
+      const next = conversations[(idx + delta + conversations.length) % conversations.length];
+      onOpen(next.id);
+      focusTab(next.id);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      onOpen(conversations[0].id);
+      focusTab(conversations[0].id);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      onOpen(conversations[conversations.length - 1].id);
+      focusTab(conversations[conversations.length - 1].id);
+    }
+  }
+
+  return (
+    <div role="tablist" aria-label="Discussions ouvertes" className="scrollbar-hover flex gap-1.5 overflow-x-auto px-3 py-2">
+      {conversations.map((c) => {
+        const active = activeId === c.id;
+        return (
+          <div
+            key={c.id}
+            className={`flex shrink-0 items-center rounded-full py-1 pr-1 pl-3 text-xs ${
+              active ? "bg-highlight text-highlight-ink" : "text-ink-soft"
+            }`}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={active}
+              ref={(el) => {
+                if (el) tabRefs.current.set(c.id, el);
+                else tabRefs.current.delete(c.id);
+              }}
+              onClick={() => onOpen(c.id)}
+              onKeyDown={(e) => onKeyDown(e, c.id)}
+              className="max-w-[110px] truncate"
+            >
+              {c.label}
+            </button>
+            <button
+              type="button"
+              aria-label={`Fermer la discussion ${c.label}`}
+              onClick={() => {
+                onClose(c.id);
+                requestAnimationFrame(() => focusTab(activeId ?? ""));
+              }}
+              className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-ink/10"
+            >
+              <X size={12} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Bulle de message : avatar + contenu Markdown (rounded-2xl réservé aux
+ * bulles par le référentiel) + bouton « Sauvegarder en note » pour les
+ * réponses de l'assistant. */
+function ChatBubble({
+  m,
+  questionContexte,
+  userNom,
+  onSaveAsNote,
+  peutSauvegarder,
+}: {
+  m: Message;
+  questionContexte: string;
+  userNom: string;
+  onSaveAsNote?: (contenu: string, contexte: string) => void;
+  peutSauvegarder: boolean;
+}) {
+  const isUser = m.role === "user";
+  return (
+    <div className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+      <Avatar role={m.role} nom={isUser ? userNom : ASSISTANT_SIGNATURE} />
+      <div className="min-w-0 max-w-[78%]">
+        <p className={`mb-0.5 font-mono-tag text-[10px] text-slate ${isUser ? "text-right" : ""}`}>
+          {isUser ? userNom : ASSISTANT_SIGNATURE}
+        </p>
+        <div
+          className={`rounded-2xl px-3 py-2 ${
+            isUser ? "bg-highlight-soft text-ink" : "border border-ink-soft/15 bg-paper text-ink"
+          }`}
+        >
+          <MarkdownContent content={m.content} variant="chat" />
+        </div>
+        {/* Sauvegarde d'une réponse en note personnelle (uniquement les
+            réponses non vides de l'assistant, acheminées par le lecteur ;
+            masquée si l'élève a refusé le stockage de ses notes). */}
+        {!isUser && m.content.trim() && onSaveAsNote && peutSauvegarder && (
+          <button
+            type="button"
+            onClick={() => onSaveAsNote(m.content, questionContexte)}
+            title="Sauvegarder cette réponse dans tes notes"
+            className="mt-1 flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink"
+          >
+            <StickyNote size={11} strokeWidth={1.75} aria-hidden="true" />
+            Sauvegarder en note
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Champ de question + bouton d'envoi. Le textarea est une zone de TEXTE
+ * → rayon `rounded-[2px]` du référentiel (et non rounded-2xl, réservé aux
+ * bulles). Nom accessible via aria-label (pas de libellé visible). */
+function MessageComposer({
+  inputRef,
+  input,
+  onChange,
+  onKeyDown,
+  onSend,
+  disabled,
+}: {
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  input: string;
+  onChange: (value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSend: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex items-end gap-2 border-t border-ink-soft/15 bg-paper p-3">
+      <textarea
+        ref={inputRef}
+        value={input}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="Pose ta question… (Maj+Entrée pour une nouvelle ligne)"
+        aria-label="Question à Tuteur IA Prep"
+        rows={1}
+        style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
+        className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
+      />
+      <button
+        type="button"
+        onClick={onSend}
+        disabled={disabled || !input.trim()}
+        aria-label="Envoyer"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
+      >
+        <Send size={18} strokeWidth={1.75} aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 

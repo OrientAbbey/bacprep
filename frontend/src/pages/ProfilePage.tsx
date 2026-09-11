@@ -16,12 +16,14 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ComponentType } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { ActiviteItem, Note, SubscriptionOut } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NoteEditor } from "../components/NoteEditor";
+import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
 import { CLASSES_SECONDAIRE, NIVEAUX, classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
@@ -49,12 +51,27 @@ const ICONE_ACTIVITE: Record<string, typeof Activity> = {
 
 type OngletProfil = "abonnements" | "notes" | "activite" | "donnees";
 
+const ONGLETS_PROFIL: [OngletProfil, string][] = [
+  ["abonnements", "Abonnements"],
+  ["notes", "Mes notes"],
+  ["activite", "Activité"],
+  ["donnees", "Confidentialité"],
+];
+
 export function ProfilePage() {
   const [profil, setProfil] = useState<Profil | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [activite, setActivite] = useState<ActiviteItem[]>([]);
   const [onglet, setOnglet] = useState<OngletProfil>("abonnements");
   const [noteEdition, setNoteEdition] = useState<Note | null>(null);
+  const [erreurChargement, setErreurChargement] = useState(false);
+  // Confirmation en attente : annule l'abonnement ou supprime une note.
+  const [confirmation, setConfirmation] = useState<{
+    titre: string;
+    message: string;
+    action: () => void | Promise<void>;
+  } | null>(null);
+  const [confirmDanger, setConfirmDanger] = useState(false);
   // Formulaire d'infos étendues (édition locale, sauvegarde explicite).
   const [form, setForm] = useState({ nom: "", niveau: "", classe: "", etablissement: "" });
   const [formOuvert, setFormOuvert] = useState(false);
@@ -66,6 +83,22 @@ export function ProfilePage() {
   const [consentIa, setConsentIa] = useState<boolean>(user?.consent_ia !== false);
   const [consentNotes, setConsentNotes] = useState<boolean>(user?.consent_notes !== false);
   const [savingConsent, setSavingConsent] = useState(false);
+  const tabRefs = useRef<Map<OngletProfil, HTMLButtonElement>>(new Map());
+
+  // Navigation clavier des onglets (WAI-ARIA) : flèches, Home/End.
+  function onTabKeyDown(e: KeyboardEvent<HTMLButtonElement>) {
+    const index = ONGLETS_PROFIL.findIndex(([v]) => v === onglet);
+    let nextIndex: number;
+    if (e.key === "ArrowRight") nextIndex = (index + 1) % ONGLETS_PROFIL.length;
+    else if (e.key === "ArrowLeft") nextIndex = (index - 1 + ONGLETS_PROFIL.length) % ONGLETS_PROFIL.length;
+    else if (e.key === "Home") nextIndex = 0;
+    else if (e.key === "End") nextIndex = ONGLETS_PROFIL.length - 1;
+    else return;
+    e.preventDefault();
+    const [valeur] = ONGLETS_PROFIL[nextIndex];
+    setOnglet(valeur);
+    tabRefs.current.get(valeur)?.focus();
+  }
 
   function applyProfil(p: Profil) {
     setProfil(p);
@@ -78,19 +111,37 @@ export function ProfilePage() {
   }
 
   async function refresh() {
-    applyProfil(await api.get<Profil>("/api/me/profil"));
-    if (onglet === "notes") setNotes(await api.get<Note[]>("/api/me/notes"));
-    if (onglet === "activite") setActivite(await api.get<ActiviteItem[]>("/api/me/activite"));
+    try {
+      applyProfil(await api.get<Profil>("/api/me/profil"));
+      if (onglet === "notes") setNotes(await api.get<Note[]>("/api/me/notes"));
+      if (onglet === "activite") setActivite(await api.get<ActiviteItem[]>("/api/me/activite"));
+      setErreurChargement(false);
+    } catch {
+      setErreurChargement(true);
+    }
   }
 
   // Charge le profil au montage, et notes/activité à chaque changement d'onglet.
   useEffect(() => {
-    api.get<Profil>("/api/me/profil").then(applyProfil);
+    api
+      .get<Profil>("/api/me/profil")
+      .then(applyProfil)
+      .catch(() => setErreurChargement(true));
   }, []);
 
   useEffect(() => {
-    if (onglet === "notes") api.get<Note[]>("/api/me/notes").then(setNotes).catch(() => {});
-    if (onglet === "activite") api.get<ActiviteItem[]>("/api/me/activite").then(setActivite).catch(() => {});
+    if (onglet === "notes")
+      api
+        .get<Note[]>("/api/me/notes")
+        .then(setNotes)
+        .then(() => setErreurChargement(false))
+        .catch(() => setErreurChargement(true));
+    if (onglet === "activite")
+      api
+        .get<ActiviteItem[]>("/api/me/activite")
+        .then(setActivite)
+        .then(() => setErreurChargement(false))
+        .catch(() => setErreurChargement(true));
   }, [onglet]);
 
   async function saveProfil() {
@@ -101,7 +152,7 @@ export function ProfilePage() {
       await api
         .get<Profil>("/api/me/profil")
         .then(setProfil)
-        .catch(() => {});
+        .catch(() => setErreurChargement(true));
     } catch {
       // Avant : try/finally sans catch — un échec laissait la modale
       // ouverte sans aucun retour.
@@ -111,24 +162,36 @@ export function ProfilePage() {
     }
   }
 
-  async function cancel(subId: string) {
-    if (!confirm("Annuler cet abonnement ? L'accès sera révoqué immédiatement.")) return;
-    try {
-      await api.post(`/api/subscriptions/${subId}/cancel`);
-      refresh();
-    } catch {
-      showToast("L'annulation a échoué — réessaie.", "error");
-    }
+  function cancel(subId: string) {
+    setConfirmDanger(true);
+    setConfirmation({
+      titre: "Annuler cet abonnement ?",
+      message: "L'accès sera révoqué immédiatement.",
+      action: async () => {
+        try {
+          await api.post(`/api/subscriptions/${subId}/cancel`);
+          await refresh();
+        } catch {
+          showToast("L'annulation a échoué — réessaie.", "error");
+        }
+      },
+    });
   }
 
-  async function deleteNote(id: string) {
-    if (!confirm("Supprimer définitivement cette note ?")) return;
-    try {
-      await api.del(`/api/me/notes/${id}`);
-      setNotes((prev) => prev.filter((n) => n.id !== id));
-    } catch {
-      showToast("La note n'a pas pu être supprimée — réessaie.", "error");
-    }
+  function deleteNote(id: string) {
+    setConfirmDanger(true);
+    setConfirmation({
+      titre: "Supprimer cette note ?",
+      message: "Supprimer définitivement cette note ?",
+      action: async () => {
+        try {
+          await api.del(`/api/me/notes/${id}`);
+          setNotes((prev) => prev.filter((n) => n.id !== id));
+        } catch {
+          showToast("La note n'a pas pu être supprimée — réessaie.", "error");
+        }
+      },
+    });
   }
 
   async function saveConsentement(ia: boolean, notesOk: boolean) {
@@ -144,7 +207,30 @@ export function ProfilePage() {
     }
   }
 
-  if (!profil) return <p className="text-sm text-slate">Chargement…</p>;
+  if (!profil)
+    return erreurChargement ? (
+      <div className="mx-auto max-w-2xl space-y-6">
+        <ErreurChargement onReessayer={refresh} />
+      </div>
+    ) : (
+      <div role="status" aria-busy="true" className="mx-auto max-w-2xl space-y-6">
+        <p className="sr-only">Chargement du profil…</p>
+        <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-6">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-14 w-14 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-6 w-1/2" />
+              <Skeleton className="h-3 w-2/3" />
+            </div>
+          </div>
+          <Skeleton className="mt-3 h-3 w-1/3" />
+        </div>
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-48 rounded-full" />
+          <div className="h-28 rounded-lg border border-ink-soft/15 bg-paper-raised" />
+        </div>
+      </div>
+    );
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -174,7 +260,7 @@ export function ProfilePage() {
               e.preventDefault();
               saveProfil();
             }}
-            className="mt-4 grid grid-cols-2 gap-3"
+            className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2"
           >
             <label className="block">
               <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Nom</span>
@@ -269,25 +355,40 @@ export function ProfilePage() {
       </div>
 
       {/* Onglets : abonnements / notes / activité / confidentialité */}
-      <div className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px] w-fit">
-        {(
-          [
-            ["abonnements", "Abonnements"],
-            ["notes", "Mes notes"],
-            ["activite", "Activité"],
-            ["donnees", "Confidentialité"],
-          ] as [OngletProfil, string][]
-        ).map(([v, label]) => (
+      {erreurChargement && <ErreurChargement onReessayer={refresh} />}
+      <div
+        role="tablist"
+        aria-label="Sections du profil"
+        className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px] w-fit"
+      >
+        {ONGLETS_PROFIL.map(([v, label]) => (
           <button
             key={v}
+            id={`onglet-${v}`}
+            type="button"
+            role="tab"
+            aria-selected={onglet === v}
+            aria-controls={`panneau-${v}`}
+            tabIndex={onglet === v ? 0 : -1}
+            ref={(el) => {
+              if (el) tabRefs.current.set(v, el);
+              else tabRefs.current.delete(v);
+            }}
             onClick={() => setOnglet(v)}
-            aria-pressed={onglet === v}
+            onKeyDown={onTabKeyDown}
             className={`rounded-full px-4 py-1.5 ${onglet === v ? "bg-ink text-paper" : "text-ink-soft"}`}
           >
             {label}
           </button>
         ))}
       </div>
+
+      <div
+        key={onglet}
+        id={`panneau-${onglet}`}
+        role="tabpanel"
+        aria-labelledby={`onglet-${onglet}`}
+      >
 
       {onglet === "abonnements" && (
         <div className="space-y-4">
@@ -520,13 +621,29 @@ export function ProfilePage() {
           </p>
         </div>
       )}
+      </div>
 
       {noteEdition && (
         <NoteEditor
           epreuveId={noteEdition.epreuve_id}
           note={noteEdition}
           onClose={() => setNoteEdition(null)}
-          onSaved={() => api.get<Note[]>("/api/me/notes").then(setNotes).catch(() => {})}
+          onSaved={() =>
+            api
+              .get<Note[]>("/api/me/notes")
+              .then(setNotes)
+              .catch(() => setErreurChargement(true))
+          }
+        />
+      )}
+
+      {confirmation && (
+        <ConfirmDialog
+          tone={confirmDanger ? "danger" : "default"}
+          title={confirmation.titre}
+          message={confirmation.message}
+          onConfirm={confirmation.action}
+          onClose={() => setConfirmation(null)}
         />
       )}
     </div>
@@ -552,5 +669,25 @@ function PuceAbonnement({
       <span className="font-mono-tag text-[10px] text-slate">{label.toUpperCase()}</span>
       <span className="max-w-[180px] truncate font-medium text-ink">{valeur}</span>
     </span>
+  );
+}
+
+/** Bandeau d'erreur de chargement, avec bouton Réessayer. */
+function ErreurChargement({ onReessayer }: { onReessayer: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-correction/30 bg-correction-soft/40 p-4 text-sm"
+    >
+      <p className="font-medium text-ink">Le chargement a échoué.</p>
+      <p className="mt-1 text-ink-soft">Vérifie ta connexion puis réessaie.</p>
+      <button
+        type="button"
+        onClick={onReessayer}
+        className="mt-3 min-h-[44px] rounded-full border border-correction/40 px-5 text-sm font-medium text-correction hover:bg-correction-soft/40"
+      >
+        Réessayer
+      </button>
+    </div>
   );
 }

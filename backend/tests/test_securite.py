@@ -40,19 +40,21 @@ def test_fichier_inexistant_404(client):
 
 
 def test_jetons_signesExpiration_et_altération():
-    token, expires = signing.sign_file_id("abc123", max_age_seconds=60)
-    assert signing.verify_file_token("abc123", token)
-    assert not signing.verify_file_token("autre-id", token)  # id différent
+    token, expires = signing.sign_file_id("abc123", epreuve_id="ep1", statut="publie", max_age_seconds=60)
+    assert signing.verify_file_token("abc123", "ep1", "publie", token)
+    assert not signing.verify_file_token("abc123", "ep1", "brouillon", token)  # statut différent → révoqué
+    assert not signing.verify_file_token("abc123", "ep-autre", "publie", token)  # autre épreuve
+    assert not signing.verify_file_token("autre-id", "ep1", "publie", token)  # autre fichier
     # jeton expiré (grâce 5 min dépassée)
     expires_passe = int(time.time()) - 600
     import hashlib
     import hmac as hmac_mod
 
     digest = hmac_mod.new(
-        signing._secret(), f"abc123.{expires_passe}".encode(), hashlib.sha256
+        signing._secret(), f"ep1.publie.abc123.{expires_passe}".encode(), hashlib.sha256
     ).hexdigest()
-    assert not signing.verify_file_token("abc123", f"{expires_passe}.{digest}")
-    assert not signing.verify_file_token("abc123", "garbage")
+    assert not signing.verify_file_token("abc123", "ep1", "publie", f"{expires_passe}.{digest}")
+    assert not signing.verify_file_token("abc123", "ep1", "publie", "garbage")
 
 
 def test_simulate_webhook_exige_session(client):

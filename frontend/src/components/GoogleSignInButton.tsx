@@ -15,17 +15,19 @@ export function GoogleSignInButton({
   onCredential: (credential: string) => void;
 }) {
   const divRef = useRef<HTMLDivElement>(null);
+  const callbackRef = useRef(onCredential);
   const { theme } = useTheme();
+
+  // Met à jour le ref sans re-lancer l'effet → le callback pointe
+  // toujours vers la dernière version (anti stale closure).
+  callbackRef.current = onCredential;
 
   useEffect(() => {
     let cancelled = false;
+    let scriptEl: HTMLScriptElement | null = null;
 
     function render() {
       if (cancelled || !window.google || !divRef.current) return;
-      // Le widget Google est un <iframe> peint une fois par le SDK ; pour
-      // qu'il suive notre thème (et reste lisible en mode sombre), on vide
-      // le conteneur et on le redessine avec le thème Google adapté
-      // ("filled_black" en sombre, "outline" en clair) à chaque bascule.
       divRef.current.innerHTML = "";
       window.google.accounts.id.renderButton(divRef.current, {
         theme: theme === "dark" ? "filled_black" : "outline",
@@ -38,7 +40,7 @@ export function GoogleSignInButton({
       if (cancelled || !window.google || !divRef.current) return;
       window.google.accounts.id.initialize({
         client_id: clientId,
-        callback: (response: { credential: string }) => onCredential(response.credential),
+        callback: (response: { credential: string }) => callbackRef.current(response.credential),
       });
       render();
     }
@@ -46,16 +48,17 @@ export function GoogleSignInButton({
     if (window.google) {
       init();
     } else {
-      const script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.defer = true;
-      script.onload = init;
-      document.body.appendChild(script);
+      scriptEl = document.createElement("script");
+      scriptEl.src = "https://accounts.google.com/gsi/client";
+      scriptEl.async = true;
+      scriptEl.defer = true;
+      scriptEl.onload = init;
+      document.body.appendChild(scriptEl);
     }
 
     return () => {
       cancelled = true;
+      scriptEl?.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, theme]);

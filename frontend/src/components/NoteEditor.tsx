@@ -2,7 +2,7 @@ import { Eye, Pencil, Save, X } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/client";
 import type { Note } from "../api/types";
-import { useEscapeKey } from "../lib/useEscapeKey";
+import { useModalFocus } from "../lib/useModalFocus";
 import { MarkdownContent } from "./MarkdownContent";
 import { useToast } from "./Toast";
 
@@ -39,7 +39,9 @@ export function NoteEditor({
   const [saving, setSaving] = useState(false);
   const edition = Boolean(note);
 
-  useEscapeKey(onClose);
+  // Focus initial dans la modale, piège Tab, fermeture sur Échap et
+  // restauration du focus à l'élément déclencheur à la fermeture.
+  const dialogRef = useModalFocus<HTMLDivElement>({ open: true, onClose });
 
   async function save() {
     if (!contenu.trim()) return;
@@ -76,6 +78,7 @@ export function NoteEditor({
       aria-label={edition ? "Modifier la note" : "Nouvelle note"}
     >
       <div
+        ref={dialogRef}
         className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg border border-ink-soft/15 bg-paper-raised shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >

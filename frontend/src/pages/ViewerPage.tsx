@@ -139,10 +139,19 @@ export function ViewerPage() {
     setSelection(null);
   }, [user]);
 
-  function onMouseUp() {
+  function updateFromSelection() {
     const sel = window.getSelection();
     const text = sel?.toString().trim();
-    if (!sel || !text || sel.rangeCount === 0 || !epreuve) {
+    if (!sel || !text || sel.rangeCount === 0 || !epreuve || sel.isCollapsed) {
+      setSelection(null);
+      return;
+    }
+
+    // Ne réagit qu'aux sélections PLEINEMENT contenues dans la zone
+    // d'épreuve (pas à une sélection résiduelle passant par le panneau
+    // assistant ou la barre elle-même).
+    const node = sel.anchorNode;
+    if (containerRef.current && node && !containerRef.current.contains(node)) {
       setSelection(null);
       return;
     }
@@ -155,6 +164,13 @@ export function ViewerPage() {
 
     const rect = sel.getRangeAt(0).getBoundingClientRect();
     setSelection({ x: rect.left, y: rect.top - 48, markdown });
+  }
+
+  // La sélection par CLAVIER (Shift+flèches) ne déclenche aucun mouseup :
+  // sans ce gestionnaire onKeyUp, les lecteurs au clavier ne pouvaient
+  // jamais atteindre la barre « Demander / Prendre une note ».
+  function onKeyUp() {
+    updateFromSelection();
   }
 
   function onCopy(e: React.ClipboardEvent) {
@@ -188,13 +204,19 @@ export function ViewerPage() {
   }
 
   // Raccourcis clavier du lecteur : S = sujet, C = corrigé, N = nouvelle
-  // note — ignorés quand le focus est dans un champ de saisie. N est
-  // réservé aux comptes (le visiteur n'a pas de notes).
+  // note — ignorés quand le focus est dans un champ de saisie, un élément
+  // cliquable (bouton/lien), une zone éditable, ou dans une modale/dialog
+  // (l'assistant, l'éditeur de note…) pour ne jamais intercepter une
+  // frappe destinée à ces éléments. N est réservé aux comptes (le visiteur
+  // n'a pas de notes).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!epreuve) return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A") return;
+      if (el?.isContentEditable) return;
+      if (el?.closest('[role="dialog"], [role="button"]')) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "s" && epreuve.contenu_markdown) setOnglet("sujet");
@@ -208,6 +230,23 @@ export function ViewerPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [epreuve, user]);
 
+  function onTabsKeyDown(e: React.KeyboardEvent, current: Onglet) {
+    const order: Onglet[] = ["sujet", "corrige"];
+    const idx = order.indexOf(current);
+    let next: Onglet | null = null;
+    if (e.key === "ArrowRight") next = order[(idx + 1) % order.length];
+    else if (e.key === "ArrowLeft") next = order[(idx - 1 + order.length) % order.length];
+    else if (e.key === "Home") next = order[0];
+    else if (e.key === "End") next = order[order.length - 1];
+    if (!next) return;
+    e.preventDefault();
+    setOnglet(next);
+    (e.currentTarget as HTMLElement)
+      .closest('[role="tablist"]')
+      ?.querySelector<HTMLElement>(`#tab-${next}`)
+      ?.focus();
+  }
+
   if (necessiteConnexion) {
     return <Paywall necessiteConnexion />;
   }
@@ -218,7 +257,10 @@ export function ViewerPage() {
 
   if (erreurChargement) {
     return (
-      <div className="rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction">
+      <div
+        role="alert"
+        className="rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction"
+      >
         Cette épreuve n'a pas pu être chargée (elle a peut-être été retirée).{" "}
         <button type="button" onClick={() => window.location.reload()} className="underline">
           Réessayer
@@ -230,7 +272,6 @@ export function ViewerPage() {
   if (!epreuve) return <ViewerSkeleton />;
 
   const contenuActif = onglet === "sujet" ? epreuve.contenu_markdown : epreuve.corrige_markdown;
-  const showSideBySide = assistantOpen && !mobile;
 
   // Props identiques pour les deux rendus (bureau/mobile) — seule la
   // variante `mobile` diffère.
@@ -265,14 +306,20 @@ export function ViewerPage() {
             </button>
           </div>
           {epreuve.corrige_disponible && (
-            <div className="flex rounded-full border border-ink-soft/20 p-1">
+            <div role="tablist" aria-label="Contenu de l'épreuve" className="flex rounded-full border border-ink-soft/20 p-1">
               {([
                 ["sujet", "Sujet", FileText],
                 ["corrige", "Corrigé", ClipboardCheck],
               ] as [Onglet, string, typeof FileText][]).map(([o, label, Icon]) => (
                 <button
                   key={o}
+                  role="tab"
+                  id={`tab-${o}`}
+                  aria-selected={onglet === o}
+                  aria-controls="panel-epreuve"
+                  tabIndex={onglet === o ? 0 : -1}
                   onClick={() => setOnglet(o)}
+                  onKeyDown={(e) => onTabsKeyDown(e, o)}
                   title={`${label} (raccourci : ${o === "sujet" ? "S" : "C"})`}
                   className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
                     onglet === o ? "bg-ink text-paper" : "text-ink-soft"
@@ -332,7 +379,11 @@ export function ViewerPage() {
 
         <div
           ref={containerRef}
-          onMouseUp={onMouseUp}
+          role="tabpanel"
+          id="panel-epreuve"
+          aria-labelledby={`tab-${onglet}`}
+          onMouseUp={updateFromSelection}
+          onKeyUp={onKeyUp}
           onCopy={onCopy}
           className="relative overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
         >
@@ -378,7 +429,7 @@ export function ViewerPage() {
         (mobile ? (
           <AssistantPanel {...panelProps} mobile />
         ) : (
-          <aside className="sticky top-20 z-40 h-[calc(100vh-6rem)] w-[380px] shrink-0 overflow-hidden rounded-lg border border-ink-soft/15 shadow-lg">
+          <aside className="sticky top-20 z-40 h-[calc(100vh-6rem)] w-[300px] shrink-0 overflow-hidden rounded-lg border border-ink-soft/15 shadow-lg xl:w-[380px]">
             <AssistantPanel {...panelProps} mobile={false} />
           </aside>
         ))}

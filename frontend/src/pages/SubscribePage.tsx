@@ -1,11 +1,12 @@
 import { BookOpen, Calendar, CheckCircle2, GraduationCap, Layers } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { EpreuveListItem, Filtres } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { Combobox } from "../components/Combobox";
+import { Skeleton } from "../components/Skeleton";
 import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
 import { foldText } from "../lib/text";
 
@@ -90,8 +91,13 @@ export function SubscribePage() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [erreurPricing, setErreurPricing] = useState(false);
 
-  useEffect(() => {
+  const chargerTarifs = useCallback(() => {
+    setErreurPricing(false);
     api.get<Pricing>("/api/pricing").then(setPricing).catch(() => setErreurPricing(true));
+  }, []);
+
+  useEffect(() => {
+    chargerTarifs();
     // limit=100 (plafond serveur) : la page n'a besoin que du libellé des
     // épreuves proposables — charger TOUT le catalogue était incohérent
     // avec le catalogue paginé à 24.
@@ -103,11 +109,13 @@ export function SubscribePage() {
       setScope("epreuve");
       setEpreuveId(pre);
     }
-  }, [searchParams]);
+  }, [searchParams, chargerTarifs]);
 
   // Filtres dynamiques dans le cadre de la classe choisie.
   useEffect(() => {
     const params = classe ? `?classe=${encodeURIComponent(classe)}` : "";
+    // Silence volontaire : filtres secondaires, la page reste utilisable
+    // avec des listes vides (message explicite déjà en place côté UI).
     api.get<Filtres>(`/api/epreuves/filtres${params}`).then(setFiltres).catch(() => {});
   }, [classe]);
 
@@ -156,6 +164,8 @@ export function SubscribePage() {
       if (stale) return;
       setDejaCouvert(couvertRes.deja_couvert);
     }
+    // Silence volontaire : count/dejaCouvert sont des indications
+    // secondaires d'interface — le checkout re-vérifie côté serveur.
     refresh().catch(() => {});
     return () => {
       stale = true;
@@ -169,10 +179,57 @@ export function SubscribePage() {
   // grandit au fil des choix, on l'amène doucement dans le champ de vision —
   // sans ça, elle naissait SOUS le pli et l'élève devait chercher le scroll.
   const recapRef = useRef<HTMLDivElement>(null);
+  const scopeGroupRef = useRef<HTMLDivElement>(null);
+  const pendingTitleRef = useRef<HTMLParagraphElement>(null);
+  const confirmedRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (selectionComplete) scrollIntoViewDoucement(recapRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectionComplete, scope, classe, filiere, matiere, annee, epreuveId]);
+
+  // Navigation clavier du radiogroup (WAI-ARIA) : flèches et Home/End
+  // déplacent sélection ET focus ; seul le bouton sélectionné reste dans
+  // l'ordre de tabulation (roving tabIndex).
+  function handleScopeKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const radios = Array.from(
+      scopeGroupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? []
+    );
+    const index = radios.findIndex((el) => el === document.activeElement);
+    if (index === -1) return;
+    let next = index;
+    switch (e.key) {
+      case "ArrowDown":
+      case "ArrowRight":
+        next = (index + 1) % radios.length;
+        break;
+      case "ArrowUp":
+      case "ArrowLeft":
+        next = (index - 1 + radios.length) % radios.length;
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = radios.length - 1;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    setScope(SCOPES[next]);
+    radios[next]?.focus();
+  }
+
+  // Quand on change d'étape, l'ancien panneau (et son déclencheur dispa-
+  // raissant) retirait le focus, qui retombait au body : on le ramène sur
+  // le panneau nouvellement rendu.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      if (step === "pending") pendingTitleRef.current?.focus({ preventScroll: true });
+      else if (step === "confirmed") confirmedRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [step]);
 
   /** Phrase de synthèse en langage naturel décrivant ce que la sélection
    * courante débloque — accompagne (sans le remplacer) le détail en
@@ -227,23 +284,49 @@ export function SubscribePage() {
 
   if (erreurPricing) {
     return (
-      <div className="mx-auto max-w-2xl rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction">
+      <div
+        role="alert"
+        className="mx-auto max-w-2xl rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction"
+      >
         La grille tarifaire n'a pas pu être chargée.{" "}
-        <button type="button" onClick={() => window.location.reload()} className="underline">
+        <button type="button" onClick={chargerTarifs} className="underline">
           Réessayer
         </button>
       </div>
     );
   }
 
-  if (!pricing) return <p className="text-sm text-slate">Chargement…</p>;
+  if (!pricing)
+    return (
+      <div className="mx-auto max-w-2xl space-y-6" aria-busy="true">
+        <Skeleton className="h-8 w-40" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="space-y-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-3 w-full" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3 rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
+          <Skeleton className="h-10 w-2/3" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+        </div>
+      </div>
+    );
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="font-serif-brand text-2xl">S'abonner</h1>
 
       {step === "confirmed" ? (
-        <div className="space-y-4 rounded-lg border border-valide/30 bg-valide-soft p-6 text-valide">
+        <div
+          ref={confirmedRef}
+          tabIndex={-1}
+          className="space-y-4 rounded-lg border border-valide/30 bg-valide-soft p-6 text-valide"
+        >
           <p className="font-medium">Paiement confirmé — ton abonnement est actif.</p>
           <div className="flex flex-wrap gap-2">
             {scope === "epreuve" && epreuveId ? (
@@ -276,7 +359,7 @@ export function SubscribePage() {
         // lui, s'assombrit fortement en mode sombre), il devenait
         // quasiment illisible (texte très sombre sur fond très sombre).
         <div className="space-y-4 rounded-lg border border-highlight/30 bg-highlight-soft p-6">
-          <p className="text-ink">
+          <p ref={pendingTitleRef} tabIndex={-1} className="text-ink">
             Paiement en attente — référence <span className="font-mono-tag">{reference}</span>.
             Dans une vraie intégration, tu confirmerais via Orange Money / MTN MoMo. Ici, simule la
             confirmation :
@@ -293,7 +376,13 @@ export function SubscribePage() {
           {/* Le type d'abonnement se choisit dans une grille de cartes :
               libellé + prix + description (le tarif le plus lisible en
               un coup d'œil, au lieu de pills compactes). */}
-          <div role="radiogroup" aria-label="Type d'abonnement" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div
+            ref={scopeGroupRef}
+            role="radiogroup"
+            aria-label="Type d'abonnement"
+            onKeyDown={handleScopeKeyDown}
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+          >
             {SCOPES.map((s) => {
               const actif = scope === s;
               return (
@@ -302,6 +391,7 @@ export function SubscribePage() {
                   type="button"
                   role="radio"
                   aria-checked={actif}
+                  tabIndex={actif ? 0 : -1}
                   onClick={() => setScope(s)}
                   className={`flex flex-col rounded-lg border p-4 text-left transition-colors ${
                     actif
@@ -409,7 +499,11 @@ export function SubscribePage() {
                   <InfoTile icon={Layers} label="Épreuves couvertes" value={String(count ?? "…")} />
                 </div>
 
-                {erreur && <p className="text-sm text-correction">{erreur}</p>}
+                {erreur && (
+                  <p role="alert" className="text-sm text-correction">
+                    {erreur}
+                  </p>
+                )}
 
                 {/* Révélation progressive : moyen de paiement uniquement si
                     la sélection couvre au moins une épreuve ET n'est pas
@@ -437,6 +531,7 @@ export function SubscribePage() {
                           <button
                             key={p.value}
                             onClick={() => setProvider(p.value)}
+                            aria-pressed={provider === p.value}
                             className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
                               provider === p.value
                                 ? "border-ink"

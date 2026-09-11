@@ -15,8 +15,16 @@ export function classeLabel(code: string): string {
   return CLASSES_SECONDAIRE.find((c) => c.code === code)?.label ?? code;
 }
 
-// Niveaux du système (avant : dupliqué dans AdminPage et ProfilePage).
 export const NIVEAUX = [
   { code: "SECONDAIRE", label: "Secondaire" },
   { code: "PRIMAIRE", label: "Primaire (réservé)" },
 ] as const;
+
+/** Types d'évaluation connus — miroir de backend/app/core/referentiel.py:EVALUATIONS */
+export const EVALUATIONS: string[] = [
+  "CEP", "BEPC", "PROBATOIRE", "BAC", "SEQUENCE 1", "SEQUENCE 2", "SEQUENCE 3",
+  "COMPOSITION TRIMESTRIELLE", "EXAMEN BLANC", "CONCOURS", "AUTRE",
+];
+
+/** Séries/filières connues — miroir de backend/app/core/referentiel.py:SERIES_CONNUES */
+export const SERIES_CONNUES: string[] = ["A", "C", "D", "E", "TI", "F", "G", "ESP"];

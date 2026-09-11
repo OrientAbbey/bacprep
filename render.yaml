@@ -58,13 +58,13 @@ services:
       - key: FILE_URL_SECRET
         generateValue: true # clé HMAC des URLs signées de fichiers
       - key: ADMIN_EMAILS
-        value: admin@example.com
+        sync: false # whitelist réelle des emails admin (ex. admin@votre-domaine.cm)
       - key: AUTH_MODE
-        value: mock # démo simulée — passer à "google" + renseigner GOOGLE_CLIENT_ID
+        value: google # authentification Google vérifiée ; "mock" réservé au dev/démo local
       - key: GOOGLE_CLIENT_ID
-        sync: false # requis si AUTH_MODE=google (Client ID Google Cloud Console)
+        sync: false # requis (Client ID Google Cloud Console)
       - key: DEMO_MODE
-        value: "true" # requis en prod pour autoriser mock-login + paiement simulé
+        value: "false" # paywall réel : checkout exige un paiement agrégateur, pas de webhook simulé
       - key: ADMIN_SESSION_TIMEOUT_MINUTES
         value: "3" # délai avant expiration du verrou admin après quitter /admin
 - key: GEMINI_API_KEY
@@ -73,11 +73,11 @@ services:
       # (échec → modèle suivant → Groq → mode démo). Autres modèles gratuits
       # dans backend/.env.example.
       - key: GEMINI_MODELS
-        value: "gemini-3.5-flash,gemini-3.6-flash,gemini-3.8-flash"
+        value: "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash"
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODELS
-        value: "openai/gpt-oss-20b,qwen/qwen3.6-27b,openai/gpt-oss-120b"
+        value: "openai/gpt-oss-20b,qwen/qwen3.6-27b,openai/gpt-oss-120b,qwen/qwen3.8-27b"
       - key: LLM_CONCURRENCY_LIMIT
         value: "5"
       - key: CORS_ORIGINS

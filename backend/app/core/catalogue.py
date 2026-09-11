@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import yaml
 from sqlalchemy.orm import Session
 
 from ..db import CORRIGES_SEED_DIR, SUJETS_SEED_DIR
@@ -16,26 +17,12 @@ _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    """Parseur minimal de frontmatter YAML (délimité par `---`), suffisant
-    pour les clés simples utilisées dans le contenu de seed (chaînes,
-    listes entre crochets) — pas une implémentation YAML complète."""
+    """Parse le frontmatter YAML d'un fichier de seed via PyYAML."""
     m = _FRONTMATTER_RE.match(text)
     if not m:
         return {}, text
     raw, body = m.group(1), m.group(2)
-    meta: dict = {}
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line or ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip()
-        value = value.strip()
-        if value.startswith("[") and value.endswith("]"):
-            items = [v.strip().strip("'\"") for v in value[1:-1].split(",") if v.strip()]
-            meta[key] = items
-        else:
-            meta[key] = value.strip("'\"")
+    meta = yaml.safe_load(raw) or {}
     return meta, body.strip() + "\n"
 
 

@@ -270,6 +270,63 @@ def matching_epreuves_count(
     return query.distinct().count()
 
 
+def matching_epreuves_counts(
+    db: Session, criteria: list[dict]
+) -> dict[str, int]:
+    """Compteurs couverts par CHAQUE souscription en UNE requête groupée —
+    remplace le N+1 de `sub_to_out` (core/subscriptions.py) qui faisait une
+    requête SQL de comptage par abonnement affiché au profil (2 appels : me.py
+    et subscriptions.py). Charge TOUTES les épreuves publiées et leurs
+    filières en un seul passage, puis applique en mémoire exactement les
+    mêmes règles que `matching_epreuves_count` — même source de vérité, aucune
+    dérive entre le chemin unitaire et le chemin groupé.
+
+    `criteria` : listes de dictionnaires {classe, filiere, matiere, annee,
+    epreuve_id} (les jokers "ALL" déjà résolus par l'appelant : `sub_to_out`
+    ne passe jamais matiere/annee sans valeur ou "ALL" mélangé)."""
+    epreuves: dict[str, tuple[str, str, str, str]] = {}
+    filieres: dict[str, set[str]] = {}
+    for eid, evaluation, classe, matiere, annee in (
+        db.query(
+            EpreuveORM.id,
+            EpreuveORM.evaluation,
+            EpreuveORM.classe,
+            EpreuveORM.matiere,
+            EpreuveORM.annee,
+        )
+        .filter(EpreuveORM.statut == "publie")
+        .all()
+    ):
+        epreuves[eid] = (evaluation, classe, matiere, annee)
+        filieres[eid] = set()
+    for eid, filiere in (
+        db.query(EpreuveFiliereORM.epreuve_id, EpreuveFiliereORM.filiere).all()
+    ):
+        if eid in epreuves:
+            filieres[eid].add(filiere)
+
+    out: dict[str, int] = {}
+    for crit in criteria:
+        count = 0
+        for eid, (evaluation, classe, matiere, annee) in epreuves.items():
+            if crit["epreuve_id"] and crit["epreuve_id"] != eid:
+                continue
+            if crit["evaluation"] and crit["evaluation"] != "ALL" and crit["evaluation"] != evaluation:
+                continue
+            if crit["classe"] and crit["classe"] != "ALL" and crit["classe"] != classe:
+                continue
+            if crit["matiere"] and crit["matiere"] != "ALL" and crit["matiere"] != matiere:
+                continue
+            if crit["annee"] and crit["annee"] != "ALL" and crit["annee"] != annee:
+                continue
+            f = crit.get("filiere")
+            if f and f != "ALL" and f not in filieres[eid]:
+                continue
+            count += 1
+        out[crit["_key"]] = count
+    return out
+
+
 def scope_already_covered(
     db: Session,
     user_id: str,
@@ -316,7 +373,23 @@ def scope_already_covered(
         .all()
     )
     for sub in subs:
+        # Un abonnement "epreuve" précise (epreuve_id posé) ne couvre QUE cette
+        # épreuve — on ne le compte pas pour une portée large, même s'il stocke
+        # matiere=ALL/annee=ALL (la couverture d'une épreuve précise est dérivée
+        # de l'epreuve_id dans has_access, pas des jokers).
+        if sub.epreuve_id:
+            continue
         if sub.classe not in ("ALL", classe) or sub.filiere != filiere:
+            continue
+        # Quand la sélection NE CONTRAINT PAS une dimension (matiere/annee
+        # absents), un abonnement ne la couvre que s'il la couvre LARGEMENT
+        # ("ALL") : exiger le joker évite qu'un abonnement étroit (une seule
+        # matière, une seule année) soit considéré comme couvrant une portée
+        # PLUS large — bug corrigé 2026-09 qui bloquait à jamais le passage
+        # de "matiere" à "annee"/"filiere".
+        if not matiere and sub.matiere != "ALL":
+            continue
+        if not annee and sub.annee != "ALL":
             continue
         if matiere and sub.matiere != "ALL" and sub.matiere != matiere:
             continue

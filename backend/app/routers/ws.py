@@ -18,16 +18,20 @@ MAX_WEBSOCKETS_PAR_USER = 3
 
 def _resolve_user_from_cookie(cookie_header: str) -> str | None:
     """Extrait le jeton de session (`bacprep_session`) d'un en-tête Cookie
-    brut. Nécessaire car la librairie WebSocket de Starlette ne parse pas
-    les cookies pour nous comme le fait une route HTTP classique
-    (`Cookie(default=None)`)."""
+    brut. La librairie WebSocket de Starlette ne parse pas les cookies pour
+    nous comme le fait une route HTTP classique (`Cookie(default=None)`) —
+    on s'appuie donc sur `http.cookies.SimpleCookie` (gère les guillemets,
+    les espaces et les points-virgules) plutôt que sur un découpage manuel."""
+    import http.cookies
+
     if not cookie_header:
         return None
-    for part in cookie_header.split(";"):
-        part = part.strip()
-        if part.startswith("bacprep_session="):
-            return part.split("=", 1)[1]
-    return None
+    try:
+        jar = http.cookies.SimpleCookie(cookie_header)
+        morsel = jar.get("bacprep_session")
+        return morsel.value if morsel else None
+    except http.cookies.CookieError:
+        return None
 
 
 @router.websocket("/ws/session")

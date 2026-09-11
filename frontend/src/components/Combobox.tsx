@@ -166,23 +166,29 @@ export function Combobox({
             placeholder={placeholder}
             className="w-full border-b border-ink-soft/15 bg-transparent px-3 py-2 text-sm text-ink outline-none"
           />
-          <ul ref={listRef} role="listbox" aria-activedescendant={`combo-opt-${highlighted}`} className="max-h-64 overflow-y-auto py-1">
-            {navigable.map((o, i) => (
-              <li key={o.value || "__all__"} role="option" aria-selected={value === o.value} data-index={i}>
-                <button
-                  id={`combo-opt-${i}`}
-                  type="button"
-                  onMouseEnter={() => setHighlighted(i)}
-                  onClick={() => selectOption(i)}
-                  className={`min-h-[44px] w-full px-3 py-2 text-left text-sm ${
-                    highlighted === i ? "bg-highlight-soft" : ""
-                  } ${value === o.value ? "font-medium text-ink" : "text-ink-soft"}`}
-                >
-                  {o.label}
-                </button>
-              </li>
-            ))}
-          </ul>
+          {filtered.length === 0 ? (
+            <p className="px-3 py-3 text-sm text-slate">Aucun résultat</p>
+          ) : (
+            <ul ref={listRef} role="listbox" aria-activedescendant={`combo-opt-${highlighted}`} className="max-h-64 overflow-y-auto py-1">
+              {navigable.map((o, i) => (
+                <li key={o.value || "__all__"} data-index={i}>
+                  <button
+                    id={`combo-opt-${i}`}
+                    type="button"
+                    role="option"
+                    aria-selected={value === o.value}
+                    onMouseEnter={() => setHighlighted(i)}
+                    onClick={() => selectOption(i)}
+                    className={`min-h-[44px] w-full px-3 py-2 text-left text-sm ${
+                      highlighted === i ? "bg-highlight-soft" : ""
+                    } ${value === o.value ? "font-medium text-ink" : "text-ink-soft"}`}
+                  >
+                    {o.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

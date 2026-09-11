@@ -11,19 +11,30 @@ import { normalizeLatexDelimiters } from "../lib/latex";
 /** Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
  * le backend — sans quoi les images d'une épreuve (ou d'un message
  * assistant) apparaissent cassées en développement (frontend et backend
- * sur des origines différentes). Voir `resolveMediaUrl` dans api/client.ts. */
+ * sur des origines différentes). Voir `resolveMediaUrl` dans api/client.ts.
+ *
+ * Les liens `<a>` sont filtrés : seuls http, https, mailto et les chemins
+ * internes `/api/files/` sont autorisés — empêche les liens
+ * `javascript:...` injectés via le Markdown (XSS au clic). */
+const SAFE_HREF_RE = /^(https?:\/\/|mailto:|\/api\/files\/)/i;
+
 const markdownComponents = {
   img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
     // eslint-disable-next-line jsx-a11y/alt-text
     <img
       {...props}
       src={props.src ? resolveMediaUrl(props.src) : props.src}
-      // Les sujets scannés peuvent compter de nombreuses pages-images :
-      // chargement paresseux hors écran (vignettes admin déjà couvertes).
       loading="lazy"
       decoding="async"
     />
   ),
+  a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+    const href = props.href ?? "";
+    if (!SAFE_HREF_RE.test(href)) {
+      return <span {...props} />;
+    }
+    return <a {...props} />;
+  },
 };
 
 export const MarkdownContent = React.memo(function MarkdownContent({

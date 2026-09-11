@@ -63,6 +63,7 @@ class EpreuveListItem(BaseModel):
     statut: str
     filieres: list[str]
     corrige_disponible: bool
+    acces: str = "payant"  # "gratuit" | "ouvert" | "payant" — calculé serveur
 
 
 class EpreuveFileOut(BaseModel):
@@ -158,7 +159,18 @@ class SubscriptionOut(BaseModel):
 
 
 class WebhookIn(BaseModel):
+    """Notification de confirmation d'un agrégateur de paiement (Notch Pay /
+    Monetbil — voir PAIEMENT.md) : le contenu est authentifié par une
+    signature HMAC (`signature`) calculée sur le message normalisé
+    ``{provider}|{reference}|{montant}|{timestamp}`` avec le secret
+    ``PAYMENT_WEBHOOK_SECRET``. `timestamp` (epoch) borne l'actualité de la
+    notification (anti-replay)."""
+
+    provider: str = ""
     reference_agregateur: str
+    montant: Optional[int] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
 
 
 # ---------- Admin ----------
@@ -224,9 +236,19 @@ class AskIn(BaseModel):
 
     conversation_id: Optional[str] = Field(default=None, max_length=64)
     epreuve_id: Optional[str] = Field(default=None, max_length=64)
-    contexte: str = ""
+    contexte: str = Field(default="", max_length=20000)
     historique: list[dict[str, str]] = Field(default_factory=list, max_length=40)
     message: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("historique")
+    @classmethod
+    def _bornes_historique(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        for m in v:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            if role not in ("user", "assistant") or not isinstance(content, str) or len(content) > 8000:
+                raise ValueError("entrée d'historique invalide (role user/assistant, content <= 8000)")
+        return v
 
 
 # ---------- Profil élève ----------
@@ -243,13 +265,13 @@ class ProfilUpdateIn(BaseModel):
 
 class NoteIn(BaseModel):
     cible: str = "sujet"  # sujet|corrige
-    contexte_extrait: str = ""
-    contenu: str
+    contexte_extrait: str = Field(default="", max_length=2000)
+    contenu: str = Field(min_length=1, max_length=20000)
 
 
 class NoteUpdateIn(BaseModel):
-    contexte_extrait: Optional[str] = None
-    contenu: Optional[str] = None
+    contexte_extrait: Optional[str] = Field(default=None, max_length=2000)
+    contenu: Optional[str] = Field(default=None, min_length=1, max_length=20000)
 
 
 class NoteOut(BaseModel):

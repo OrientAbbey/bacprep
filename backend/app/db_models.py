@@ -23,12 +23,16 @@ def _uid() -> str:
 
 
 def _short_uid() -> str:
-    """Identifiant court d'épreuve (8 hex, ex. ``8f3a2c91``) — utilisé dans
-    les storage_key ``epreuves/{niveau}/{annee}/{id}/...``."""
-    return uuid.uuid4().hex[:8]
+    """Identifiant court d'épreuve (12 hex, ex. ``8f3a2c91ab47``) — utilisé
+    dans les storage_key ``epreuves/{niveau}/{annee}/{id}/...``. 12 hex (48
+    bits) : une épreuve ne devient pas devinable pour autant (les ids
+    restent hors du catalogue public — seuls statut et gratuits s'y voient)."""
+    return uuid.uuid4().hex[:12]
 
 
 class UserORM(Base):
+    """Compte élève : email, profil (niveau/classe/établissement),
+    consentements RGPD, modération (bannissement) et historique de connexion."""
     __tablename__ = "users"
 
     id = Column(String, primary_key=True, default=_uid)
@@ -56,6 +60,8 @@ class UserORM(Base):
 
 
 class SessionORM(Base):
+    """Session élève active : une seule session par utilisateur, purgée au
+    logout, expirée par inactivité (7 j glissants) ou durée maximale (14 j)."""
     __tablename__ = "sessions"
 
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
@@ -68,6 +74,8 @@ class SessionORM(Base):
 
 
 class KickoutNoticeORM(Base):
+    """Notification de déconnexion forcée (ancienneté v0, remplacée par
+    WebSocket) — filet de secours par sondage."""
     __tablename__ = "kickout_notices"
 
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
@@ -153,6 +161,7 @@ class EpreuveORM(Base):
 
 
 class EpreuveFiliereORM(Base):
+    """Table de jointure many-to-many épreuve ↔ série/filière."""
     __tablename__ = "epreuve_filieres"
     __table_args__ = (UniqueConstraint("epreuve_id", "filiere", name="uq_epreuve_filiere"),)
 
@@ -230,6 +239,8 @@ class ImportJobORM(Base):
 
 
 class PaymentORM(Base):
+    """Paiement lié à une souscription : référence agrégateur, montant,
+    statut (pending/confirmed/failed) et horodatage de confirmation."""
     __tablename__ = "payments"
 
     id = Column(String, primary_key=True, default=_uid)
@@ -244,6 +255,8 @@ class PaymentORM(Base):
 
 
 class AIConversationORM(Base):
+    """Discussion IA (onglet) d'un élève sur une épreuve : messages
+    persistés si consentement IA accordé, sinon vide (mode éphémère)."""
     __tablename__ = "ai_conversations"
 
     id = Column(String, primary_key=True, default=_uid)
@@ -257,6 +270,8 @@ class AIConversationORM(Base):
 
 
 class ConsultationORM(Base):
+    """Consultation d'une épreuve par un élève : une seule ligne par
+    (utilisateur, épreuve) pour la télémétrie catalogue (historique récent)."""
     __tablename__ = "consultations"
     __table_args__ = (UniqueConstraint("user_id", "epreuve_id", name="uq_user_epreuve"),)
 

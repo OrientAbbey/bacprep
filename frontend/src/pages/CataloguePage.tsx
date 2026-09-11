@@ -2,11 +2,10 @@ import { ArrowLeft, Check, Lock, LockOpen, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import { Consultation, EpreuveListItem, Filtres, SubscriptionOut } from "../api/types";
+import { Consultation, EpreuveListItem, Filtres } from "../api/types";
 import { Combobox } from "../components/Combobox";
 import { MetaBadge } from "../components/MetaBadge";
 import { CatalogueSkeleton } from "../components/Skeleton";
-import { computeAccessStatus } from "../lib/access";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
 
@@ -43,8 +42,8 @@ export function CataloguePage() {
   const [erreur, setErreur] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [erreurSuite, setErreurSuite] = useState(false);
   const [historique, setHistorique] = useState<Consultation[]>([]);
-  const [subscriptions, setSubscriptions] = useState<SubscriptionOut[]>([]);
 
   const [filiere, setFiliere] = useState("");
   const [matiere, setMatiere] = useState("");
@@ -66,9 +65,8 @@ export function CataloguePage() {
         setInitialized(true);
       })
       .catch(() => setInitialized(true));
-    // Historique/abonnements : silencieux si non connecté (catalogue public).
+    // Historique : silencieux si non connecté (catalogue public, 401 inoffensif).
     api.get<Consultation[]>("/api/me/historique").then(setHistorique).catch(() => {});
-    api.get<SubscriptionOut[]>("/api/subscriptions/mine").then(setSubscriptions).catch(() => {});
     setFiliere(""); setMatiere(""); setAnnee(""); setEvaluation("");
     setCorrige("tous"); setAcces("tous");
   }, [classe]);
@@ -111,7 +109,8 @@ export function CataloguePage() {
       if (signal?.aborted) return;
       setErreur(true);
       setChargement(false);
-      console.error("Chargement du catalogue impossible", err);
+      // L'utilisateur voit déjà le bandeau « Le catalogue n'a pas pu être
+      // chargé » avec un bouton Réessayer — pas de double log console ici.
     }
   }
 
@@ -124,6 +123,7 @@ export function CataloguePage() {
   }, [filiere, matiere, annee, evaluation, corrige, acces, initialized, query]);
 
   async function loadMore() {
+    setErreurSuite(false);
     setLoadingMore(true);
     try {
       const page = await api.get<EpreuveListItem[]>(`/api/epreuves?${buildParams(epreuves.length)}`);
@@ -132,7 +132,8 @@ export function CataloguePage() {
     } catch {
       // "Voir plus" échoué : on garde la liste déjà affichée, l'utilisateur
       // peut relancer — mais pas de concaténation de résultats périmés.
-      setHasMore(false);
+      setHasMore(true);
+      setErreurSuite(true);
     } finally {
       setLoadingMore(false);
     }
@@ -151,8 +152,7 @@ export function CataloguePage() {
     // "Ouvert" (déjà couvert par un abonnement actif) se comporte comme
     // "gratuit" pour la navigation : accès direct au lecteur, pas de
     // redirection vers la page d'abonnement.
-    const status = computeAccessStatus(e, subscriptions);
-    if (status === "payant") {
+    if (e.acces === "payant") {
       navigate(`/abonnement?epreuve_id=${e.id}`);
       return;
     }
@@ -203,7 +203,7 @@ export function CataloguePage() {
             onChange={(e) => setChampRecherche(e.target.value)}
             placeholder="Rechercher dans tout le catalogue (matière, série, examen…)"
             aria-label="Recherche globale"
-            className="min-h-[44px] w-full rounded-full border border-ink-soft/25 bg-paper-raised pl-10 pr-4 text-sm"
+            className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised pl-10 pr-4 text-sm"
           />
         </div>
         <button type="submit" className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper">
@@ -277,23 +277,27 @@ export function CataloguePage() {
               <button
                 key={h.epreuve_id}
                 onClick={() => navigate(`/epreuve/${h.epreuve_id}`)}
+                aria-label={`Épreuve de ${h.matiere}, ${h.classe ? `${classeLabel(h.classe)} ` : ""}${h.annee}`}
                 className="min-w-[180px] shrink-0 rounded-lg border border-ink-soft/15 bg-paper-raised p-3 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
               >
-                <p className="font-serif-brand text-sm">{h.matiere}</p>
-                <p className="font-mono-tag text-[10px] text-slate">
+                <span className="block font-serif-brand text-sm">{h.matiere}</span>
+                <span className="block font-mono-tag text-[10px] text-slate">
                   {h.classe ? `${classeLabel(h.classe)} · ` : ""}
                   {h.filieres.join(",")} · {h.annee}
-                </p>
-                <p className="mt-0.5 text-xs text-slate">{formatRelativeTime(h.consulted_at)}</p>
+                </span>
+                <span className="mt-0.5 block text-xs text-slate">{formatRelativeTime(h.consulted_at)}</span>
               </button>
             ))}
           </div>
         </section>
       )}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section aria-label={modeRecherche ? "Résultats de recherche" : "Épreuves"} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <h2 className="col-span-full font-mono-tag text-xs text-ink-soft">
+          {modeRecherche ? "RÉSULTATS" : "TOUTES LES ÉPREUVES"}
+        </h2>
         {erreur && !chargement && (
-          <div className="col-span-full rounded-lg border border-correction/30 bg-correction-soft p-4 text-correction">
+          <div role="alert" className="col-span-full rounded-lg border border-correction/30 bg-correction-soft p-4 text-correction">
             Le catalogue n'a pas pu être chargé.{" "}
             <button
               type="button"
@@ -310,48 +314,48 @@ export function CataloguePage() {
           </div>
         )}
         {!chargement && epreuves.map((e) => {
-          const status = computeAccessStatus(e, subscriptions);
           return (
             <button
               key={e.id}
               onClick={() => openEpreuve(e)}
+              aria-label={`Épreuve de ${e.matiere}, ${e.evaluation} ${e.annee}`}
               className="flex flex-col gap-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-4 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
             >
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="font-serif-brand text-lg leading-snug">{e.matiere}</h3>
-                {status === "gratuit" && (
+              <span className="flex items-start justify-between gap-2">
+                <span className="block font-serif-brand text-lg leading-snug">{e.matiere}</span>
+                {e.acces === "gratuit" && (
                   <MetaBadge variant="pill" tone="valide" title="Contenu gratuit de découverte">
                     Gratuit
                   </MetaBadge>
                 )}
-                {status === "ouvert" && (
+                {e.acces === "ouvert" && (
                   <MetaBadge variant="pill" tone="valide" title="Déjà débloquée par ton abonnement">
                     <LockOpen size={12} strokeWidth={2} aria-hidden="true" />
                     Ouvert
                   </MetaBadge>
                 )}
-                {status === "payant" && (
+                {e.acces === "payant" && (
                   <MetaBadge variant="pill" tone="correction" title="Abonnement requis">
                     <Lock size={12} strokeWidth={2} aria-hidden="true" />
                     Payant
                   </MetaBadge>
                 )}
-              </div>
+              </span>
 
-              <p className="font-mono-tag text-[11px] text-slate">
+              <span className="block font-mono-tag text-[11px] text-slate">
                 {e.evaluation} {e.annee}
                 {modeRecherche ? ` · ${classeLabel(e.classe)}` : ""}
                 {e.duree ? ` · ${e.duree}` : ""}
-              </p>
+              </span>
 
               {/* Extrait du sujet (2 lignes max) : donne un aperçu du
                   contenu avant d'ouvrir l'épreuve. */}
-              {e.extrait && <p className="line-clamp-2 text-xs text-ink-soft">{e.extrait}</p>}
+              {e.extrait && <span className="block line-clamp-2 text-xs text-ink-soft">{e.extrait}</span>}
 
               {/* Un seul badge pour l'ensemble des séries (ex. "A,C,E") plutôt
                   qu'un badge par série. Le badge "corrigé" combine icône ET
                   texte court. */}
-              <div className="flex flex-wrap items-center gap-1.5">
+              <span className="flex flex-wrap items-center gap-1.5">
                 <MetaBadge>{e.filieres.join(",")}</MetaBadge>
                 {e.corrige_disponible && (
                   <MetaBadge tone="valide" title="Le corrigé de cette épreuve est disponible">
@@ -359,12 +363,12 @@ export function CataloguePage() {
                     Corrigé
                   </MetaBadge>
                 )}
-              </div>
+              </span>
 
               {historiqueMap.has(e.id) && (
-                <p className="text-xs text-slate">
+                <span className="block text-xs text-slate">
                   Consulté {formatRelativeTime(historiqueMap.get(e.id)!.consulted_at)}
-                </p>
+                </span>
               )}
             </button>
           );
@@ -378,6 +382,19 @@ export function CataloguePage() {
           </p>
         )}
       </section>
+
+      {erreurSuite && (
+        <div role="alert" className="flex items-center justify-center gap-3 text-sm text-correction">
+          <span>Le chargement des épreuves supplémentaires a échoué.</span>
+          <button
+            type="button"
+            onClick={loadMore}
+            className="underline"
+          >
+            Réessayer
+          </button>
+        </div>
+      )}
 
       {hasMore && (
         <div className="flex justify-center">

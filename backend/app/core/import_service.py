@@ -243,9 +243,13 @@ def _import_images_of_folder(
         )
         report["images_importees"] += 1
 
-        # Réécrit les références relatives du sujet vers l'URL d'accès contrôlé
-        doc = epreuve_files.get_document(db, epreuve.id, "sujet")
-        if doc:
+        # Réécrit les références relatives vers l'URL d'accès contrôlé dans
+        # le SUJET et le CORRIGÉ (G5 : la même figure est souvent citée par
+        # les deux documents), pas seulement le sujet.
+        for cible_doc in ("sujet", "corrige"):
+            doc = epreuve_files.get_document(db, epreuve.id, cible_doc)
+            if not doc:
+                continue
             try:
                 content = storage.get_bytes(doc.storage_key).decode("utf-8")
             except Exception:
@@ -333,4 +337,10 @@ def run_import(db: Session, root: Path, dry_run: bool = False, on_progress=None)
         db.commit()
 
     trace(f"Import terminé — {report['epreuves_creees']} épreuve(s) créée(s), {len(report['doublons'])} doublon(s), {len(report['erreurs'])} erreur(s)")
+    # Compteurs récapitulatifs calculés une seule fois (les listes restent la
+    # source de vérité, les *count évitent aux consommateurs de faire len()).
+    report["doublons_count"] = len(report["doublons"])
+    report["ignores_count"] = len(report["ignores"])
+    report["erreurs_count"] = len(report["erreurs"])
+    report["metadonnees_manquantes_count"] = len(report["metadonnees_manquantes"])
     return report

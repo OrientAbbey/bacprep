@@ -12,6 +12,7 @@ _TMP = tempfile.mkdtemp(prefix="bacprep_test_")
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
 os.environ["FILE_URL_SECRET"] = "t" * 32
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
+os.environ["PAYMENT_WEBHOOK_SECRET"] = "test-webhook-secret"
 os.environ["ADMIN_EMAILS"] = "admin@example.com"
 os.environ["AUTH_MODE"] = "mock"
 os.environ["ENV"] = "dev"

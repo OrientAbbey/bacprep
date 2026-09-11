@@ -107,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginMock = async (email: string, nom: string) => {
     const me = await api.post<User>("/api/auth/mock-login", { email, nom, platform: "web" });
     setUser(me);
+    closeSocket(false);
     intentionalClose.current = false;
     reconnectAttempt.current = 0;
     openSocket();
@@ -116,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginGoogle = async (idToken: string) => {
     const me = await api.post<User>("/api/auth/google-login", { id_token: idToken, platform: "web" });
     setUser(me);
+    closeSocket(false);
     intentionalClose.current = false;
     reconnectAttempt.current = 0;
     openSocket();

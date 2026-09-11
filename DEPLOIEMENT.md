@@ -160,11 +160,11 @@ L'assistant interroge Gemini et/ou Groq ; sans clé configurée, il répond en
 - **Gemini** ([Google AI Studio](https://aistudio.google.com)) : *Get API
   key → Create API key* (dans un projet Google Cloud) → `GEMINI_API_KEY`.
   Modèles via `GEMINI_MODELS` (CSV, fallback ordonné, défaut
-  `gemini-3.5-flash,gemini-3.6-flash,gemini-3.8-flash`).
+  `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash`).
 - **Groq** ([console.groq.com](https://console.groq.com)) : *API Keys →
   Create API Key* → `GROQ_API_KEY`. Modèles via `GROQ_MODELS` (CSV,
   fallback ordonné, défaut `openai/gpt-oss-20b,qwen/qwen3.6-27b,
-  openai/gpt-oss-120b`).
+openai/gpt-oss-120b,qwen/qwen3.8-27b`).
 
 Configurer au moins une des deux clés ; `LLM_CONCURRENCY_LIMIT` borne le
 coût (20 questions / 5 min / utilisateur côté API). Le **fallback est

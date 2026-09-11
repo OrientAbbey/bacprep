@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
+import time
 import uuid
 from datetime import timedelta
 from typing import Optional
@@ -10,7 +14,7 @@ from sqlalchemy.orm import Session
 from ..core import referentiel, store
 from ..core.config import demo_allowed
 from ..core.logging_config import get_logger
-from ..core.subscriptions import SCOPE_LABELS, sub_to_out
+from ..core.subscriptions import SCOPE_LABELS, subs_to_out
 from ..db import get_db, utc_now
 from ..db_models import EpreuveORM, PaymentORM, SubscriptionORM
 from ..models import CheckoutIn, SubscriptionOut, WebhookIn
@@ -42,6 +46,113 @@ SCOPE_DESCRIPTIONS = {
 }
 
 DUREE_VALIDITE = timedelta(days=365)
+WEBHOOK_MAX_AGE_SECONDS = 300  # anti-replay : notification plus vieille que 5 min rejetée
+
+
+def _pending_checkout_for(
+    db: Session, user, fields: dict, provider: str, montant: int
+) -> tuple[SubscriptionORM, PaymentORM]:
+    """Réutilise un checkout déjà initié pour la MÊME sélection (souscription
+    "annulee" + paiement "pending" jamais confirmé), plutôt que d'empiler des
+    lignes à chaque rafraîchissement de la page de paiement (revue 2026-09 :
+    un simple bouton « payer » re-cliqué ne devait pas gonfler les tables)."""
+    subs = (
+        db.query(SubscriptionORM)
+        .filter(
+            SubscriptionORM.user_id == user.id,
+            SubscriptionORM.statut == "annulee",
+            SubscriptionORM.evaluation == fields["evaluation"],
+            SubscriptionORM.classe == fields["classe"],
+            SubscriptionORM.filiere == fields["filiere"],
+            SubscriptionORM.matiere == fields["matiere"],
+            SubscriptionORM.annee == fields["annee"],
+            SubscriptionORM.epreuve_id == fields["epreuve_id"],
+        )
+        .all()
+    )
+    for s in subs:
+        payment = (
+            db.query(PaymentORM)
+            .filter(PaymentORM.subscription_id == s.id, PaymentORM.statut == "pending")
+            .one_or_none()
+        )
+        if payment:
+            return s, payment
+    return _create_checkout(db, user, fields, provider, montant)
+
+
+def _create_checkout(db: Session, user, fields: dict, provider: str, montant: int) -> tuple[SubscriptionORM, PaymentORM]:
+    now = utc_now()
+    sub = SubscriptionORM(
+        user_id=user.id,
+        evaluation=fields["evaluation"],
+        classe=fields["classe"],
+        filiere=fields["filiere"],
+        matiere=fields["matiere"],
+        annee=fields["annee"],
+        epreuve_id=fields["epreuve_id"],
+        start_date=now,
+        end_date=now + DUREE_VALIDITE,
+        statut="annulee",  # devient "active" seulement à confirmation du webhook
+    )
+    db.add(sub)
+    db.flush()
+
+    reference = f"{provider}-{uuid.uuid4().hex}"
+    payment = PaymentORM(
+        user_id=user.id,
+        subscription_id=sub.id,
+        provider=provider,
+        montant=montant,
+        reference_agregateur=reference,
+        statut="pending",
+    )
+    db.add(payment)
+    db.flush()
+    return sub, payment
+
+
+def _confirm_payment(db: Session, payment: PaymentORM) -> bool:
+    """Active la souscription d'un paiement confirmé (idempotent : un
+    rejeu du webhook ne réactive rien de bizarre). Retourne False si le
+    paiement était déjà confirmé."""
+    if payment.statut == "confirmed":
+        log.info("Paiement déjà confirmé (%s) — ignoré (idempotence)", payment.reference_agregateur)
+        return False
+    payment.statut = "confirmed"
+    payment.confirmed_at = utc_now()
+    sub = db.query(SubscriptionORM).filter(SubscriptionORM.id == payment.subscription_id).one_or_none()
+    if sub:
+        sub.statut = "active"
+    db.commit()
+    log.info("Paiement confirmé: %s — souscription %s activée", payment.reference_agregateur, sub.id if sub else "?")
+    return True
+
+
+def _webhook_secret() -> str:
+    secret = os.getenv("PAYMENT_WEBHOOK_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(503, "Webhook de paiement non configuré (PAYMENT_WEBHOOK_SECRET absent)")
+    return secret
+
+
+def _verify_webhook_signature(payload: WebhookIn) -> bool:
+    """HMAC-SHA256 sur le message normalisé ``{provider}|{reference}|{montant}|{timestamp}``
+    avec ``PAYMENT_WEBHOOK_SECRET`` (format de signature documenté dans
+    PAIEMENT.md — l'algorithme exact de l'agrégateur réel y est re-vérifié
+    au moment de l'implémentation)."""
+    try:
+        expected = hmac.new(
+            _webhook_secret().encode("utf-8"),
+            f"{payload.provider}|{payload.reference_agregateur}|{payload.montant}|{payload.timestamp}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("Impossible de calculer la signature attendue: %s", exc)
+        return False
+    return hmac.compare_digest(expected, payload.signature or "")
 
 
 @router.get("/pricing")
@@ -195,58 +306,28 @@ def checkout(payload: CheckoutIn, db: Session = Depends(get_db), user=Depends(re
     ):
         raise HTTPException(409, "Cette sélection est déjà accessible (gratuite ou déjà abonnée)")
 
-    now = utc_now()
-    sub = SubscriptionORM(
-        user_id=user.id,
-        evaluation=fields["evaluation"],
-        classe=fields["classe"],
-        filiere=fields["filiere"],
-        matiere=fields["matiere"],
-        annee=fields["annee"],
-        epreuve_id=fields["epreuve_id"],
-        start_date=now,
-        end_date=now + DUREE_VALIDITE,
-        statut="annulee",  # devient "active" seulement à confirmation du webhook
-    )
-    db.add(sub)
-    db.flush()
-
-    montant = PRICING[payload.scope]
-    reference = f"SIMULATED-{uuid.uuid4().hex}"
-    payment = PaymentORM(
-        user_id=user.id,
-        subscription_id=sub.id,
-        provider=payload.provider,
-        montant=montant,
-        reference_agregateur=reference,
-        statut="pending",
-    )
-    db.add(payment)
+    sub, payment = _pending_checkout_for(db, user, fields, payload.provider, PRICING[payload.scope])
     db.commit()
 
-    log.info("Checkout créé: sub=%s payment=%s montant=%s classe=%s", sub.id, payment.id, montant, sub.classe)
+    log.info("Checkout créé/réutilisé: sub=%s payment=%s montant=%s classe=%s", sub.id, payment.id, payment.montant, sub.classe)
     return {
         "subscription_id": sub.id,
         "payment_id": payment.id,
-        "reference_agregateur": reference,
-        "montant": montant,
+        "reference_agregateur": payment.reference_agregateur,
+        "montant": payment.montant,
     }
 
 
 @router.post("/payments/simulate-webhook")
 def simulate_webhook(payload: WebhookIn, db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
     """Simule le webhook de confirmation d'un agrégateur de paiement réel
-    (Notch Pay/Monetbil — voir PAIEMENT.md pour l'intégration réelle).
-    Idempotent par construction : si le paiement est déjà "confirmed", la
-    notification est ignorée silencieusement plutôt que de réactiver ou
-    re-traiter la souscription (l'agrégateur peut notifier plusieurs fois
-    le même événement).
+    (voie DÉMO/développement — voir `payment_webhook` pour la voie réelle
+    signée). Idempotent par construction : un paiement déjà confirmé est
+    ignoré silencieusement.
 
     Authentification OBLIGATOIRE (+ vérification que le paiement appartient
     à l'utilisateur) : la référence est retournée au client au checkout —
-    un endpoint public l'activant permettrait de s'abonner sans payer. Un
-    vrai agrégateur signera ses notifications (HMAC + timestamp) ; le
-    contrôle d'appartenance sera remplacé par la vérification de signature.
+    un endpoint public l'activant permettrait de s'abonner sans payer.
 
     REFUSÉ en production (ENV=prod) sauf DEMO_MODE=true explicite : même
     authentifié, l'utilisateur connaît la référence (reçue au checkout) et
@@ -265,20 +346,47 @@ def simulate_webhook(payload: WebhookIn, db: Session = Depends(get_db), user=Dep
     if not payment:
         raise HTTPException(404, "Paiement introuvable")
 
-    if payment.statut == "confirmed":
-        log.info("Webhook rejoué pour %s — ignoré (idempotence)", payload.reference_agregateur)
-        return {"ok": True, "already_confirmed": True}
+    deja_confirme = not _confirm_payment(db, payment)
+    return {"ok": True, "already_confirmed": deja_confirme}
 
-    payment.statut = "confirmed"
-    payment.confirmed_at = utc_now()
 
-    sub = db.query(SubscriptionORM).filter(SubscriptionORM.id == payment.subscription_id).one_or_none()
-    if sub:
-        sub.statut = "active"
+@router.post("/payments/webhook")
+def payment_webhook(payload: WebhookIn, db: Session = Depends(get_db)) -> dict:
+    """Vrai webhook de confirmation d'un agrégateur (Notch Pay / Monetbil —
+    voir PAIEMENT.md) : endpoint PUBLIC car l'authentification repose sur la
+    SIGNATURE du contenu, pas sur une session.
 
-    db.commit()
-    log.info("Paiement confirmé: %s — souscription %s activée", payload.reference_agregateur, sub.id if sub else "?")
-    return {"ok": True, "already_confirmed": False}
+    Triple garde :
+    - signature HMAC valide (secret ``PAYMENT_WEBHOOK_SECRET``) ;
+    - actualité du webhook (``timestamp`` à moins de 5 min — anti-replay) ;
+    - montant cohérent avec le paiement stocké.
+
+    Refusé (503) si le secret n'est pas configuré : fail-closed, cohérent
+    avec le reste du système (jamais de confirmation de paiement sans
+    preuve)."""
+    if not demo_allowed() and not os.getenv("PAYMENT_WEBHOOK_SECRET"):
+        log.warning("payment_webhook sans PAYMENT_WEBHOOK_SECRET configuré")
+        raise HTTPException(503, "Webhook de paiement non configuré")
+
+    if not payload.timestamp or abs(int(time.time()) - payload.timestamp) > WEBHOOK_MAX_AGE_SECONDS:
+        raise HTTPException(400, "Notification trop ancienne (timestamp invalide ou rejoué)")
+
+    if not _verify_webhook_signature(payload):
+        log.warning("Signature de webhook INVALIDE (%s)", payload.reference_agregateur)
+        raise HTTPException(403, "Signature de webhook invalide")
+
+    payment = (
+        db.query(PaymentORM)
+        .filter(PaymentORM.reference_agregateur == payload.reference_agregateur)
+        .one_or_none()
+    )
+    if not payment:
+        raise HTTPException(404, "Paiement introuvable")
+    if payload.montant is not None and payload.montant != payment.montant:
+        raise HTTPException(400, "Montant incohérent avec le paiement enregistré")
+
+    deja_confirme = not _confirm_payment(db, payment)
+    return {"ok": True, "already_confirmed": deja_confirme}
 
 
 @router.get("/subscriptions/mine", response_model=list[SubscriptionOut])
@@ -288,7 +396,7 @@ def my_subscriptions(db: Session = Depends(get_db), user=Depends(require_user)) 
     subs = db.query(SubscriptionORM).filter(SubscriptionORM.user_id == user.id).order_by(
         SubscriptionORM.start_date.desc()
     ).all()
-    return [sub_to_out(db, s) for s in subs]
+    return subs_to_out(db, subs)
 
 
 @router.post("/subscriptions/{sub_id}/cancel")

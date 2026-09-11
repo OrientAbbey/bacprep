@@ -51,6 +51,8 @@ export function HomePage() {
       setHistorique([]);
       return;
     }
+    // Silence volontaire : l'historique est secondaire, et les visiteurs
+    // non connectés reçoivent un 401 inoffensif (catalogue public).
     api.get<Consultation[]>("/api/me/historique").then(setHistorique).catch(() => {});
   }, [user]);
 
@@ -85,7 +87,7 @@ export function HomePage() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Rechercher dans tout le catalogue (matière, série, examen…)"
               aria-label="Recherche globale"
-              className="min-h-[44px] w-full rounded-full border border-ink-soft/25 bg-paper-raised pl-10 pr-4 text-sm"
+              className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised pl-10 pr-4 text-sm"
             />
           </div>
           <button
@@ -167,7 +169,7 @@ export function HomePage() {
         </div>
 
         {navErreur && (
-          <div className="mx-auto max-w-md rounded-lg border border-correction/30 bg-correction-soft p-5 text-center">
+          <div role="alert" className="mx-auto max-w-md rounded-lg border border-correction/30 bg-correction-soft p-5 text-center">
             <p className="text-sm text-correction">
               Impossible de charger les niveaux. Vérifiez votre connexion puis réessayez.
             </p>
@@ -236,7 +238,6 @@ function NiveauGrid({ niveaux, onChoose }: { niveaux: NiveauNav[]; onChoose: (n:
             <div
               key={n.code}
               title="Ce niveau n'est pas encore disponible"
-              aria-disabled="true"
               className="flex min-h-[140px] cursor-not-allowed flex-col justify-between rounded-lg border border-ink-soft/10 bg-paper-raised/60 p-5 opacity-55"
             >
               <div className="flex items-center gap-3">
@@ -261,13 +262,13 @@ function NiveauGrid({ niveaux, onChoose }: { niveaux: NiveauNav[]; onChoose: (n:
             aria-label={`Consulter le niveau ${n.label}`}
             className="flex min-h-[140px] w-full flex-col justify-between rounded-lg border border-ink-soft/20 bg-paper-raised p-5 text-left transition-colors hover:border-highlight/60 hover:bg-highlight-soft/40 focus-visible:border-highlight/60"
           >
-            <div className="flex items-center gap-3">
+            <span className="flex items-center gap-3">
               <GraduationCap size={24} strokeWidth={1.5} aria-hidden="true" className="text-highlight" />
-              <div>
-                <h3 className="font-serif-brand text-lg">{n.label}</h3>
-                <p className="text-xs text-slate">{description ?? `${n.classes.length} classes`}</p>
-              </div>
-            </div>
+              <span className="block">
+                <span className="block font-serif-brand text-lg">{n.label}</span>
+                <span className="block text-xs text-slate">{description ?? `${n.classes.length} classes`}</span>
+              </span>
+            </span>
             <span className="font-mono-tag text-[10px] text-slate">
               {n.classes.reduce((acc, c) => acc + c.epreuves, 0)} épreuve(s) publiée(s)
             </span>

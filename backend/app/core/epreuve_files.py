@@ -16,6 +16,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..db_models import EpreuveFileORM, EpreuveORM
+from . import extraits
 from .logging_config import get_logger
 from .storage import get_storage
 
@@ -96,18 +97,25 @@ def write_document(
     # Extrait de présentation : régénéré à chaque écriture du SUJET (le
     # corrigé ne porte pas l'extrait) — alimente les cartes du catalogue.
     if cible == "sujet":
-        from . import extraits
-
         epreuve.extrait = extraits.build_extrait(stripped)
         db.add(epreuve)
 
     if existing:
+        old_key = existing.storage_key
         existing.filename = f"{cible}.md"
         existing.storage_key = key
         existing.mime_type = "text/markdown; charset=utf-8"
         existing.size_bytes = len(data)
         existing.checksum_sha256 = sha256_hex(data)
         db.add(existing)
+        if old_key != key:
+            # Contenu modifié ET classe/année déplacée : l'objet de l'ancienne
+            # clé deviendrait orphelin dans le bucket — on l'efface après que
+            # la nouvelle écriture a réussi (revue 2026-09).
+            try:
+                get_storage().delete(old_key)
+            except Exception as exc:
+                log.warning("Suppression objet orphelin %s impossible: %s", old_key, exc)
         return existing
 
     row = EpreuveFileORM(
@@ -167,7 +175,7 @@ def delete_file(db: Session, row: EpreuveFileORM) -> None:
     db.delete(row)
 
 
-_IMAGE_MD_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
+_IMAGE_MD_RE = extraits.IMAGE_MD_RE
 
 
 def file_id_from_url(url: str) -> str | None:
@@ -181,12 +189,12 @@ def file_id_from_url(url: str) -> str | None:
     return file_id or None
 
 
-def sign_image_urls(markdown: str) -> str:
+def sign_image_urls(markdown: str, epreuve: EpreuveORM) -> str:
     """Réécrit les références ``![...](/api/files/{id})`` d'un Markdown en
-    ajoutant un jeton d'accès court : les balises ``<img>`` générées par le
-    lecteur ne transportent pas le cookie de session (requêtes cross-origin
-    en développement), le jeton remplace donc la session pour ces requêtes
-    — voir `core/signing.py`."""
+    ajoutant un jeton d'accès court lié à l'épreuve et à son statut courant
+    (les balises ``<img>`` générées par le lecteur ne transportent pas le
+    cookie de session en cross-origin, le jeton remplace donc la session pour
+    ces requêtes — voir `core/signing.py`)."""
     from .signing import signed_file_url
 
     def _replace(match: re.Match) -> str:
@@ -194,6 +202,6 @@ def sign_image_urls(markdown: str) -> str:
         file_id = file_id_from_url(url)
         if not file_id:
             return match.group(0)
-        return f"![{alt}]({signed_file_url(file_id)})"
+        return f"![{alt}]({signed_file_url(file_id, epreuve.id, epreuve.statut)})"
 
     return _IMAGE_MD_RE.sub(_replace, markdown or "")

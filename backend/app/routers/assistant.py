@@ -15,7 +15,7 @@ from ..db import get_db
 from ..db_models import AIConversationORM
 from ..models import AskIn, ConversationOut
 from .auth import require_user
-from .deps import get_epreuve_or_404
+from .deps import get_epreuve_or_404, get_public_epreuve_or_404
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 log = get_logger("assistant_router")
@@ -111,7 +111,7 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
     if ephemere:
         if not payload.epreuve_id:
             raise HTTPException(400, "epreuve_id requis pour une question éphémère")
-        epreuve = get_epreuve_or_404(db, payload.epreuve_id)
+        epreuve = get_public_epreuve_or_404(db, payload.epreuve_id, user)
         _ask_limiter.check(user.id)
         contexte = payload.contexte
         # Historique borné côté client, réordonné par sécurité + question.
@@ -127,6 +127,10 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
 
         messages = json.loads(conv.messages_json or "[]")
         messages.append({"role": "user", "content": payload.message})
+        # Persistance IMMÉDIATE du message utilisateur (avant le streaming)
+        # pour ne jamais le perdre si le flux échoue. La réponse assistant
+        # sera écrite à la fin du flux dans event_stream() (double-écriture
+        # intentionnelle : la seconde écrase la première avec les deux messages).
         conv = store.update_conversation(db, conv, messages)
 
         contexte = conv.contexte

@@ -1,0 +1,634 @@
+import { useEffect, useState } from "react";
+import { Check, Search } from "lucide-react";
+import { api, ApiError } from "../../api/client";
+import { AdminEpreuveCounts } from "../../api/types";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { Skeleton } from "../../components/Skeleton";
+import { useToast } from "../../components/Toast";
+import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
+import { authHeaders, Asset, ContentBlock, DocumentFile, EMPTY_FORM, EpreuveForm, Field, Select } from "./shared";
+
+interface AdminEpreuveSummary {
+  id: string;
+  matiere: string;
+  annee: string;
+  classe: string;
+  evaluation: string;
+  filieres: string[];
+  statut: string;
+  gratuit: boolean;
+  corrige_disponible: boolean;
+}
+
+const SIDEBAR_LIMIT = 30;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Retire la première occurrence d'une balise `![...](url)` référençant
+ * cette URL précise, quel que soit le texte de légende (l'admin a pu le
+ * modifier depuis l'insertion automatique) — utilisé quand une image est
+ * supprimée, pour garder le Markdown cohérent avec les fichiers restants. */
+function removeImageTag(markdown: string, url: string): string {
+  const re = new RegExp(`!\\[[^\\]]*\\]\\(${escapeRegExp(url)}\\)\\n?`, "g");
+  return markdown.replace(re, "");
+}
+
+/** Liste + éditeur des épreuves. L'état vit ICI (liste, recherche, formulaire,
+ * confirmations) et non dans le shell `/admin` : les autres panneaux n'en ont
+ * pas besoin. */
+export function EpreuvesPanel({
+  token,
+  onSessionExpiree,
+  detailAOpenir,
+  onDetailOuvert,
+  onEpreuvesChange,
+}: {
+  token: string;
+  onSessionExpiree: () => void;
+  detailAOpenir?: string | null;
+  onDetailOuvert?: () => void;
+  onEpreuvesChange?: () => void;
+}) {
+  const { showToast } = useToast();
+  const [epreuves, setEpreuves] = useState<AdminEpreuveSummary[]>([]);
+  const [search, setSearch] = useState("");
+  const [statutFiltre, setStatutFiltre] = useState<string>("");
+  const [counts, setCounts] = useState<AdminEpreuveCounts | null>(null);
+  const [form, setForm] = useState<EpreuveForm>(EMPTY_FORM);
+  const [nouvelleSerie, setNouvelleSerie] = useState("");
+  const [sujetPreview, setSujetPreview] = useState(false);
+  const [corrigePreview, setCorrigePreview] = useState(false);
+  const [listeChargement, setListeChargement] = useState(true);
+  const [listeErreur, setListeErreur] = useState(false);
+  // Confirmation en attente pour les actions irréversibles (suppression
+  // épreuve, image ou document) — remplace window.confirm.
+  const [confirmation, setConfirmation] = useState<{
+    titre: string;
+    message: string;
+    action: () => void | Promise<void>;
+  } | null>(null);
+
+  /** Session admin expirée côté serveur (401) : purge le jeton local pour
+   * repasser par le formulaire de connexion. Retourne vrai si c'était un
+   * 401 — les autres erreurs restent à la charge de l'appelant. */
+  function handle401(err: unknown): boolean {
+    if (!(err instanceof ApiError && err.status === 401)) return false;
+    onSessionExpiree();
+    return true;
+  }
+
+  /**
+   * Charge la liste des épreuves (limitée à SIDEBAR_LIMIT, filtrable par
+   * recherche — voir `search`) ainsi que les compteurs par statut.
+   */
+  async function loadAll(t: string, searchTerm: string, statut = "") {
+    setListeChargement(true);
+    setListeErreur(false);
+    try {
+      const params = new URLSearchParams({ limit: String(SIDEBAR_LIMIT) });
+      if (searchTerm.trim()) params.set("q", searchTerm.trim());
+      if (statut) params.set("statut", statut);
+      const list = await api.get<AdminEpreuveSummary[]>(`/api/admin/epreuves?${params}`, authHeaders(t));
+      setEpreuves(list);
+      const cnt = await api.get<AdminEpreuveCounts>("/api/admin/epreuves/counts", authHeaders(t));
+      setCounts(cnt);
+    } catch (err) {
+      if (!handle401(err)) setListeErreur(true);
+    } finally {
+      setListeChargement(false);
+    }
+  }
+
+  // Recharge la liste à chaque frappe dans la recherche ou changement de
+  // puces de statut (avec un léger anti-rebond pour ne pas spammer l'API).
+  useEffect(() => {
+    const timer = setTimeout(() => loadAll(token, search, statutFiltre), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, search, statutFiltre]);
+
+  // Ouverture d'une épreuve depuis le journal d'audit (lien cliquable du
+  // panneau Journal) : précharge le détail et signale au shell que le lien
+  // a été consommé (sinon l'effet repartirait à chaque re-rendu).
+  useEffect(() => {
+    if (detailAOpenir) {
+      fetchDetail(detailAOpenir);
+      onDetailOuvert?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailAOpenir]);
+
+  /** Charge le détail complet d'une épreuve (métadonnées + contenu chargé
+   * depuis le stockage + fichiers) dans le formulaire d'édition. */
+  async function fetchDetail(id: string) {
+    try {
+      const detail = await api.get<Partial<EpreuveForm> & { id: string }>(
+        `/api/admin/epreuves/${id}`,
+        authHeaders(token)
+      );
+      setForm({
+        id: detail.id,
+        niveau: detail.niveau || "SECONDAIRE",
+        classe: detail.classe || "terminale",
+        evaluation: detail.evaluation || "BAC",
+        matiere: detail.matiere || "",
+        annee: detail.annee || "",
+        session: detail.session || "",
+        duree: detail.duree || "",
+        coefficient: detail.coefficient || "",
+        gratuit: Boolean(detail.gratuit),
+        filieres: detail.filieres || [],
+        contenu_markdown: detail.contenu_markdown || "",
+        corrige_markdown: detail.corrige_markdown || "",
+        assets: detail.assets || [],
+        documents: (detail as unknown as { documents?: DocumentFile[] }).documents || [],
+      });
+    } catch (err) {
+      if (!handle401(err)) {
+        showToast("Le détail de l'épreuve n'a pas pu être chargé.", "error");
+      }
+    }
+  }
+
+  function toggleSerie(serie: string) {
+    setForm((f) => ({
+      ...f,
+      filieres: f.filieres.includes(serie)
+        ? f.filieres.filter((s) => s !== serie)
+        : [...f.filieres, serie],
+    }));
+  }
+
+  async function save() {
+    const payload = {
+      niveau: form.niveau,
+      classe: form.classe,
+      evaluation: form.evaluation,
+      matiere: form.matiere,
+      annee: form.annee,
+      session: form.session,
+      duree: form.duree || null,
+      coefficient: form.coefficient || null,
+      gratuit: form.gratuit,
+      filieres: form.filieres,
+      contenu_markdown: form.contenu_markdown,
+      corrige_markdown: form.corrige_markdown,
+    };
+    try {
+      if (form.id) {
+        await api.put(`/api/admin/epreuves/${form.id}`, payload, authHeaders(token));
+        showToast("Épreuve mise à jour.", "success");
+      } else {
+        const res = await api.post<{ id: string }>("/api/admin/epreuves", payload, authHeaders(token));
+        setForm((f) => ({ ...f, id: res.id }));
+        showToast("Épreuve créée (brouillon).", "success");
+      }
+      loadAll(token, search, statutFiltre);
+      onEpreuvesChange?.();
+    } catch {
+      showToast("Échec de l'enregistrement — vérifie les champs.", "error");
+    }
+  }
+
+  function onEditFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    save();
+  }
+
+  async function publish() {
+    if (!form.id) return;
+    try {
+      await api.post(`/api/admin/epreuves/${form.id}/publish`, undefined, authHeaders(token));
+      showToast("Épreuve publiée.", "success");
+      loadAll(token, search, statutFiltre);
+      onEpreuvesChange?.();
+    } catch {
+      showToast("Publication refusée — sujet et au moins une série sont requis.", "error");
+    }
+  }
+
+  async function unpublish() {
+    if (!form.id) return;
+    try {
+      await api.post(`/api/admin/epreuves/${form.id}/unpublish`, undefined, authHeaders(token));
+      showToast("Épreuve dépubliée.", "info");
+      loadAll(token, search, statutFiltre);
+      onEpreuvesChange?.();
+    } catch (err) {
+      if (!handle401(err)) {
+        showToast("La dépublication a échoué — réessaie.", "error");
+      }
+    }
+  }
+
+  async function remove(id: string) {
+    setConfirmation({
+      titre: "Supprimer cette épreuve ?",
+      message: "Supprimer définitivement cette épreuve (et son corrigé, ses images) ?",
+      action: async () => {
+        try {
+          await api.del(`/api/admin/epreuves/${id}`, authHeaders(token));
+          setForm(EMPTY_FORM);
+          showToast("Épreuve supprimée.", "info");
+          loadAll(token, search, statutFiltre);
+          onEpreuvesChange?.();
+        } catch (err) {
+          if (!handle401(err)) {
+            showToast("La suppression a échoué — réessaie.", "error");
+          }
+        }
+      },
+    });
+  }
+
+  async function uploadImage(file: File, cible: "sujet" | "corrige") {
+    if (!form.id) {
+      showToast("Enregistre d'abord l'épreuve avant d'ajouter des images.", "error");
+      return;
+    }
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("cible", cible);
+    try {
+      const asset = await api.upload<Asset>(`/api/admin/epreuves/${form.id}/images`, fd, authHeaders(token));
+      if (asset.doublon_de) {
+        showToast(`Image identique déjà présente sur l'épreuve ${asset.doublon_de}.`, "info");
+      }
+      const tag = `![légende](${asset.url})`;
+      setForm((f) => ({
+        ...f,
+        assets: [...f.assets, asset],
+        contenu_markdown: cible === "sujet" ? f.contenu_markdown + "\n" + tag : f.contenu_markdown,
+        corrige_markdown: cible === "corrige" ? f.corrige_markdown + "\n" + tag : f.corrige_markdown,
+      }));
+      showToast("Image téléversée et insérée.", "success");
+    } catch {
+      showToast("Échec de l'upload d'image.", "error");
+    }
+  }
+
+  /** Bouton "x" sur une vignette : supprime le fichier côté serveur ET
+   * retire la balise Markdown correspondante du texte, pour ne pas
+   * laisser un lien mort dans le sujet/corrigé. */
+  async function deleteImage(asset: Asset) {
+    setConfirmation({
+      titre: "Retirer cette image ?",
+      message: "Retirer cette image des fichiers de l'épreuve ?",
+      action: async () => {
+        try {
+          await api.del(`/api/admin/files/${asset.id}`, authHeaders(token));
+          setForm((f) => ({
+            ...f,
+            assets: f.assets.filter((a) => a.id !== asset.id),
+            contenu_markdown:
+              asset.cible === "sujet" ? removeImageTag(f.contenu_markdown, asset.url) : f.contenu_markdown,
+            corrige_markdown:
+              asset.cible === "corrige" ? removeImageTag(f.corrige_markdown, asset.url) : f.corrige_markdown,
+          }));
+          showToast("Image retirée.", "success");
+        } catch {
+          showToast("Échec de la suppression de l'image.", "error");
+        }
+      },
+    });
+  }
+
+  /** Supprime un DOCUMENT (sujet.md/corrige.md) de la liste — le contenu
+   * de la cible est perdu, confirmation explicite. */
+  async function deleteDocument(doc: DocumentFile) {
+    setConfirmation({
+      titre: "Supprimer ce document ?",
+      message: `Supprimer le document « ${doc.filename} » (${doc.cible}) ? Le contenu correspondant sera perdu.`,
+      action: async () => {
+        try {
+          await api.del(`/api/admin/files/${doc.id}`, authHeaders(token));
+          setForm((f) => ({ ...f, documents: f.documents.filter((d) => d.id !== doc.id) }));
+          showToast("Document supprimé.", "success");
+        } catch {
+          showToast("Échec de la suppression du document.", "error");
+        }
+      },
+    });
+  }
+
+  /** Bouton "+" sur une vignette : (ré)insère la balise Markdown de cette
+   * image dans le texte correspondant (utile si l'admin l'a retirée
+   * manuellement en éditant le Markdown, sans supprimer le fichier). */
+  function insertImageTag(asset: Asset) {
+    const tag = `![légende](${asset.url})`;
+    setForm((f) => ({
+      ...f,
+      contenu_markdown: asset.cible === "sujet" ? f.contenu_markdown + "\n" + tag : f.contenu_markdown,
+      corrige_markdown: asset.cible === "corrige" ? f.corrige_markdown + "\n" + tag : f.corrige_markdown,
+    }));
+    showToast("Balise image insérée dans le texte.", "success");
+  }
+
+  return (
+    <>
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+        <div className="space-y-2">
+          <button
+            onClick={() => setForm(EMPTY_FORM)}
+            className="min-h-[40px] w-full rounded-full border border-ink-soft/25 text-sm"
+          >
+            + Nouvelle épreuve
+          </button>
+
+          {/* Puces de statut avec compteurs : cadrent la liste sans tout
+              charger (« Tous (180) », « Brouillon (50) »...). */}
+          {counts && (
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["", "Tous", counts.tous],
+                  ["publie", "Publiées", counts.publie],
+                  ["a_reviser", "À réviser", counts.a_reviser],
+                  ["brouillon", "Brouillons", counts.brouillon],
+                ] as [string, string, number][]
+              ).map(([value, label, count]) => (
+                <button
+                  key={value || "tous"}
+                  type="button"
+                  onClick={() => setStatutFiltre(value)}
+                  aria-pressed={statutFiltre === value}
+                  className={`rounded-full border px-2.5 py-1 font-mono-tag text-[10px] transition-colors ${
+                    statutFiltre === value
+                      ? "border-ink bg-ink text-paper"
+                      : "border-ink-soft/20 text-ink-soft hover:border-highlight/50"
+                  }`}
+                >
+                  {label} ({count})
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="relative">
+            <Search
+              size={15}
+              strokeWidth={1.75}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate"
+              aria-hidden="true"
+            />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher une épreuve…"
+              aria-label="Rechercher une épreuve par matière ou année"
+              className="min-h-[40px] w-full rounded-full border border-ink-soft/25 bg-paper-raised pl-9 pr-3 text-sm"
+            />
+          </div>
+
+          {listeChargement && epreuves.length === 0 ? (
+            <div role="status" aria-label="Chargement de la liste des épreuves" className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : listeErreur ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-correction/30 bg-correction-soft p-4 text-sm text-correction"
+            >
+              <p>La liste des épreuves n'a pas pu être chargée.</p>
+              <button type="button" onClick={() => loadAll(token, search, statutFiltre)} className="mt-2 underline">
+                Réessayer
+              </button>
+            </div>
+          ) : epreuves.length === 0 ? (
+            <p className="px-1 text-sm text-slate">Aucune épreuve publiée.</p>
+          ) : (
+            epreuves.map((e) => {
+              const selected = form.id === e.id;
+              return (
+                <button
+                  key={e.id}
+                  onClick={() => fetchDetail(e.id)}
+                  aria-current={selected}
+                  className={`block w-full rounded-lg border p-3 text-left text-sm transition-colors ${
+                    selected
+                      ? "border-highlight bg-highlight-soft"
+                      : "border-ink-soft/15 bg-paper-raised hover:border-highlight/50 hover:bg-highlight-soft/40"
+                  }`}
+                >
+                  <p className="font-medium">
+                    {e.matiere} — {e.annee}
+                  </p>
+                  <p className="font-mono-tag text-[10px] text-slate">
+                    {classeLabel(e.classe)} · {e.evaluation} · {e.statut} · {e.filieres.join(",")}
+                  </p>
+                </button>
+              );
+            })
+          )}
+          {epreuves.length === SIDEBAR_LIMIT && (
+            <p className="px-1 text-xs text-slate">
+              Affichage limité aux {SIDEBAR_LIMIT} épreuves les plus récentes — affine la recherche pour en
+              trouver d'autres.
+            </p>
+          )}
+        </div>
+
+        <form
+          onSubmit={onEditFormSubmit}
+          className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-5"
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Select
+              label="Niveau"
+              value={form.niveau}
+              onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
+              options={NIVEAUX.map((n) => ({ value: n.code, label: n.label }))}
+            />
+            <Select
+              label="Classe"
+              value={form.classe}
+              onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
+              options={CLASSES_SECONDAIRE.map((c) => ({ value: c.code, label: c.label }))}
+            />
+            <Select
+              label="Évaluation"
+              value={form.evaluation}
+              onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
+              options={EVALUATIONS.map((ev) => ({ value: ev, label: ev }))}
+            />
+            <Field
+              label="Année"
+              value={form.annee}
+              onChange={(v) => setForm((f) => ({ ...f, annee: v }))}
+              placeholder="ex. 2024"
+            />
+            <Field
+              label="Matière"
+              value={form.matiere}
+              onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
+              placeholder="ex. Mathématiques"
+            />
+            <Field
+              label="Session"
+              value={form.session}
+              onChange={(v) => setForm((f) => ({ ...f, session: v }))}
+              placeholder="ex. Session normale"
+            />
+            <Field
+              label="Durée"
+              value={form.duree}
+              onChange={(v) => setForm((f) => ({ ...f, duree: v }))}
+              placeholder="ex. 4h"
+            />
+            <Field
+              label="Coefficient"
+              value={form.coefficient}
+              onChange={(v) => setForm((f) => ({ ...f, coefficient: v }))}
+              placeholder="ex. 5"
+            />
+          </div>
+
+          {/* Séries : sélection multiple par puces (une épreuve peut couvrir
+              PLUSIEURS séries) + champ libre pour une série hors référentiel. */}
+          <div>
+            <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">Séries / filières</p>
+            <div className="flex flex-wrap gap-1.5">
+              {SERIES_CONNUES.map((s) => {
+                const active = form.filieres.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleSerie(s)}
+                    aria-pressed={active}
+                    className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                      active
+                        ? "border-ink bg-ink text-paper"
+                        : "border-ink-soft/25 text-ink-soft hover:border-highlight/50"
+                    }`}
+                  >
+                    {active && <Check size={12} strokeWidth={2.5} aria-hidden="true" />}
+                    {s}
+                  </button>
+                );
+              })}
+              {form.filieres
+                .filter((s) => !SERIES_CONNUES.includes(s))
+                .map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleSerie(s)}
+                    aria-pressed
+                    className="flex items-center gap-1 rounded-full border border-ink bg-ink px-3 py-1.5 text-xs text-paper"
+                  >
+                    <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+                    {s}
+                  </button>
+                ))}
+            </div>
+            <input
+              value={nouvelleSerie}
+              onChange={(e) => setNouvelleSerie(e.target.value)}
+              onKeyDown={(e) => {
+                // Bug corrigé : l'input était contrôlé avec value="" —
+                // chaque caractère tapé était ajouté comme série (taper
+                // "ESP" créait "E", "S", "P") et le placeholder promettait
+                // Entrée sans la gérer.
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const v = nouvelleSerie.trim();
+                  if (v && !form.filieres.includes(v)) {
+                    setForm((f) => ({ ...f, filieres: [...f.filieres, v] }));
+                  }
+                  setNouvelleSerie("");
+                }
+              }}
+              placeholder="Ajouter une série hors référentiel puis Entrée…"
+              className="mt-2 min-h-[36px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-xs"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.gratuit}
+              onChange={(e) => setForm((f) => ({ ...f, gratuit: e.target.checked }))}
+            />
+            Contenu gratuit de découverte
+          </label>
+
+          <ContentBlock
+            title="Sujet"
+            required
+            markdown={form.contenu_markdown}
+            preview={sujetPreview}
+            onTogglePreview={() => setSujetPreview((p) => !p)}
+            onChange={(v) => setForm((f) => ({ ...f, contenu_markdown: v }))}
+            onUpload={(file) => uploadImage(file, "sujet")}
+            assets={form.assets.filter((a) => a.cible === "sujet")}
+            documents={form.documents.filter((d) => d.cible === "sujet")}
+            onDeleteImage={deleteImage}
+            onInsertImage={insertImageTag}
+            onDeleteDocument={deleteDocument}
+          />
+
+          <ContentBlock
+            title="Corrigé (optionnel)"
+            required={false}
+            markdown={form.corrige_markdown}
+            preview={corrigePreview}
+            onTogglePreview={() => setCorrigePreview((p) => !p)}
+            onChange={(v) => setForm((f) => ({ ...f, corrige_markdown: v }))}
+            onUpload={(file) => uploadImage(file, "corrige")}
+            assets={form.assets.filter((a) => a.cible === "corrige")}
+            documents={form.documents.filter((d) => d.cible === "corrige")}
+            onDeleteImage={deleteImage}
+            onInsertImage={insertImageTag}
+            onDeleteDocument={deleteDocument}
+          />
+
+          <div className="flex flex-wrap gap-2 border-t border-ink-soft/10 pt-4">
+            <button type="submit" className="min-h-[40px] rounded-full bg-ink px-5 text-sm text-paper">
+              Enregistrer
+            </button>
+            {form.id && (
+              <>
+                <button
+                  type="button"
+                  onClick={publish}
+                  className="min-h-[40px] rounded-full bg-valide px-5 text-sm text-paper"
+                >
+                  Publier
+                </button>
+                <button
+                  type="button"
+                  onClick={unpublish}
+                  className="min-h-[40px] rounded-full border border-ink-soft/25 px-5 text-sm"
+                >
+                  Dépublier
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(form.id!)}
+                  className="min-h-[40px] rounded-full border border-correction/40 px-5 text-sm text-correction"
+                >
+                  Supprimer
+                </button>
+              </>
+            )}
+          </div>
+        </form>
+      </div>
+
+      {confirmation && (
+        <ConfirmDialog
+          tone="danger"
+          title={confirmation.titre}
+          message={confirmation.message}
+          onConfirm={confirmation.action}
+          onClose={() => setConfirmation(null)}
+        />
+      )}
+    </>
+  );
+}

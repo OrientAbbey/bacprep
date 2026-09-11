@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { MotifSignalement } from "../api/types";
 import { MOTIFS } from "../lib/motifs";
-import { useEscapeKey } from "../lib/useEscapeKey";
+import { useModalFocus } from "../lib/useModalFocus";
 import { useToast } from "./Toast";
 
 /**
@@ -23,7 +23,9 @@ export function SignalementModal({
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
-  useEscapeKey(onClose);
+  // Focus initial dans la modale, piège Tab, fermeture sur Échap et
+  // restauration du focus à l'élément déclencheur à la fermeture.
+  const dialogRef = useModalFocus<HTMLDivElement>({ open: true, onClose });
 
   async function send() {
     if (!motif) return;
@@ -54,6 +56,7 @@ export function SignalementModal({
       aria-label="Signaler un problème"
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-md rounded-lg border border-ink-soft/15 bg-paper-raised shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
