@@ -73,7 +73,7 @@ export function JournalPanel({
           const details = detailsLisibles(e);
           return (
             <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2">
-              <span className="font-mono-tag text-[10px] text-highlight">{libelleAction(e.action)}</span>
+              <span className="font-mono-tag text-[10px] text-slate">{libelleAction(e.action)}</span>
               <span className="min-w-0 flex-1 truncate">
                 {e.email || "système"}
                 {e.epreuve_id && (

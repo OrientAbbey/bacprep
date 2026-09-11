@@ -20,7 +20,7 @@ const AUTO_DISMISS_MS = 4000;
 const KIND_STYLES: Record<ToastKind, string> = {
   success: "border-valide/30 bg-valide-soft text-valide",
   error: "border-correction/30 bg-correction-soft text-correction",
-  info: "border-highlight/30 bg-highlight-soft text-highlight-ink",
+  info: "border-highlight/30 bg-highlight-soft text-ink",
 };
 
 const KIND_ICON: Record<ToastKind, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {

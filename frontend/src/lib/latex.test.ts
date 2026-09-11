@@ -58,6 +58,40 @@ describe("normalizeLatexDelimiters", () => {
     expect(out).toContain("$$\nx=1\n$$");
   });
 
+  it("ne re-enveloppe pas un environnement déjà entre $$ sur ses propres lignes", () => {
+    // Cas réel : cases/aligné sur ses propres lignes entre $$...$$. Sans le
+    // lookbehind (?<!\$\$\s), l'environnement était re-wrapped et produisait
+    // un double $$...$$ ($$\n$$\n...\n$$\n$$) que remark-math ne rendait pas.
+    const src = "$$\n\\begin{cases}\n0 & \\text{si } x\\ge 0\\\\[2pt]\n1 & \\text{sinon}\n\\end{cases}\n$$";
+    expect(src.match(/\$\$/g) || []).toHaveLength(2);
+    const out = normalizeLatexDelimiters(src);
+    expect(out.match(/\$\$/g) || []).toHaveLength(2);
+    expect(out).toContain("\\begin{cases}");
+    expect(out).toContain("\\\\[2pt]");
+    expect(out).not.toContain("$$\n$$\n");
+  });
+
+  it("enveloppe une fois un environnement nu contenant des sauts \\\\[2pt]", () => {
+    // Cas réel : aligned nu finissant ses lignes par \\[2pt]. Le lookbehind
+    // (?<!\\) empêche de convertir ce « \[ » (et de chercher un « \] » absent)
+    // comme un vrai délimiteur d'affichage ; l'environnement est ensuite
+    // enveloppé UNE seule fois dans $$...$$.
+    const src = "\\begin{aligned}\nu_1 &= 1\\\\[2pt]\nu_2 &= 2\n\\end{aligned}";
+const out = normalizeLatexDelimiters(src);
+    // Une seule enveloppe $$...$$, \\[2pt] intact (jamais converti en \[...\]).
+    expect(out).toBe(
+      "$$\n\\begin{aligned}\nu_1 &= 1\\\\[2pt]\nu_2 &= 2\n\\end{aligned}\n$$\n"
+    );
+  });
+
+  it("ne convertit pas \\[2pt] isolé hors environnement", () => {
+    // Même protection en texte simple : \\[2pt] n'est jamais un délimiteur.
+    const src = "Valeur moyenne : \\[2pt].";
+    const out = normalizeLatexDelimiters(src);
+    expect(out).toContain("\\[2pt]");
+    expect(out.match(/\$\$/g) || []).toHaveLength(0);
+  });
+
   it("restitue un $$ jamais refermé sans perdre le contenu", () => {
     const out = normalizeLatexDelimiters("Début $$x=1\nsuite sans fin.");
     expect(out).toContain("x=1");

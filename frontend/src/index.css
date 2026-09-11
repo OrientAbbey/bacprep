@@ -35,7 +35,7 @@
   --color-highlight: #c89b3c;
   --color-highlight-soft: #f3e7c8;
   --color-highlight-ink: #241a02;
-  --color-correction: #b23a2e;
+  --color-correction: #a73428;
   --color-correction-soft: #f1dbd7;
   --color-valide: #2f6e4f;
   --color-valide-soft: #dceae1;
@@ -53,7 +53,7 @@
   --color-highlight: #d6ae55;
   --color-highlight-soft: #3a2e12;
   --color-correction: #e0665a;
-  --color-correction-soft: #3a211c;
+  --color-correction-soft: #332019;
   --color-valide: #59b98a;
   --color-valide-soft: #163828;
   --color-margin: #070b14;
@@ -93,7 +93,6 @@ a {
 :focus-visible {
   outline: 2px solid var(--color-highlight);
   outline-offset: 2px;
-  border-radius: 2px;
 }
 
 /* Effet de survol générique : change UNIQUEMENT l'apparence du FOND, jamais
@@ -393,11 +392,13 @@ body {
   border-radius: 4px;
 }
 /* KaTeX : les formules trop larges (matrices, longues expressions)
-   défilent horizontalement au lieu de déborder de la bulle. */
+   défilent horizontalement au lieu de déborder de la bulle. La découpe
+   verticale reste visible pour ne jamais rogner les fractions hautes
+   (\tfrac, \frac superposés) ni les sauts de ligne \\[2pt]. */
 .prose-chat .katex-display {
   max-width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   padding: 0.2em 0;
 }
 .prose-chat .katex {

@@ -548,16 +548,23 @@ export function AssistantPanel({
             </div>
           )}
 
-          {active?.messages.map((m, i) => (
-            <ChatBubble
-              key={`${m.role}-${i}`}
-              m={m}
-              questionContexte={i > 0 ? active.messages[i - 1]?.content ?? "" : ""}
-              userNom={userNom}
-              onSaveAsNote={onSaveAsNote}
-              peutSauvegarder={user?.consent_notes !== false}
-            />
-          ))}
+          {active &&
+            active.messages.map((m, i) => {
+              // Pendant l'envoi, la bulle assistant est pré-créée VIDE : on
+              // la masque pour ne pas afficher une boîte vide en parallèle
+              // de l'indicateur « Assistant Pédagogique réfléchit… ».
+              if (m.role === "assistant" && m.content === "" && sending) return null;
+              return (
+                <ChatBubble
+                  key={`${m.role}-${i}`}
+                  m={m}
+                  questionContexte={i > 0 ? active.messages[i - 1]?.content ?? "" : ""}
+                  userNom={userNom}
+                  onSaveAsNote={onSaveAsNote}
+                  peutSauvegarder={user?.consent_notes !== false}
+                />
+              );
+            })}
           {sending &&
             active &&
             active.messages[active.messages.length - 1]?.role === "assistant" &&

@@ -87,6 +87,11 @@ export function ViewerPage() {
     null
   );
   const [signalementOuvert, setSignalementOuvert] = useState(false);
+  const [assistantWidth, setAssistantWidth] = useState<number>(() => {
+    try { return Number(localStorage.getItem("assistant-panel-width")) || 320; } catch { return 320; }
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOrigin = useRef({ x: 0, startWidth: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const mobile = useIsMobile();
 
@@ -138,6 +143,34 @@ export function ViewerPage() {
     setNoteOuverte(null);
     setSelection(null);
   }, [user]);
+
+  // Largeur du panneau assistant persistée entre les visites.
+  useEffect(() => {
+    try { localStorage.setItem("assistant-panel-width", String(assistantWidth)); } catch { /* stockage indisponible */ }
+  }, [assistantWidth]);
+
+  // Redimension au pointeur : largeur bornée en clamp [280, min(45vw, 560)].
+  useEffect(() => {
+    if (!isDragging) return;
+    function onMove(e: PointerEvent) {
+      const largeur = dragOrigin.current.startWidth + (dragOrigin.current.x - e.clientX);
+      const min = Math.max(280, Math.min(560, window.innerWidth * 0.45));
+      setAssistantWidth(Math.max(280, Math.min(min, largeur)));
+    }
+    function stop() { setIsDragging(false); }
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    return () => {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [isDragging]);
 
   function updateFromSelection() {
     const sel = window.getSelection();
@@ -429,9 +462,36 @@ export function ViewerPage() {
         (mobile ? (
           <AssistantPanel {...panelProps} mobile />
         ) : (
-          <aside className="sticky top-20 z-40 h-[calc(100vh-6rem)] w-[300px] shrink-0 overflow-hidden rounded-lg border border-ink-soft/15 shadow-lg xl:w-[380px]">
-            <AssistantPanel {...panelProps} mobile={false} />
-          </aside>
+          <aside
+              className="sticky top-20 z-40 h-[calc(100vh-6rem)] shrink-0 overflow-hidden rounded-lg border border-ink-soft/15 shadow-lg"
+              style={{ width: assistantWidth }}
+            >
+              {!mobile && (
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-valuenow={assistantWidth}
+                  aria-valuemin={280}
+                  aria-valuemax={560}
+                  tabIndex={0}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                    dragOrigin.current = { x: e.clientX, startWidth: assistantWidth };
+                  }}
+                  onKeyDown={(e) => {
+                    const min = Math.max(280, Math.min(560, window.innerWidth * 0.45));
+                    if (e.key === "ArrowLeft") setAssistantWidth((w) => Math.max(280, Math.min(min, w + 16)));
+                    else if (e.key === "ArrowRight") setAssistantWidth((w) => Math.max(280, Math.min(min, w - 16)));
+                  }}
+                  className="absolute left-0 top-0 z-10 flex h-full w-1.5 cursor-col-resize items-center justify-center select-none hover:bg-highlight/40 focus:outline-none focus-visible:bg-highlight/50"
+                  title="Glisser pour redimensionner"
+                >
+                  <div className="h-8 w-0.5 rounded-full bg-ink-soft/30" />
+                </div>
+              )}
+              <AssistantPanel {...panelProps} mobile={false} />
+            </aside>
         ))}
 
       {user && noteOuverte && (

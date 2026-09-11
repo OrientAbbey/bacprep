@@ -28,20 +28,30 @@ function isFence(line: string): boolean {
 }
 
 /** Convertit \[...\] et \(...\), et enveloppe les environnements
- * \begin{...} nus dans $$...$$ — appliqué AVANT l'isolation des blocs. */
+ * \begin{...} nus dans $$...$$ — appliqué entre deux passages de
+ * l'isolation des blocs (voir normalizeLatexDelimiters). */
 function convertDelimiters(markdown: string): string {
   let out = markdown;
 
-  // \[ ... \] (bloc affiché) -> $$ ... $$
-  out = out.replace(/\\\[([\s\S]*?)\\\]/g, (_match, inner) => `$$${inner}$$`);
+  // \[ ... \] (bloc affiché) -> $$ ... $$. Le lookbehind (?<!\\) évite de
+  // confondre le saut de ligne LaTeX \\[2pt] (dont le « \[ » réalisé par le
+  // second backslash n'est PAS un délimiteur) c'est-à-dire de le convertir
+  // puis de casser l'environnement aligned qui l'utilise.
+  out = out.replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_match, inner) => `$$${inner}$$`);
 
   // \( ... \) (en ligne) -> $ ... $
   out = out.replace(/\\\(([\s\S]*?)\\\)/g, (_match, inner) => `$${inner}$`);
 
-  // Un environnement \begin{...}...\end{...} laissé nu (pas déjà entre
-  // signes dollar juste avant/après) est enveloppé dans $$ ... $$.
+  // Un environnement \begin{...}...\end{...} laissé nu (pas déjà entre $$,
+  // collés juste avant/après) est enveloppé dans $$ ... $$. Le lookbehind
+  // (?<!\$\$\s) couvre le cas où le $$ est sur sa PROPRE ligne avant \
+  // begin (ou séparé par un espace) : sans lui, un $$ déjà présent sur la
+  // ligne voisine re-wrap l'environnement et produit un double $$...$$ que
+  // remark-math ne sait pas lire. Grâce au premier passage d'isolation,
+  // tous les blocs $$ sont déjà sur des lignes dédiées : ce cas est le seul
+  // restant à exclure, l'attache ``$$begin`` étant capté par `before`.
   out = out.replace(
-    /(\$\$?)?\\begin\{(aligned|align\*?|matrix|pmatrix|bmatrix|cases|array)\}([\s\S]*?)\\end\{\2\}(\$\$?)?/g,
+    /(?<!\$\$\s)(\$\$?)?\\begin\{(aligned|align\*?|matrix|pmatrix|bmatrix|cases|array)\}([\s\S]*?)\\end\{\2\}(\$\$?)?/g,
     (match, before, env, body, after) => {
       if (before && after) return match; // déjà correctement délimité
       return `$$\\begin{${env}}${body}\\end{${env}}$$`;
@@ -157,5 +167,10 @@ function isolateDisplayMath(markdown: string): string {
 }
 
 export function normalizeLatexDelimiters(markdown: string): string {
-  return isolateDisplayMath(convertDelimiters(markdown));
+  // Deux passes d'isolation : la première met TOUS les blocs $$ existants sur
+  // des lignes dédiées AVANT convertDelimiters, ce qui rend le lookbehind
+  // (?<!\$\$\s) fiable (un \begin dans un $$ déjà présent n'est jamais
+  // re-enveloppé). La seconde re-isole les éventuels blocs $$ créés par la
+  // conversion (\begin nus, \[...\]).
+  return isolateDisplayMath(convertDelimiters(isolateDisplayMath(markdown)));
 }

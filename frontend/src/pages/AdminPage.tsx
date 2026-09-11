@@ -139,10 +139,20 @@ export function AdminPage() {
   }
 
   async function logoutAdmin() {
-    if (token) await api.post("/api/admin/logout", undefined, authHeaders(token));
-    sessionStorage.removeItem("admin_session");
-    setToken(null);
-    showToast("Déconnexion admin réussie.", "info");
+    try {
+      if (token) await api.post("/api/admin/logout", undefined, authHeaders(token));
+    } finally {
+      // Reset complet du formulaire : sans lui, les identifiants de la
+      // session précédente restaient affichés au retour à l'écran de
+      // connexion (risque sur poste partagé).
+      sessionStorage.removeItem("admin_session");
+      setToken(null);
+      setEmail("");
+      setLoginToken("");
+      setError(null);
+      setBlocker(null);
+      showToast("Déconnexion admin réussie.", "info");
+    }
   }
 
   if (!token) {

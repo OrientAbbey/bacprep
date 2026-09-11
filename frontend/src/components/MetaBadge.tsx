@@ -7,8 +7,10 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
   default: "border-ink-soft/25 bg-paper text-ink-soft",
   correction: "border-correction/40 bg-correction-soft text-correction",
   valide: "border-valide/40 bg-valide-soft text-valide",
-  // Le ton highlight utilise text-highlight-ink (jamais text-ink, cf. contraste)
-  highlight: "border-highlight/50 bg-highlight-soft text-highlight-ink",
+  // Le ton highlight utilise text-ink : text-highlight-ink est un token FIXE
+  // pensé pour un fond highlight (jaune solide) — illisible sur highlight-soft
+  // (1,29:1 en mode sombre). text-ink s'adapte aux deux thèmes.
+  highlight: "border-highlight/50 bg-highlight-soft text-ink",
 };
 
 /**
