@@ -34,6 +34,18 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000];
 
+/** Plateforme de l'appareil : "mobile" sur smartphone/tablette (UA mobile
+ * OU écran tactile étroit), "web" sinon. Envoyée à la connexion et affichée
+ * dans le fil d'activité du profil (« Connexion à ton compte (mobile) /
+ * (ordinateur) »). */
+export function detectPlatform(): "mobile" | "web" {
+  if (typeof navigator === "undefined") return "web";
+  const mobileUa =
+    typeof navigator.userAgent === "string" &&
+    /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent);
+  return mobileUa || (navigator.maxTouchPoints > 0 && window.innerWidth < 1024) ? "mobile" : "web";
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,11 +131,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const loginMock = async (email: string, nom: string) => {
-    completeLogin(await api.post<User>("/api/auth/mock-login", { email, nom, platform: "web" }));
+    completeLogin(await api.post<User>("/api/auth/mock-login", { email, nom, platform: detectPlatform() }));
   };
 
   const loginGoogle = async (idToken: string) => {
-    completeLogin(await api.post<User>("/api/auth/google-login", { id_token: idToken, platform: "web" }));
+    completeLogin(
+      await api.post<User>("/api/auth/google-login", { id_token: idToken, platform: detectPlatform() }),
+    );
   };
 
   const logout = async () => {

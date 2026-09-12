@@ -6,15 +6,16 @@
  * ou un \begin{...} nu ne seraient sinon jamais rendus et resteraient
  * affichés comme du texte brut illisible.
  *
- * Implémentation en machine à états ligne par ligne (remplace une version
- * regex globale sur tout le texte, qui touchait aussi l'intérieur des
- * blocs de code et ratait des cas limites) :
- * - l'intérieur des blocs de code fencés (``` ou ~~~) est laissé INTACT ;
- * - chaque bloc $$...$$, où qu'il apparaisse (au milieu d'un paragraphe,
- *   plusieurs sur une même ligne, à cheval sur plusieurs lignes), est
- *   isolé sur ses propres lignes entourées de lignes vides — condition
- *   nécessaire pour que remark-math le reconnaisse comme "math flow" ;
- * - les formules inline $...$ et les \$ échappés ne sont jamais touchés.
+ * Deux phases :
+ * 1. `convertDelimiters` (scanner caractère par caractère) — \[ \] et
+ *    \( \) convertis en $$ $$ / $ $, environnements \begin{...} nus
+ *    enveloppés, et blocs $$ déjà présents conservés ; les corps ne sont
+ *    JAMAIS rescannés (pas de double enveloppement, y compris pour un
+ *    \begin{aligned} multiligne servi DANS un \[ \]) ;
+ * 2. l'intérieur des blocs de code fencés (``` ou ~~~) est laissé INTACT ;
+ * 3. chaque bloc $$...$$ non encore isolé est mis sur ses propres lignes
+ *    entourées de lignes vides — condition nécessaire pour que remark-math
+ *    le reconnaisse comme "math flow".
  *
  * Best-effort, pas un vrai parseur LaTeX : suffisant pour les cas usuels
  * (bloc affiché, formule en ligne, environnement aligned/matrix nu) sans
@@ -27,38 +28,92 @@ function isFence(line: string): boolean {
   return /^\s*(`{3,}|~{3,})/.test(line);
 }
 
-/** Convertit \[...\] et \(...\), et enveloppe les environnements
- * \begin{...} nus dans $$...$$ — appliqué entre deux passages de
- * l'isolation des blocs (voir normalizeLatexDelimiters). */
+/**
+ * Convertit \[...\] et \(...\), et enveloppe les environnements
+ * \begin{...} NUS dans $$...$$.
+ *
+ * Scanner caractère par caractère (au lieu d'une regex globale) : les corps
+ * de `\[ \]`, `\( \)` et `$$...$$` sont consommés INTÉGRIALEMENT et réémis
+ * tels quels — le corps d'un `\begin{aligned}` placé DANS un `\[ \]`
+ * multiligne ne peut donc jamais être re-enveloppé (le bug « double $$ »
+ * des regex globales). Les sauts de ligne LaTeX `\\[2pt]` ne sont pas
+ * confondus avec un délimiteur : un vrai `\[` n'est jamais précédé d'un
+ * backslash, alors que le second backslash de `\\[` l'est.
+ */
 function convertDelimiters(markdown: string): string {
-  let out = markdown;
+  const out: string[] = [];
+  let textBuf = "";
 
-  // \[ ... \] (bloc affiché) -> $$ ... $$. Le lookbehind (?<!\\) évite de
-  // confondre le saut de ligne LaTeX \\[2pt] (dont le « \[ » réalisé par le
-  // second backslash n'est PAS un délimiteur) c'est-à-dire de le convertir
-  // puis de casser l'environnement aligned qui l'utilise.
-  out = out.replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_match, inner) => `$$${inner}$$`);
+  function flushText() {
+    if (textBuf) out.push(wrapNakedEnvs(textBuf));
+    textBuf = "";
+  }
 
-  // \( ... \) (en ligne) -> $ ... $
-  out = out.replace(/\\\(([\s\S]*?)\\\)/g, (_match, inner) => `$${inner}$`);
-
-  // Un environnement \begin{...}...\end{...} laissé nu (pas déjà entre $$,
-  // collés juste avant/après) est enveloppé dans $$ ... $$. Le lookbehind
-  // (?<!\$\$\s) couvre le cas où le $$ est sur sa PROPRE ligne avant \
-  // begin (ou séparé par un espace) : sans lui, un $$ déjà présent sur la
-  // ligne voisine re-wrap l'environnement et produit un double $$...$$ que
-  // remark-math ne sait pas lire. Grâce au premier passage d'isolation,
-  // tous les blocs $$ sont déjà sur des lignes dédiées : ce cas est le seul
-  // restant à exclure, l'attache ``$$begin`` étant capté par `before`.
-  out = out.replace(
-    /(?<!\$\$\s)(\$\$?)?\\begin\{(aligned|align\*?|matrix|pmatrix|bmatrix|cases|array)\}([\s\S]*?)\\end\{\2\}(\$\$?)?/g,
-    (match, before, env, body, after) => {
-      if (before && after) return match; // déjà correctement délimité
-      return `$$\\begin{${env}}${body}\\end{${env}}$$`;
+  let i = 0;
+  while (i < markdown.length) {
+    // \[ ... \] → $$ ... $$ (bloc affiché).
+    if (markdown[i] === "\\" && markdown[i + 1] === "[" && markdown[i - 1] !== "\\") {
+      const end = findUnescaped(markdown, i + 2, "\\]");
+      if (end !== -1) {
+        flushText();
+        out.push(`$$${markdown.slice(i + 2, end)}$$`);
+        i = end + 2;
+        continue;
+      }
     }
-  );
+    // \( ... \) → $ ... $ (en ligne).
+    if (markdown[i] === "\\" && markdown[i + 1] === "(") {
+      const end = findUnescaped(markdown, i + 2, "\\)");
+      if (end !== -1) {
+        flushText();
+        out.push(`$${markdown.slice(i + 2, end)}$`);
+        i = end + 2;
+        continue;
+      }
+    }
+    // $$ ... $$ déjà présents : consommé en un bloc (jamais re-enveloppé).
+    if (markdown[i] === "$" && markdown[i + 1] === "$") {
+      const end = findUnescaped(markdown, i + 2, "$$");
+      if (end !== -1) {
+        flushText();
+        out.push(markdown.slice(i, end + 2));
+        i = end + 2;
+        continue;
+      }
+    }
+    textBuf += markdown[i];
+    i += 1;
+  }
+  flushText();
+  return out.join("");
+}
 
-  return out;
+/** Retrouve la prochaine occurrence de `token` à partir de `from`, en
+ *  ignorant celle échappée par un backslash immédiatement avant. */
+function findUnescaped(hay: string, from: number, token: string): number {
+  for (let idx = from; idx + token.length <= hay.length; idx++) {
+    let ok = true;
+    for (let j = 0; j < token.length; j++) {
+      if (hay[idx + j] !== token[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && (idx === 0 || hay[idx - 1] !== "\\")) return idx;
+  }
+  return -1;
+}
+
+/** Enveloppe dans $$...$$ les environnements \begin{...}...\end{...} laissés
+ *  nus dans un texte DÉJÀ VIDÉ de tout `$$`/`\[ \]`/`\( \)` (le scanner les
+ *  a retirés avant de passer ici) : plus aucun risque de double
+ *  enveloppement. `\\[2pt]` et `\\ \hline` à l'intérieur du corps sont
+ *  conservés tels quels. */
+function wrapNakedEnvs(text: string): string {
+  return text.replace(
+    /\\begin\{(aligned|align\*?|matrix|pmatrix|bmatrix|cases|array)\}([\s\S]*?)\\end\{\1\}/g,
+    (match, env: string, body: string) => `$$\n\\begin{${env}}${body}\\end{${env}}\n$$`
+  );
 }
 
 /**
@@ -167,10 +222,9 @@ function isolateDisplayMath(markdown: string): string {
 }
 
 export function normalizeLatexDelimiters(markdown: string): string {
-  // Deux passes d'isolation : la première met TOUS les blocs $$ existants sur
-  // des lignes dédiées AVANT convertDelimiters, ce qui rend le lookbehind
-  // (?<!\$\$\s) fiable (un \begin dans un $$ déjà présent n'est jamais
-  // re-enveloppé). La seconde re-isole les éventuels blocs $$ créés par la
-  // conversion (\begin nus, \[...\]).
-  return isolateDisplayMath(convertDelimiters(isolateDisplayMath(markdown)));
+  // convertDelimiters couvre déjà toutes les formes (\[ \], \( \), $$
+  // présents, \begin{...} nus) SANS jamais rescanner un corps de bloc déjà
+  // délimité : une seule passe d'isolation suffit ensuite pour remettre sur
+  // des lignes dédiées les $$ créés ça-et-là dans le texte.
+  return isolateDisplayMath(convertDelimiters(markdown));
 }

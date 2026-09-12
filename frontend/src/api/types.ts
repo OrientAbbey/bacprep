@@ -206,6 +206,11 @@ export interface AdminUtilisateur {
   etablissement: string | null;
   consent_ia: boolean | null;
   consent_notes: boolean | null;
+  /** Compte admin (ROOT ∪ promus, calculé serveur) — colonne `role`. */
+  is_admin: boolean;
+  /** Compte admin ROOT (ADMIN_ROOT) : non bannissable, non supprimable,
+   * seul habilité à promouvoir/révoquer les admins délégués. */
+  racine: boolean;
   banni: boolean;
   banni_motif: string | null;
   created_at: string;

@@ -50,7 +50,7 @@ FRONTEND_DIST = BASE_DIR.parent / "frontend" / "dist"
 if not _ENV_FILE.exists() and not is_prod():
     log.warning(
         "Aucun fichier .env trouvé à %s — copie backend/.env.example vers backend/.env "
-        "si tu veux configurer ADMIN_EMAILS, les clés LLM, etc.",
+        "si tu veux configurer ADMIN_ROOT, les clés LLM, etc.",
         _ENV_FILE,
     )
 
@@ -58,14 +58,35 @@ MAX_CONVERSATIONS_PAR_EPREUVE = store.MAX_CONVERSATIONS_PAR_EPREUVE
 MAX_HISTORIQUE = store.MAX_HISTORIQUE
 
 
+def _ensure_users_role_column() -> None:
+    """Migration minimale et idempotente : ajoute la colonne `users.role`
+    aux bases créées avant l'introduction des rôles. `create_all` ne crée
+    QUE les tables absentes et ne modifie jamais une table existante. La
+    syntaxe `ALTER TABLE ... ADD COLUMN ... DEFAULT` est acceptée à la
+    fois par SQLite et PostgreSQL."""
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+
+    try:
+        colonnes = {c["name"] for c in sa_inspect(engine).get_columns("users")}
+    except Exception:
+        # Table vide ou absente (premier démarrage) : rien à migrer.
+        return
+    if "role" not in colonnes:
+        with engine.begin() as conn:
+            conn.execute(sa_text("ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Crée les tables au démarrage (pas de migrations dans ce prototype —
-    `Base.metadata.create_all` suffit) et importe le contenu de seed si la
-    table `epreuves` est vide. Le seed n'est PAS bloquant : un échec de
-    stockage (bucket manquant, réseau…) est journalisé et le serveur
-    démarre quand même — l'import reste possible ensuite via l'admin."""
+    `Base.metadata.create_all` suffit), applique la micro-migration de la
+    colonne `users.role`, et importe le contenu de seed si la table
+    `epreuves` est vide. Le seed n'est PAS bloquant : un échec de stockage
+    (bucket manquant, réseau…) est journalisé et le serveur démarre quand
+    même — l'import reste possible ensuite via l'admin."""
     Base.metadata.create_all(bind=engine)
+    _ensure_users_role_column()
     db = SessionLocal()
     try:
         seed_database_if_empty(db)

@@ -97,19 +97,26 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   masquée + garde serveur 403. Ancien `consent_given_at` auto-posé à la
   création : abandonné.
 - **Admin** : lien et page `/admin` réservés aux comptes connectés dont
-  l'email est dans `ADMIN_EMAILS` (`is_admin` calculé serveur, liste jamais
-  exposée) ; la console reste protégée par `ADMIN_TOKEN` + liste blanche à
-  chaque appel. **Déconnexion automatique uniquement après avoir quitté la
-  console** : la page ouverte envoie un battement de cœur toutes les 30 s
-  qui maintient le verrou ; le délai `ADMIN_SESSION_TIMEOUT_MINUTES`
-  (défaut **3**) s'applique une fois la page fermée ou quittée.
+  l'email est **racine** (`ADMIN_ROOT`, hérite de l'ancien `ADMIN_EMAILS`)
+  ou **promu** administrateur délégué depuis la table Utilisateurs —
+  `is_admin` calculé serveur, la liste n'est jamais exposée ; la console
+  reste protégée par `ADMIN_TOKEN` + liste blanche à chaque appel. Seul le
+  **root** peut promouvoir/révoquer un admin ; le root ne peut être ni
+  banni, ni supprimé, ni révoqué. **Déconnexion automatique uniquement
+  après avoir quitté la console** : la page ouverte envoie un battement de
+  cœur toutes les 30 s qui maintient le verrou ; le délai
+  `ADMIN_SESSION_TIMEOUT_MINUTES` (défaut **3**) s'applique une fois la
+  page fermée ou quittée.
 - **Table Utilisateurs** du back-office : identité déclarée, profil,
   consentements, compteurs d'usage (notes, discussions IA, consultations,
   abonnements actifs, dépenses) — aucune donnée secrète (aucun mot de passe
   ni code mobile money n'est stocké dans le produit). Actions **bannir**
   (session tuée + kick-out WebSocket, login refusé 403), **débannir**,
-  **supprimer** (effacement de toutes les données personnelles). La
-  métrique « Utilisateurs » exclut les emails de la liste blanche admin.
+  **supprimer** (effacement de toutes les données personnelles). Les
+  comptes **admin** (root ∪ promus) échappent à la modération
+  bannir/supprimer et portent un badge ; le root seul peut **promouvoir /
+  révoquer** un admin délégué. La métrique « Utilisateurs » exclut les
+  comptes admin.
 - **Audit & activité explicites** : les évènements du journal portent le
   détail de l'action (champs modifiés, fichier supprimé, métadonnées de
   l'épreuve supprimée…) ; l'id d'épreuve du journal est cliquable (ouvre
@@ -199,9 +206,10 @@ Une fois `frontend/dist` présent, le backend le sert directement sur `/`
 
 ## Parcours de démonstration — admin
 
-1. Se connecter d'abord avec un email listé dans `ADMIN_EMAILS` (le lien
-   « Admin » n'apparaît que pour ces comptes), ouvrir `/admin` puis se
-   connecter avec le jeton `ADMIN_TOKEN` (`admin123` par défaut).
+1. Se connecter d'abord avec l'email **root** (`ADMIN_ROOT`, ex.
+   `admin@votre-domaine.cm` — le lien « Admin » n'apparaît que pour les
+   comptes root/promus), ouvrir `/admin` puis se connecter avec le jeton
+   `ADMIN_TOKEN` (`admin123` par défaut).
 2. Créer une épreuve : selects Niveau/Classe/Évaluation, séries par puces
    (multi-sélection), sujet/corrigé en Markdown, upload d'images (les
    documents `sujet.md`/`corrige.md` apparaissent en LISTE, séparés des
@@ -214,7 +222,8 @@ Une fois `frontend/dist` présent, le backend le sert directement sur `/`
 5. Relire les épreuves importées (elles arrivent en brouillon) puis les
    publier.
 6. Onglet **Utilisateurs** : table par élève (consentements, compteurs,
-   dépenses) avec bannir/débannir/supprimer ; le journal d'audit trace tout
+   dépenses) avec bannir/débannir/supprimer ; **promouvoir/révoquer un
+   admin délégué** (réservé au root) ; le journal d'audit trace tout
    (champs modifiés, fichiers supprimés) et l'id d'épreuve y est cliquable.
    La session admin se ferme automatiquement après
    `ADMIN_SESSION_TIMEOUT_MINUTES` (défaut 3 min) d'inactivité.

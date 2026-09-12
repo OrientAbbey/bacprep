@@ -20,16 +20,18 @@ log = get_logger("auth")
 COOKIE_NAME = "bacprep_session"
 
 
-def _user_out(user) -> UserOut:
+def _user_out(user, db: Session | None = None) -> UserOut:
     """Projette un utilisateur vers la réponse API : `is_admin` est calculé
-    serveur (email ∈ ADMIN_EMAILS) pour que le frontend puisse conditionner
-    le lien/page admin SANT jamais recevoir la liste blanche elle-même."""
+    serveur (email ∈ ROOT ∪ promus, voir admin_session) pour que le frontend
+    puisse conditionner le lien/page admin SANS jamais recevoir la liste
+    blanche elle-même. La liste complète exige une session (`db`) — sans
+    elle, seuls les ROOT sont reconnus (trait défensif)."""
     return UserOut(
         id=user.id,
         email=user.email,
         nom=user.nom,
         created_at=user.created_at,
-        is_admin=user.email.lower() in admin_session.allowed_emails(),
+        is_admin=user.email.lower() in admin_session.allowed_emails(db),
         consent_ia=user.consent_ia,
         consent_notes=user.consent_notes,
     )
@@ -122,12 +124,13 @@ async def mock_login(payload: MockLoginIn, request: Request, response: Response,
     if user.banni:
         raise HTTPException(403, "Compte suspendu — contacte l'équipe via ta page profil ou par e-mail.")
     user.derniere_connexion = utc_now()
+    admin_session.align_root_role(db, user.email)
     db.add(user)
     db.commit()
     token = await store.create_session(db, user.id, payload.platform)
     _set_session_cookie(response, token)
     log.info("Connexion mock réussie: %s", user.email)
-    return _user_out(user)
+    return _user_out(user, db)
 
 
 @router.post("/google-login", response_model=UserOut)
@@ -156,20 +159,22 @@ async def google_login(payload: GoogleLoginIn, request: Request, response: Respo
     if user.banni:
         raise HTTPException(403, "Compte suspendu — contacte l'équipe via ta page profil ou par e-mail.")
     user.derniere_connexion = utc_now()
+    admin_session.align_root_role(db, user.email)
     db.add(user)
     db.commit()
     token = await store.create_session(db, user.id, payload.platform)
     _set_session_cookie(response, token)
     log.info("Connexion Google réussie: %s", user.email)
-    return _user_out(user)
+    return _user_out(user, db)
 
 
 @router.get("/me", response_model=UserOut)
-def me(user=Depends(require_user)) -> UserOut:
+def me(user=Depends(require_user), db: Session = Depends(get_db)) -> UserOut:
     """Retourne l'utilisateur courant si le cookie de session est valide,
     401 sinon. Interrogé par le frontend au montage de l'application pour
-    savoir si l'utilisateur est déjà connecté."""
-    return _user_out(user)
+    savoir si l'utilisateur est déjà connecté (`is_admin` inclut les admin
+    promus de la base)."""
+    return _user_out(user, db)
 
 
 @router.post("/logout")

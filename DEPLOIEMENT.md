@@ -211,7 +211,7 @@ Voir `backend/.env.example` pour la liste complète commentée. Au minimum :
 
 - `DATABASE_URL` (pooler Supabase, port 6543 — voir plus haut)
 - `STORAGE_BACKEND=s3` + les 5 variables `STORAGE_*` (voir plus haut)
-- `ADMIN_TOKEN`, `ADMIN_EMAILS`
+- `ADMIN_TOKEN`, `ADMIN_ROOT`
 - `GEMINI_API_KEY` et/ou `GROQ_API_KEY` (sinon l'assistant tourne en mode
   démonstration)
 - `AUTH_MODE=mock` (dev) ou `google` + `GOOGLE_CLIENT_ID` (prod, voir plus haut)
@@ -231,9 +231,11 @@ refuse) :
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-**`ADMIN_EMAILS`** : liste blanche CSV des adresses pouvant ouvrir la
-console `/admin` (elles doivent AUSSI se connecter comme élève — le lien
-admin n'apparaît que pour ces comptes).
+**`ADMIN_ROOT`** : email **racine** de l'administration (prédécesseur
+`ADMIN_EMAILS` encore accepté comme alias). Il peut ouvrir la console
+`/admin` (et promouvoir d'autres comptes en **admin délégué** depuis la
+table Utilisateurs — les deux doivent AUSSI se connecter comme élève : le
+lien admin n'apparaît que pour ces comptes).
 
 ## Déploiement Render
 
@@ -261,7 +263,7 @@ l'authentification à chaque rotation). `VITE_API_URL` reste **vide**
    (`DATABASE_URL`), les variables de stockage (`STORAGE_BACKEND=s3` +
    `STORAGE_ENDPOINT_URL`, `STORAGE_REGION`, `STORAGE_ACCESS_KEY_ID`,
    `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_BUCKET`), les clés LLM
-   (`GEMINI_API_KEY` / `GROQ_API_KEY`), `ADMIN_EMAILS`, `FILE_URL_SECRET`,
+   (`GEMINI_API_KEY` / `GROQ_API_KEY`), `ADMIN_ROOT`, `FILE_URL_SECRET`,
    `AUTH_MODE=google` + `GOOGLE_CLIENT_ID` (voir sections ci-dessus pour
    les obtenir).
 4. Déployer, puis vérifier : `/api/health` répond ; `/connexion` affiche le

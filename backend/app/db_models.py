@@ -32,12 +32,18 @@ def _short_uid() -> str:
 
 class UserORM(Base):
     """Compte élève : email, profil (niveau/classe/établissement),
-    consentements RGPD, modération (bannissement) et historique de connexion."""
+    consentements RGPD, modération (bannissement) et historique de connexion.
+
+    `role` : "user" (élève) ou "admin" (promu par le root depuis le
+    back-office). Le root lui-même n'est PAS représenté par cette colonne —
+    il est issu de la variable d'environnement ADMIN_ROOT ; à son login sa
+    ligne est alignée sur "admin" pour que la cohérence globale soit lisible."""
     __tablename__ = "users"
 
     id = Column(String, primary_key=True, default=_uid)
     email = Column(String, unique=True, nullable=False, index=True)
     nom = Column(String, nullable=False, default="")
+    role = Column(String(16), nullable=False, default="user", server_default="user")
     # Profil étendu (optionnel, renseigné par l'élève dans sa page Profil) :
     # niveau et classe suivis, établissement.
     niveau = Column(String, nullable=True)

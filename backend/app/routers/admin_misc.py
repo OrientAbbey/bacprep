@@ -62,15 +62,18 @@ def admin_login(
     db: Session = Depends(get_db),
 ) -> dict:
     """Connexion admin : jeton partagé (ADMIN_TOKEN) + email dans la liste
-    blanche (ADMIN_EMAILS). Si un autre admin est déjà connecté (verrou
-    persisté en base, voir admin_session.py), répond 409 avec qui est
-    connecté depuis quand — sauf si `force=true`, qui prend le contrôle.
+    blanche (ROOT ∪ promus, voir admin_session). Si un autre admin est déjà
+    connecté (verrou persisté en base, voir admin_session.py), répond 409
+    avec qui est connecté depuis quand — sauf si `force=true`, qui prend le
+    contrôle.
 
-    Le jeton de session part dans un cookie httpOnly (SameSite=Strict,
-    Secure en prod) : il n'est JAMAIS restitué au JavaScript — un XSS
-    même-origine ne peut plus l'exfiltrer. Le champ session_token reste
-    dans la réponse pour les clients non-navigateur (curl/tests) qui
-    l'utilisent via l'en-tête X-Admin-Session."""
+    Le jeton de session part dans un cookie httpOnly (SameSite=Lax, Secure
+    en prod) : il n'est JAMAIS restitué au JavaScript — un XSS même-origine
+    ne peut plus l'exfiltrer. Le champ session_token reste dans la réponse
+    pour les clients non-navigateur (curl/tests) qui l'utilisent via
+    l'en-tête X-Admin-Session. SameSite=Lax (aligné sur le cookie élève) :
+    Strict brisait la session après un login depuis une autre origine que
+    l'API (localhost vs 127.0.0.1, etc.)."""
     _login_limiter.check(client_ip(request))
 
     expected_token = os.getenv("ADMIN_TOKEN", "")
@@ -83,15 +86,15 @@ def admin_login(
     if not secrets.compare_digest(payload.token, expected_token):
         raise HTTPException(401, "Jeton invalide")
 
-    allowed = admin_session.allowed_emails()
+    allowed = admin_session.allowed_emails(db)
     email = payload.email.strip().lower()
     if not allowed:
         # Sans liste blanche, quiconque devine le jeton devient admin.
         # En dev on tolère (warning) ; en production c'est un refus franc.
         if is_prod():
-            log.error("ADMIN_EMAILS vide en production — connexion admin refusée")
+            log.error("ADMIN_EMAILS/ADMIN_ROOT vide en production — connexion admin refusée")
             raise HTTPException(500, "ADMIN_EMAILS non configuré côté serveur")
-        log.warning("ADMIN_EMAILS vide — tout email valide avec le bon jeton est autorisé")
+        log.warning("ADMIN_EMAILS/ADMIN_ROOT vide — tout email valide avec le bon jeton est autorisé")
     elif email not in allowed:
         raise HTTPException(401, "Adresse e-mail non autorisée")
 
@@ -102,7 +105,7 @@ def admin_login(
         "admin_session",
         lock.token,
         httponly=True,
-        samesite="strict",
+        samesite="lax",
         secure=is_prod(),
         path="/",
         max_age=int(admin_session.session_timeout().total_seconds()),
@@ -201,9 +204,9 @@ def _admin_epreuves_par_statut(db: Session) -> dict:
 
 def _admin_nb_eleves(db: Session) -> int:
     """La métrique « Utilisateurs » ne compte que les élèves : les comptes
-    dont l'email est dans la liste blanche admin sont exclus (un admin
-    connecté en élève pour tester ne doit pas gonfler le compteur)."""
-    admins = admin_session.allowed_emails()
+    admin (ROOT ∪ promus) sont exclus (un admin connecté en élève pour
+    tester ne doit pas gonfler le compteur)."""
+    admins = admin_session.allowed_emails(db)
     return (
         db.query(UserORM)
         .filter(~func.lower(UserORM.email).in_(list(admins) or [""]))
@@ -368,28 +371,22 @@ def admin_resoudre_signalement(
 # table admin n'expose que des informations de compte et des compteurs.
 
 
-def _compte_hors_admins(query):
-    """Filtre une requête UserORM : exclut les emails de la liste blanche
-    admin (la métrique et la table utilisateurs ne concernent que les
-    élèves)."""
-    admins = admin_session.allowed_emails()
-    if not admins:
-        return query
-    return query.filter(~func.lower(UserORM.email).in_(list(admins)))
-
-
 @router.get("/utilisateurs")
 def admin_list_utilisateurs(
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> list[dict]:
     """Table utilisateurs du back-office : identité déclarée, profil, choix
-    de consentement, statut de modération et compteurs d'usage par élève
+    de consentement, statut de modération, compteurs d'usage par élève
     (notes, discussions IA, consultations, abonnements actifs, dépenses
-    confirmées). Volontairement SANS aucune donnée secrète : les seuls
-    identifiants de paiement sont des références d'agrégateur, jamais des
-    codes — et il n'existe pas de mot de passe local."""
-    users = _compte_hors_admins(db.query(UserORM)).order_by(UserORM.created_at.desc()).limit(500).all()
+    confirmées) et statut admin (`is_admin`/`racine`, pour la promotion et
+    la révocation depuis cette même interface). Volontairement SANS aucune
+    donnée secrète : les seuls identifiants de paiement sont des références
+    d'agrégateur, jamais des codes — et il n'existe pas de mot de passe
+    local."""
+    allowed = admin_session.allowed_emails(db)
+    roots = admin_session.root_emails()
+    users = db.query(UserORM).order_by(UserORM.created_at.desc()).limit(500).all()
     ids = [u.id for u in users]
     notes = _admin_comptes_par_user(db, NoteORM, ids)
     convs = _admin_comptes_par_user(db, AIConversationORM, ids)
@@ -397,7 +394,10 @@ def admin_list_utilisateurs(
     subs_actifs = _admin_comptes_par_user(db, SubscriptionORM, ids, SubscriptionORM.statut == "active")
     depenses = _admin_depenses_par_user(db, ids)
     sessions = _admin_derniere_connexion_par_user(db, ids)
-    return [_admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, sessions) for u in users]
+    return [
+        _admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, sessions, allowed, roots)
+        for u in users
+    ]
 
 
 def _admin_comptes_par_user(db: Session, model, ids: list, extra=None) -> dict[str, int]:
@@ -438,8 +438,11 @@ def _admin_derniere_connexion_par_user(db: Session, ids: list) -> dict[str, obje
     }
 
 
-def _admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, sessions) -> dict:
-    """Formate une ligne utilisateur pour le tableau du back-office."""
+def _admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, sessions, allowed, roots) -> dict:
+    """Formate une ligne utilisateur pour le tableau du back-office.
+    `allowed`/`roots` sont les ensembles ROOT ∪ promus déjà calculés par
+    l'appelant (une seule requête `IN`, pas de test par ligne)."""
+    is_admin = u.email.lower() in allowed
     return {
         "id": u.id,
         "nom": u.nom,
@@ -449,6 +452,8 @@ def _admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, ses
         "etablissement": u.etablissement,
         "consent_ia": u.consent_ia,
         "consent_notes": u.consent_notes,
+        "is_admin": is_admin,
+        "racine": u.email.lower() in roots,
         "banni": u.banni,
         "banni_motif": u.banni_motif,
         "created_at": u.created_at,
@@ -477,8 +482,8 @@ async def admin_bannir_utilisateur(
     u = db.query(UserORM).filter(UserORM.id == user_id).one_or_none()
     if not u:
         raise HTTPException(404, "Utilisateur introuvable")
-    if u.email.lower() in admin_session.allowed_emails():
-        raise HTTPException(400, "Un compte admin (liste blanche) ne peut pas être banni")
+    if u.email.lower() in admin_session.allowed_emails(db):
+        raise HTTPException(400, "Un compte admin ne peut pas être banni (une révocation d'admin le bannit d'abord)")
     u.banni = True
     u.banni_motif = payload.motif.strip() or None
     db.add(u)
@@ -526,8 +531,8 @@ def admin_supprimer_utilisateur(
     u = db.query(UserORM).filter(UserORM.id == user_id).one_or_none()
     if not u:
         raise HTTPException(404, "Utilisateur introuvable")
-    if u.email.lower() in admin_session.allowed_emails():
-        raise HTTPException(400, "Un compte admin (liste blanche) ne peut pas être supprimé depuis cette interface")
+    if u.email.lower() in admin_session.allowed_emails(db):
+        raise HTTPException(400, "Un compte admin ne peut pas être supprimé (révocation d'admin obligatoire d'abord)")
     details = {"user_id": u.id, "email": u.email, "nom": u.nom}
     db.query(SessionORM).filter(SessionORM.user_id == u.id).delete()
     db.query(KickoutNoticeORM).filter(KickoutNoticeORM.user_id == u.id).delete()
@@ -545,3 +550,57 @@ def admin_supprimer_utilisateur(
     db.commit()
     log_admin_event(db, None, "utilisateur_supprime", email=lock.email, details=details)
     return {"ok": True}
+
+
+def _verrou_racine(lock) -> None:
+    """Seul l'admin ROOT peut promouvoir ou révoquer un admin : les admin
+    délégués gèrent le contenu mais pas le périmètre des comptes admin."""
+    if lock.email not in admin_session.root_emails():
+        raise HTTPException(403, "Seul l'admin root peut promouvoir ou révoquer un admin")
+
+
+@router.post("/utilisateurs/{user_id}/promouvoir")
+def admin_promouvoir_utilisateur(
+    user_id: str,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Promouvoir un utilisateur en administrateur délégué (colonne
+    `users.role="admin"`). Réservé au ROOT. Son compte quitte la métrique
+    « Utilisateurs » (les admins n'y sont pas comptés) mais reste visible
+    dans la table avec le badge Admin et l'action de révocation."""
+    _verrou_racine(lock)
+    u = db.query(UserORM).filter(UserORM.id == user_id).one_or_none()
+    if not u:
+        raise HTTPException(404, "Utilisateur introuvable")
+    if u.role == "admin":
+        raise HTTPException(400, "Cet utilisateur est déjà administrateur")
+    u.role = "admin"
+    db.add(u)
+    db.commit()
+    log_admin_event(db, None, "utilisateur_promu_admin", email=lock.email, details={"user_id": u.id, "email": u.email})
+    return {"ok": True, "is_admin": True}
+
+
+@router.post("/utilisateurs/{user_id}/demouvoir")
+def admin_demouvoir_utilisateur(
+    user_id: str,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Révoque un admin délégué (`users.role="user"`). Réservé au ROOT — et
+    sans effet sur le ROOT lui-même (sa reconnaissance ne dépend pas de la
+    colonne `role`)."""
+    _verrou_racine(lock)
+    u = db.query(UserORM).filter(UserORM.id == user_id).one_or_none()
+    if not u:
+        raise HTTPException(404, "Utilisateur introuvable")
+    if u.email.lower() in admin_session.root_emails():
+        raise HTTPException(400, "Le compte admin root ne peut pas être révoqué")
+    if u.role != "admin":
+        raise HTTPException(400, "Cet utilisateur n'est pas administrateur")
+    u.role = "user"
+    db.add(u)
+    db.commit()
+    log_admin_event(db, None, "utilisateur_demote_admin", email=lock.email, details={"user_id": u.id, "email": u.email})
+    return {"ok": True, "is_admin": False}

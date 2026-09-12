@@ -77,12 +77,15 @@ export function authHeaders(_token?: string): Record<string, string> {
   return {};
 }
 
-/** 401 dans un panneau (verrou admin expiré pendant l'inactivité) : purge
- * la session locale et recharge — la page repasse par le formulaire de
- * connexion AU LIEU d'afficher une « liste vide » trompeuse. */
+/** 401 dans un panneau (verrou admin expiré pendant l'inactivité) : signale
+ * le retour au formulaire de connexion AU LIEU d'un rechargement complet de
+ * la page. AdminPage écoute l'événement `admin:session-expiree` et purge
+ * sa session locale → la page repasse par la connexion au lieu d'afficher
+ * une « liste vide » trompeuse. Retourne vrai si c'était un 401 (les
+ * autres erreurs restent à la charge de l'appelant). */
 export function purgerSessionExpiree(err: unknown): boolean {
   if (!(err instanceof ApiError && err.status === 401)) return false;
-  window.location.reload();
+  window.dispatchEvent(new Event("admin:session-expiree"));
   return true;
 }
 

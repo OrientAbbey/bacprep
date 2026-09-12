@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Ban, ShieldCheck } from "lucide-react";
-import { api } from "../../api/client";
+import { ApiError, api } from "../../api/client";
 import { AdminUtilisateur } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Skeleton } from "../../components/Skeleton";
@@ -9,12 +9,14 @@ import { classeLabel } from "../../lib/referentiel";
 import { formatRelativeTime } from "../../lib/time";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
-/** Table « Utilisateurs » : une ligne par élève (hors comptes admin),
- * identité déclarée + consentements + compteurs d'usage, et les actions de
- * modération (bannir/débannir/supprimer). Volontairement SANS donnée
- * sensible : rien de secret n'est stocké dans le produit (connexion
- * Google/mock, paiement par référence d'agrégateur), et la table ne
- * présente que ce que l'utilisateur a accepté de partager. */
+/** Table « Utilisateurs » : une ligne par compte (élèves ET admins — les
+ * comptes admin portent le badge Admin/racine et échappent à la modération
+ * bannir/supprimer), identité déclarée + consentements + compteurs d'usage,
+ * et les actions de modération (bannir/débannir/supprimer) + gouvernance
+ * (promouvoir/révoquer, réservé côté serveur à l'admin root). Volontairement
+ * SANS donnée sensible : rien de secret n'est stocké dans le produit
+ * (connexion Google/mock, paiement par référence d'agrégateur), et la table
+ * ne présente que ce que l'utilisateur a accepté de partager. */
 export function UtilisateursPanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const [rows, setRows] = useState<AdminUtilisateur[] | null>(null);
@@ -37,6 +39,17 @@ export function UtilisateursPanel({ token }: { token: string }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  /** Message d'erreur renvoyé par le serveur (ex. 403 « Seul l'admin root
+   * peut promouvoir… ») ou libellé de repli local. */
+  function messageErreur(err: unknown, defaut: string): string {
+    if (err instanceof ApiError) {
+      const d = err.detail as string | { detail?: string } | null;
+      if (typeof d === "string") return d;
+      if (d?.detail) return d.detail;
+    }
+    return defaut;
+  }
 
   async function bannir(u: AdminUtilisateur) {
     const motif = window.prompt(`Motif du bannissement de ${u.email} (optionnel) :`) ?? "";
@@ -75,6 +88,30 @@ export function UtilisateursPanel({ token }: { token: string }) {
     }
   }
 
+  // Promotion/révocation d'admin délégué : réservées AU SERVEUR à l'admin
+  // root (403 sinon). Le libellé du refus est affiché tel quel dans le toast.
+  async function promouvoir(u: AdminUtilisateur) {
+    try {
+      await api.post(`/api/admin/utilisateurs/${u.id}/promouvoir`, undefined, authHeaders(token));
+      showToast(`${u.email} est maintenant administrateur délégué.`, "success");
+      load();
+    } catch (err) {
+      if (!purgerSessionExpiree(err))
+        showToast(messageErreur(err, "La promotion a échoué — réessaie."), "error");
+    }
+  }
+
+  async function demouvoir(u: AdminUtilisateur) {
+    try {
+      await api.post(`/api/admin/utilisateurs/${u.id}/demouvoir`, undefined, authHeaders(token));
+      showToast(`${u.email} a récupéré un rôle d'élève.`, "info");
+      load();
+    } catch (err) {
+      if (!purgerSessionExpiree(err))
+        showToast(messageErreur(err, "La révocation a échoué — réessaie."), "error");
+    }
+  }
+
   if (erreur)
     return (
       <div
@@ -98,7 +135,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
   if (rows.length === 0)
     return (
       <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5 text-sm text-slate">
-        Aucun utilisateur inscrit pour l'instant (les comptes de la liste blanche admin sont exclus).
+        Aucun utilisateur inscrit pour l'instant.
       </div>
     );
 
@@ -133,6 +170,16 @@ export function UtilisateursPanel({ token }: { token: string }) {
                 <td className="py-2 pr-3">
                   <p className="font-medium">{u.nom || "—"}</p>
                   <p className="font-mono-tag text-[10px] text-slate">{u.email}</p>
+                  {u.is_admin && (
+                    <span
+                      className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono-tag text-[10px] ${
+                        u.racine ? "bg-correction-soft text-correction" : "bg-highlight-soft text-highlight"
+                      }`}
+                    >
+                      <ShieldCheck size={10} strokeWidth={2} aria-hidden="true" />
+                      {u.racine ? "Admin racine" : "Admin délégué"}
+                    </span>
+                  )}
                   {u.banni && (
                     <p className="mt-0.5 font-mono-tag text-[10px] text-correction">
                       BANNI{u.banni_motif ? ` — ${u.banni_motif}` : ""}
@@ -174,32 +221,61 @@ export function UtilisateursPanel({ token }: { token: string }) {
                 </td>
                 <td className="py-2">
                   <div className="flex flex-wrap gap-1.5">
-                    {u.banni ? (
-                      <button
-                        type="button"
-                        onClick={() => debannir(u)}
-                        className="flex min-h-[32px] items-center gap-1 rounded-full border border-valide/40 px-3 text-xs font-medium text-valide hover:bg-valide-soft/40"
-                      >
-                        <ShieldCheck size={12} strokeWidth={2} aria-hidden="true" />
-                        Débannir
-                      </button>
+                    {/* Admins : pas de modération bannir/supprimer. Le racine
+                        n'est ni révocable ni listé en action ; le délégué peut
+                        être révoqué (le serveur n'accepte que si l'admin
+                        courant est ROOT). */}
+                    {u.is_admin ? (
+                      u.racine ? (
+                        <span className="font-mono-tag text-[10px] text-slate">Compte racine — non modifiable</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => demouvoir(u)}
+                          title="Révocation réservée à l'admin root (colonne users.role)"
+                          className="min-h-[32px] rounded-full border border-correction/40 px-3 text-xs font-medium text-correction hover:bg-correction-soft/40"
+                        >
+                          Démouvoir
+                        </button>
+                      )
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => bannir(u)}
-                        className="flex min-h-[32px] items-center gap-1 rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-correction/50 hover:text-correction"
-                      >
-                        <Ban size={12} strokeWidth={2} aria-hidden="true" />
-                        Bannir
-                      </button>
+                      <>
+                        {u.banni ? (
+                          <button
+                            type="button"
+                            onClick={() => debannir(u)}
+                            className="flex min-h-[32px] items-center gap-1 rounded-full border border-valide/40 px-3 text-xs font-medium text-valide hover:bg-valide-soft/40"
+                          >
+                            <ShieldCheck size={12} strokeWidth={2} aria-hidden="true" />
+                            Débannir
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => bannir(u)}
+                            className="flex min-h-[32px] items-center gap-1 rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-correction/50 hover:text-correction"
+                          >
+                            <Ban size={12} strokeWidth={2} aria-hidden="true" />
+                            Bannir
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => supprimer(u)}
+                          className="min-h-[32px] rounded-full border border-correction/40 px-3 text-xs font-medium text-correction hover:bg-correction-soft/40"
+                        >
+                          Supprimer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => promouvoir(u)}
+                          title="Promotion réservée à l'admin root"
+                          className="min-h-[32px] rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-highlight/50 hover:text-highlight"
+                        >
+                          Promouvoir
+                        </button>
+                      </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => supprimer(u)}
-                      className="min-h-[32px] rounded-full border border-correction/40 px-3 text-xs font-medium text-correction hover:bg-correction-soft/40"
-                    >
-                      Supprimer
-                    </button>
                   </div>
                 </td>
               </tr>

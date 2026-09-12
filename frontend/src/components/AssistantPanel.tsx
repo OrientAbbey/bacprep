@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, ChevronRight, Maximize2, Minimize2, Plus, Send, StickyNote, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Plus, Send, StickyNote, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
@@ -53,11 +53,10 @@ const LABEL_MAX_LEN = 24;
 
 /**
  * Panneau de l'assistant. Suit le thème clair/sombre de la page et
- * n'assume plus sa propre position à l'écran dans le cas standard :
- * l'appelant (ViewerPage) le place soit dans une colonne latérale
- * (bureau), soit en feuille modale (mobile). Un troisième mode, plein
- * écran centré (`expanded`), est piloté par le bouton d'agrandissement du
- * panneau lui-même et prend le pas sur les deux autres.
+ * n'assume plus sa propre position à l'écran : l'appelant (ViewerPage)
+ * le place SOIT en tiroir latéral droit (bureau, colonne sœur du lecteur
+ * — jamais par-dessus l'épreuve), SOIT en feuille modale plein écran
+ * (mobile). Ce sont les DEUX SEULS modes.
  *
  * MODE ÉPHÉMÈRE : si l'élève a refusé le stockage de ses conversations IA
  * (`user.consent_ia === false`), AUCUNE discussion n'est envoyée à l'API —
@@ -130,7 +129,6 @@ export function AssistantPanel({
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [erreurChargement, setErreurChargement] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   // Bloc contexte repliable : REPLIÉ par défaut pour laisser le maximum de
   // place au fil de discussion (le contexte complet reste transmis à
   // l'assistant quoi qu'il arrive — ce n'est qu'un choix d'affichage).
@@ -235,17 +233,17 @@ export function AssistantPanel({
     return () => cancelAnimationFrame(raf);
   }, [loading]);
 
-  // Échap ferme le mode agrandi (plein écran) ou la feuille mobile ; en
-  // bureau inline, le panneau ne bouge pas.
+  // Échap ferme le panneau lui-même — en feuille mobile comme en tiroir
+  // bureau (le tiroir desktop, colonne sœur du lecteur, se ferme sur la
+  // même touche).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      if (expanded) setExpanded(false);
-      else if (mobile) onClose();
+      onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [expanded, mobile, onClose]);
+  }, [onClose]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -449,26 +447,15 @@ export function AssistantPanel({
   // Aperçu une-ligne du contexte quand le bloc est replié.
   const aperçuContexte = (active?.contexte ?? "").replace(/\s+/g, " ").slice(0, CONTEXTE_PREVIEW_LENGTH);
 
-  const containerClass = expanded
-    ? "fixed inset-0 z-[60] m-auto flex h-[88vh] w-[min(760px,94vw)] flex-col rounded-lg border border-ink-soft/15 bg-paper-raised text-ink shadow-2xl"
-    : mobile
-    ? "fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col rounded-t-lg border-t border-ink-soft/15 bg-paper-raised text-ink shadow-2xl"
+  const containerClass = mobile
+    ? "fixed inset-0 z-50 flex flex-col bg-paper-raised text-ink"
     : "flex h-full w-full flex-col bg-paper-raised text-ink";
 
   return (
     <>
-      {expanded && (
-        <div
-          className="fixed inset-0 z-[59] bg-ink/50 backdrop-blur-sm"
-          onClick={() => setExpanded(false)}
-          aria-hidden="true"
-        />
-      )}
       <div
         className={containerClass}
-        role={expanded ? "dialog" : undefined}
-        aria-modal={expanded ? "true" : undefined}
-        aria-label={expanded ? ASSISTANT_TITRE : undefined}
+        aria-label={ASSISTANT_TITRE}
       >
         {/* En-tête en deux rangées : titre du produit (Tuteur IA Prep) avec
             les actions à droite, puis la barre d'onglets de discussion.
@@ -493,19 +480,6 @@ export function AssistantPanel({
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-ink-soft/25 text-ink-soft disabled:opacity-40"
               >
                 <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setExpanded((e) => !e)}
-                title={expanded ? "Réduire" : "Agrandir la discussion"}
-                aria-label={expanded ? "Réduire la discussion" : "Agrandir la discussion"}
-                className="p-1 text-ink-soft hover:text-ink"
-              >
-                {expanded ? (
-                  <Minimize2 size={18} strokeWidth={1.75} aria-hidden="true" />
-                ) : (
-                  <Maximize2 size={18} strokeWidth={1.75} aria-hidden="true" />
-                )}
               </button>
               <button
                 type="button"

@@ -392,10 +392,21 @@ def _activite_map_epreuves(db: Session, *sources) -> dict[str, EpreuveORM]:
 
 
 def _activite_connexions(db: Session, user) -> list[dict]:
-    return [
-        _activite_item("connexion", s.issued_at, "Connexion à ton compte", details=s.platform or "web")
-        for s in _activite_recent(db, user, SessionORM, SessionORM.issued_at)
-    ]
+    """Connexions passées, libellé distinguant la plateforme de l'appareil
+    (« mobile » = tel, « ordinateur » = web) — posée par le frontend à la
+    connexion (champ `platform` de MockLoginIn/GoogleLoginIn)."""
+    out = []
+    for s in _activite_recent(db, user, SessionORM, SessionORM.issued_at):
+        mobile = (s.platform or "web") != "web"
+        out.append(
+            _activite_item(
+                "connexion",
+                s.issued_at,
+                "Connexion à ton compte (mobile)" if mobile else "Connexion à ton compte (ordinateur)",
+                details=s.platform or "web",
+            )
+        )
+    return out
 
 
 def _activite_consultations(consultations, epreuves) -> list[dict]:

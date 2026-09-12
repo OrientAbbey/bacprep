@@ -1,5 +1,5 @@
 import { ClipboardCheck, FileText, Flag, Lock } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { EpreuveDetail } from "../api/types";
@@ -87,11 +87,6 @@ export function ViewerPage() {
     null
   );
   const [signalementOuvert, setSignalementOuvert] = useState(false);
-  const [assistantWidth, setAssistantWidth] = useState<number>(() => {
-    try { return Number(localStorage.getItem("assistant-panel-width")) || 320; } catch { return 320; }
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragOrigin = useRef({ x: 0, startWidth: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const mobile = useIsMobile();
 
@@ -144,35 +139,7 @@ export function ViewerPage() {
     setSelection(null);
   }, [user]);
 
-  // Largeur du panneau assistant persistée entre les visites.
-  useEffect(() => {
-    try { localStorage.setItem("assistant-panel-width", String(assistantWidth)); } catch { /* stockage indisponible */ }
-  }, [assistantWidth]);
-
-  // Redimension au pointeur : largeur bornée en clamp [280, min(45vw, 560)].
-  useEffect(() => {
-    if (!isDragging) return;
-    function onMove(e: PointerEvent) {
-      const largeur = dragOrigin.current.startWidth + (dragOrigin.current.x - e.clientX);
-      const min = Math.max(280, Math.min(560, window.innerWidth * 0.45));
-      setAssistantWidth(Math.max(280, Math.min(min, largeur)));
-    }
-    function stop() { setIsDragging(false); }
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", stop);
-    return () => {
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", stop);
-    };
-  }, [isDragging]);
-
-  function updateFromSelection() {
+  const updateFromSelection = useCallback(() => {
     const sel = window.getSelection();
     const text = sel?.toString().trim();
     if (!sel || !text || sel.rangeCount === 0 || !epreuve || sel.isCollapsed) {
@@ -197,7 +164,26 @@ export function ViewerPage() {
 
     const rect = sel.getRangeAt(0).getBoundingClientRect();
     setSelection({ x: rect.left, y: rect.top - 48, markdown });
-  }
+  }, [epreuve, onglet]);
+
+  // Sélection au TOUCHER (mobile) : `mouseup` ne se déclenche pas sur la
+  // sélection par long-appui — on écoute le `selectionchange` global et on
+  // relit la sélection une fois le pointage relâché (rAF). Le garde-fou
+  // `containerRef.contains` ci-dessus ne retient que les sélections dans la
+  // zone d'épreuve.
+  useEffect(() => {
+    if (!mobile) return;
+    let raf = 0;
+    function onSelectionChange() {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updateFromSelection);
+    }
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      cancelAnimationFrame(raf);
+    };
+  }, [mobile, updateFromSelection]);
 
   // La sélection par CLAVIER (Shift+flèches) ne déclenche aucun mouseup :
   // sans ce gestionnaire onKeyUp, les lecteurs au clavier ne pouvaient
@@ -319,8 +305,10 @@ export function ViewerPage() {
   };
 
   return (
-    <div className="flex items-start gap-4">
-      <div className="min-w-0 flex-1">
+    <div className="flex h-[calc(100dvh-7rem)] flex-col">
+      {/* Rangées d'en-tête FIXES (ne défilent pas) : tout l'espace vertical
+          restant est réservé au panneau de lecture ci-dessous. */}
+      <div className="shrink-0">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h1 className="font-serif-brand text-2xl">{epreuve.matiere}</h1>
@@ -409,90 +397,72 @@ export function ViewerPage() {
             </Link>
           </div>
         )}
-
-        <div
-          ref={containerRef}
-          role="tabpanel"
-          id="panel-epreuve"
-          aria-labelledby={`tab-${onglet}`}
-          onMouseUp={updateFromSelection}
-          onKeyUp={onKeyUp}
-          onCopy={onCopy}
-          className="relative overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
-        >
-          <Watermark label={`${user?.email ?? "Consultation invitée"} · ${new Date().toLocaleString("fr-FR")}`} />
-          <div className="relative">
-            <MarkdownContent content={contenuActif || ""} variant="epreuve" trackSourcePositions />
-          </div>
-        </div>
-
-        {/* Barre de sélection : TOUJOURS affichée (découvrabilité) — les
-            actions compte y sont désactivées avec leur motif en info-bulle ;
-            seul le lanceur flottant de l'assistant reste masqué au
-            visiteur. */}
-        {selection && (
-          <SelectionBar
-            x={selection.x}
-            y={selection.y}
-            peutDemander={user !== null}
-            peutNoter={user !== null && user.consent_notes !== false}
-            motifVerrou={
-              user
-                ? "Tu as refusé le stockage de tes notes — modifiable dans ton profil"
-                : "Connecte-toi pour utiliser cette fonctionnalité"
-            }
-            onAsk={() => askAbout(selection.markdown)}
-            onNote={() => {
-              setNoteOuverte({ contexte: selection.markdown });
-              setSelection(null);
-            }}
-          />
-        )}
-
-        {user && !assistantOpen && <AssistantLauncherButton onClick={openAssistantGeneral} />}
       </div>
 
-      {/* Bureau : panneau affiché À CÔTÉ du contenu (colonne latérale qui
-          réduit la largeur de la zone de lecture), jamais par-dessus, et
-          toujours au-dessus de l'en-tête (z-40 > z-30 du header) plutôt
-          que de risquer de passer derrière lui. Mobile : feuille modale
-          plein écran depuis le bas (voir AssistantPanel). */}
-      {user &&
-        assistantOpen &&
-        (mobile ? (
-          <AssistantPanel {...panelProps} mobile />
-        ) : (
-          <aside
-              className="sticky top-20 z-40 h-[calc(100vh-6rem)] shrink-0 overflow-hidden rounded-lg border border-ink-soft/15 shadow-lg"
-              style={{ width: assistantWidth }}
-            >
-              {!mobile && (
-                <div
-                  role="separator"
-                  aria-orientation="vertical"
-                  aria-valuenow={assistantWidth}
-                  aria-valuemin={280}
-                  aria-valuemax={560}
-                  tabIndex={0}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    setIsDragging(true);
-                    dragOrigin.current = { x: e.clientX, startWidth: assistantWidth };
-                  }}
-                  onKeyDown={(e) => {
-                    const min = Math.max(280, Math.min(560, window.innerWidth * 0.45));
-                    if (e.key === "ArrowLeft") setAssistantWidth((w) => Math.max(280, Math.min(min, w + 16)));
-                    else if (e.key === "ArrowRight") setAssistantWidth((w) => Math.max(280, Math.min(min, w - 16)));
-                  }}
-                  className="absolute left-0 top-0 z-10 flex h-full w-1.5 cursor-col-resize items-center justify-center select-none hover:bg-highlight/40 focus:outline-none focus-visible:bg-highlight/50"
-                  title="Glisser pour redimensionner"
-                >
-                  <div className="h-8 w-0.5 rounded-full bg-ink-soft/30" />
-                </div>
-              )}
-              <AssistantPanel {...panelProps} mobile={false} />
-            </aside>
-        ))}
+      {/* Zone de lecture : height fixe, scroll INTERNE (le panneau ne défile
+          plus avec la page). Le tiroir de l'assistant (bureau) est une
+          colonne SŒUR du lecteur (même rangée flex, même hauteur) — jamais
+          posé par-dessus : l'épreuve reste intégralement lisible. */}
+      <div className="mt-3 flex min-h-0 flex-1">
+        <div className="relative min-h-0 min-w-0 flex-1">
+          <div
+            ref={containerRef}
+            role="tabpanel"
+            id="panel-epreuve"
+            aria-labelledby={`tab-${onglet}`}
+            onMouseUp={updateFromSelection}
+            onKeyUp={onKeyUp}
+            onCopy={onCopy}
+            onContextMenu={(e) => e.preventDefault()}
+            className="absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
+          >
+            <Watermark label={`${user?.email ?? "Consultation invitée"} · ${new Date().toLocaleString("fr-FR")}`} />
+            <div className="relative">
+              <MarkdownContent content={contenuActif || ""} variant="epreuve" trackSourcePositions />
+            </div>
+          </div>
+
+          {/* Barre de sélection : TOUJOURS affichée (découvrabilité) — les
+              actions compte y sont désactivées avec leur motif en info-bulle ;
+              seul le lanceur flottant de l'assistant reste masqué au
+              visiteur. */}
+          {selection && (
+            <SelectionBar
+              x={selection.x}
+              y={selection.y}
+              peutDemander={user !== null}
+              peutNoter={user !== null && user.consent_notes !== false}
+              motifVerrou={
+                user
+                  ? "Tu as refusé le stockage de tes notes — modifiable dans ton profil"
+                  : "Connecte-toi pour utiliser cette fonctionnalité"
+              }
+              onAsk={() => askAbout(selection.markdown)}
+              onNote={() => {
+                setNoteOuverte({ contexte: selection.markdown });
+                setSelection(null);
+              }}
+            />
+          )}
+
+          {user && !assistantOpen && <AssistantLauncherButton onClick={openAssistantGeneral} />}
+        </div>
+
+        {/* Tiroir BUREAU : colonne latérale droite accolée au lecteur (pas de
+            recouvrement de l'épreuve), même hauteur que lui, largeur fixe
+            autour de 520-560. Fermeture : bouton X || Échap || bouton
+            lanceur. */}
+        {user && assistantOpen && !mobile && (
+          <aside className="ml-4 min-h-0 w-[min(560px,46vw)] shrink-0 overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised shadow-lg">
+            <AssistantPanel {...panelProps} mobile={false} />
+          </aside>
+        )}
+      </div>
+
+      {/* Feuille MOBILE : plein écran sans rebord (le `top-16`/`rounded-t-lg`
+          laissaient le panneau chevaucher l'en-tête et apparaître « en
+          dessous »). */}
+      {user && assistantOpen && mobile && <AssistantPanel {...panelProps} mobile />}
 
       {user && noteOuverte && (
         <NoteEditor

@@ -12,7 +12,7 @@
 | 2.0 | Journalisation applicative, images jointes, assistant multi-discussions persistées et plafonnées, portée d'abonnement supplémentaire, profil utilisateur, historique de consultation, notifications temps réel (WebSocket), mode clair/sombre. Détail en section 12. |
 | 2.1 | Correctifs de contraste, préremplissage et récapitulatif de l'abonnement, filtre année par défaut, profil enrichi avec annulation, authentification Google réelle activable, mise à jour des modèles IA avec journalisation détaillée, audit d'accessibilité, script de déploiement de test. Détail en section 13. |
 | 2.2 | Restructuration du stockage des données (dossier unique), épreuves multi-filières, fusion du sujet et du corrigé en une seule entité, reconnexion WebSocket automatique, correctif de contraste du panneau assistant, verrou de session admin avec liste d'emails autorisés, révélation progressive du paiement, optimisations de performance (base de données, fichiers, appels IA), déploiement unifié gratuit (retrait de Vercel au profit de Render), guide d'intégration du paiement réel. Détail en section 14. |
-| 2.3 | Réponses de l'assistant en streaming, envoi d'images en contexte à l'IA, persistance du verrou admin en base, nouveau statut d'accès "Ouvert", refonte du panneau assistant (contraste, avatars, disposition à côté du contenu, vue plein écran, défilement des onglets, champ multi-ligne), recherche insensible aux accents, back-office enrichi (recherche, pagination, notifications toast, gestion fine des images), correctifs d'accessibilité clavier et de contraste, nombreux bugs corrigés et documentés avec leur cause identifiée. Détail en section 15. |
+| 2.3 | Réponses de l'assistant en streaming, envoi d'images en contexte à l'IA, persistance du verrou admin en base, nouveau statut d'accès "Ouvert", refonte du panneau assistant (contraste, avatars, tiroir droit bureau / feuille modale mobile, défilement des onglets, champ multi-ligne), recherche insensible aux accents, back-office enrichi (recherche, pagination, notifications toast, gestion fine des images), correctifs d'accessibilité clavier et de contraste, nombreux bugs corrigés et documentés avec leur cause identifiée. Détail en section 15. |
 | 2.4 (cette version) | Mode visiteur (épreuves gratuites consultables sans compte, paywall 401/403 distincts), fonctions compte masquées en visiteur, consentement granulaire à la connexion (IA / notes, révocable, assistant éphémère en cas de refus), activité enrichie et cliquable (ouverture de l'épreuve ou de la discussion exacte), « Consultées récemment » à l'accueil, forfaits en cartes et page abonnement publique (souscription gated), accès admin réservé aux emails de la liste blanche avec déconnexion automatique paramétrable (3 min), correction du bug « sujet.md » affiché comme image, journal d'audit détaillé et navigable, back-office Utilisateurs (table par élève, bannir/débannir/supprimer, métrique hors admins). Détail en section 16. |
 
 ---
@@ -237,7 +237,7 @@ Soit $f(x) = x^2 - 3x + 2$. Déterminer les racines de $f$.
 - **(v2.0)** Les discussions sont **persistées côté serveur** (table `ai_conversations`) : elles survivent à un rechargement de page ou à une navigation ailleurs puis un retour sur l'épreuve — ce n'était pas le cas dans la version initiale du prototype (état uniquement en mémoire du navigateur).
 - **(v2.3)** Les réponses sont désormais **transmises en flux (streaming)**, activé par défaut : le texte s'affiche au fur et à mesure de sa génération plutôt qu'après une attente silencieuse suivie d'un bloc complet. Voir section 15.3.
 - **(v2.3)** Si le passage sélectionné contient une image (`![légende](url)`), elle est transmise en pièce jointe au fournisseur (Gemini, multimodal) plutôt qu'ignorée. Voir section 15.4.
-- **(v2.3)** Le panneau peut s'afficher en **vue plein écran centrée** (bouton dédié dans son en-tête), en plus de la disposition latérale (bureau) et modale (mobile).
+- **(v2.3)** Le panneau s'affiche en **tiroir latéral droit** (bureau — colonne sœur du lecteur qui ne le recouvre jamais) ou en **feuille modale plein écran** (mobile), les deux seuls modes ; l'ancienne vue plein écran centrée et le redimensionnement par glisser sont retirés.
 - L'assistant répond en s'appuyant sur : (a) le passage sélectionné ou l'épreuve entière selon le mode choisi, (b) le contexte de l'épreuve (matière, filière, année) pour calibrer le niveau de réponse.
 
 **Comportement hors-ligne :**
@@ -779,7 +779,7 @@ Le Module 8 (back-office) reflète directement la fusion du modèle décrite en 
 **Constat :** n'importe qui connaissant le jeton admin partagé pouvait se connecter, sans limite sur le nombre de connexions simultanées — aucune protection contre deux personnes modifiant la même épreuve en même temps sans le savoir.
 
 **Solution :** deux mécanismes combinés :
-- **Liste blanche d'emails** (`ADMIN_EMAILS`, configurable) — le jeton seul ne suffit plus, l'email utilisé doit aussi figurer dans la liste autorisée.
+- **Liste blanche d'emails** (`ADMIN_ROOT` — email RACINE, l'ancien `ADMIN_EMAILS` reste un alias — complétée par les comptes **promus admin délégué** depuis la table Utilisateurs, réservé au root ; configurable) — le jeton seul ne suffit plus, l'email utilisé doit aussi figurer dans la liste autorisée.
 - **Session admin unique** : une seule connexion active à la fois, tenue en mémoire côté serveur. Une deuxième personne autorisée qui tente de se connecter reçoit un message explicite (qui est connecté, depuis quand) plutôt qu'un accès silencieusement partagé ou un refus sans explication, avec la possibilité de **forcer la prise de contrôle** si la première session a été oubliée. Une session inactive depuis plus de 30 minutes se libère automatiquement pour ne pas bloquer indéfiniment l'accès. Testé : connexion, tentative bloquée par un second email, prise de contrôle forcée réussie.
 
 Voir Module 1 (principe similaire déjà en place côté élève) et Module 8.
@@ -847,7 +847,7 @@ faisait partir silencieusement l'appel `GET` sans le jeton d'authentification.
 en-têtes, comme les autres méthodes. Corrigé au passage : `load_dotenv()`
 était appelé sans chemin explicite côté backend, ce qui ne trouvait le
 fichier `.env` que si `uvicorn` était lancé depuis le dossier `backend/`
-lui-même — lancé d'ailleurs, `ADMIN_EMAILS` et les autres variables
+lui-même — lancé d'ailleurs, `ADMIN_ROOT`/`ADMIN_EMAILS` et les autres variables
 retombaient silencieusement sur leurs valeurs par défaut. Le chemin est
 désormais résolu en absolu, comme `BASE_DIR` (voir section 3).
 
@@ -951,9 +951,10 @@ page Abonnement) — "éducation" y trouve désormais aussi "Éducation".
   (qui, lui, devient très sombre en mode sombre) — texte sombre sur fond
   sombre.
 - Le panneau recouvrait le contenu plutôt que de s'ouvrir à côté sur
-  bureau, et pouvait passer sous l'en-tête de l'application (absence de
+  bureau, pouvait passer sous l'en-tête de l'application (absence de
   z-index explicite sur sa colonne latérale, alors que l'en-tête en
-  déclare un).
+  déclare un), et débordait au-delà du lecteur quand on défilaIT la page
+  (hauteur non bornée).
 - Une nouvelle discussion ouverte sans sélection préalable recevait une
   chaîne de contexte vide plutôt que le contenu intégral de l'épreuve.
 - Les onglets de discussions multiples devenaient inaccessibles au-delà
@@ -981,10 +982,12 @@ page Abonnement) — "éducation" y trouve désormais aussi "Éducation".
   (`paper`/`paper-raised`/`ink`) plutôt qu'un fond toujours sombre ;
   `text-ink` remplace `text-highlight-ink` partout où le fond associé
   était `highlight-soft` plutôt que `highlight`.
-- Disposition en colonne latérale à côté du contenu sur bureau (avec un
-  z-index explicite, supérieur à celui de l'en-tête), feuille modale sur
-  mobile, et un troisième mode plein écran centré accessible via un bouton
-  dédié dans l'en-tête du panneau.
+- Disposition en colonne latérale à côté du contenu sur bureau (le tiroir
+  est une colonne SŒUR du lecteur, même hauteur, jamais posé par-dessus —
+  l'épreuve reste intégralement lisible ; un z-index explicite, supérieur à
+  celui de l'en-tête, reste déclaré), et feuille modale plein écran sur
+  mobile — **ce sont les deux seuls modes** (l'ancienne vue plein écran
+  centrée et le redimensionnement par glisser ont été retirés).
 - Une nouvelle discussion sans sélection préalable reçoit désormais le
   contenu intégral de l'épreuve (onglet actif) comme contexte, plutôt
   qu'une chaîne vide ; ce contexte, s'il est long, est affiché de façon
@@ -1116,10 +1119,11 @@ vers la page après connexion. Les forfaits se présentent désormais en
 **cartes** (libellé, prix, durée, description fournie par `/api/pricing`)
 sélectionnables au clavier (`radiogroup`), au lieu de pills compactes.
 
-### 16.6 Accès admin restreint aux emails de la liste blanche
+### 16.6 Accès admin restreint au root et aux admins promus
 
 Le lien « Admin » et la route `/admin` ne sont accessibles qu'à un
-utilisateur **connecté** dont l'email figure dans `ADMIN_EMAILS` —
+utilisateur **connecté** dont l'email est **racine** (`ADMIN_ROOT`, alias
+`ADMIN_EMAILS`) ou **promu** administrateur délégué —
 `is_admin` est calculé **serveur** dans `UserOut` (la liste blanche ne part
 jamais au client). Il s'agit d'une commodité d'affichage : la console reste
 réellement protégée par le jeton `ADMIN_TOKEN` + liste blanche vérifiés à

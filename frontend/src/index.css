@@ -15,10 +15,9 @@
    ÉCHELLE Z-INDEX (une seule source de vérité) :
    - z-20   : menus déroulants (Combobox) ;
    - z-30   : header sticky (AppBar) ;
-   - z-40   : colonne latérale assistant (desktop) ;
+   - z-40   : bouton lanceur assistant (fixed) ;
    - z-50   : éléments flottants (boutons de sélection, feuille mobile) ;
-   - z-[59] : overlay de la modale assistant étendue ;
-   - z-[60] : modale assistant étendue ;
+   - z-[60] : modales de dialogue (éditeur de note, signalement, confirm) ;
    - z-[100]: pile de toasts (toujours au-dessus de tout).
    ============================================================================ */
 
@@ -392,14 +391,18 @@ body {
   border-radius: 4px;
 }
 /* KaTeX : les formules trop larges (matrices, longues expressions)
-   défilent horizontalement au lieu de déborder de la bulle. La découpe
-   verticale reste visible pour ne jamais rogner les fractions hautes
-   (\tfrac, \frac superposés) ni les sauts de ligne \\[2pt]. */
+   défilent horizontalement au lieu de déborder de la bulle.
+   IMPORTANT — `overflow-y` doit valoir `hidden`, JAMAIS `visible` : à
+   gauche d'un `overflow-x: auto`, un `overflow-y: visible` est recalculé
+   en `auto` par le navigateur et crée une zone de défilement VERTICALE
+   (barres verticales parasites à côté de chaque formule, visibles surtout
+   sous Windows et en sombre). `hidden` + un peu de padding bas conserve
+   les fractions hautes (\tfrac, \frac superposés) et les `\\[2pt]`. */
 .prose-chat .katex-display {
   max-width: 100%;
   overflow-x: auto;
-  overflow-y: visible;
-  padding: 0.2em 0;
+  overflow-y: hidden;
+  padding: 0.2em 0.05em 0.35em;
 }
 .prose-chat .katex {
   white-space: normal;

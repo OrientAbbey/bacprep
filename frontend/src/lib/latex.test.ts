@@ -96,4 +96,53 @@ const out = normalizeLatexDelimiters(src);
     const out = normalizeLatexDelimiters("Début $$x=1\nsuite sans fin.");
     expect(out).toContain("x=1");
   });
+
+  it("ne re-enveloppe pas un \\begin{array} MULTILIGNE servi DANS \\[ \\]", () => {
+    // Bug corrigé : une regex globale convertissait \\[ \\] puis re-wrapait
+    // l'environnement du corps multiligne → double $$...$$ illisible
+    // ($$$$\n\\begin...), formules jamais rendues par remark-math.
+    const src = "Donner le tableau de variation :\\[\\begin{array}{c|cccc}\nx&0&1&2&3\\\\\\hline\nf'(x)&+&0&-&+\n\\end{array}\\]";
+    const out = normalizeLatexDelimiters(src);
+    // Une seule enveloppe $$ ; le « \\[ » de fin de ligne n'est PAS un délimiteur.
+    expect(out.match(/\$\$/g) || []).toHaveLength(2);
+    expect(out).toContain("\\begin{array}{c|cccc}");
+    expect(out).toContain("\\\\\\hline");
+    expect(out).not.toContain("$$$$");
+    expect(out).toContain("$$\n\\begin{array}{c|cccc}");
+  });
+
+  it("convertit un \\begin{aligned} nu DANS un bloc \\[ \\] sans double enveloppe", () => {
+    const src = "\\[\\begin{aligned}\nu_1 &= 1\\\\[2pt]\nu_2 &= 2\n\\end{aligned}\\]";
+    const out = normalizeLatexDelimiters(src);
+    expect(out.match(/\$\$/g) || []).toHaveLength(2);
+    expect(out).not.toContain("$$$$");
+    expect(out).toContain("\\\\[2pt]");
+    expect(out).toMatch(/^\$\$\n\\begin\{aligned\}/);
+  });
+
+  it("enveloppe un \\begin{array} nu en table (présence de \\\\ \\hline)", () => {
+    const src = "\\begin{array}{c|ccc}\na&b&c\\\\\\hline\nd&e&f\n\\end{array}";
+    const out = normalizeLatexDelimiters(src);
+    expect(out.match(/\$\$/g) || []).toHaveLength(2);
+    expect(out).toContain("\\\\\\hline");
+  });
+
+  it("gère \\', \\searrow, \\nearrow, \\tfrac32 et \\text{variation sans les briser", () => {
+    // Extrait du style « tableau de variation » renvoyé par l'assistant :
+    // le fléchage de la mmachine à états ne doit ni re-wraper ni décaler.
+    const src = "\\[\\begin{array}{c|ccccccc}\nx&-\\infty&&&+\\infty\\\\\\hline\nf'(x)&&-&0&+\\\\\\hline\nf&\\nearrow&&\\searrow&&\\nearrow\n\\end{array}\\]";
+    const out = normalizeLatexDelimiters(src);
+    expect(out.match(/\$\$/g) || []).toHaveLength(2);
+    expect(out).toContain("\\nearrow");
+    expect(out).toContain("\\searrow");
+    expect(out).not.toContain("$$$$");
+  });
+
+  it("rend \\tfrac32 et \\text{variation tels quels dans un corps de bloc", () => {
+    const src = "\\[\\tfrac32\\text{ variation sur }[0;2]\\]";
+    const out = normalizeLatexDelimiters(src);
+    expect(out).toContain("\\tfrac32");
+    expect(out).toContain("\\text{ variation sur }[0;2]");
+    expect(out.match(/\$\$/g) || []).toHaveLength(2);
+  });
 });

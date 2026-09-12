@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..db import utc_now
-from ..db_models import AdminLockORM
+from ..db_models import AdminLockORM, UserORM
 from .logging_config import get_logger
 
 log = get_logger("admin_session")
@@ -34,10 +34,44 @@ def session_timeout() -> timedelta:
     return timedelta(minutes=max(0.5, minutes))
 
 
-def allowed_emails() -> set[str]:
-    """Liste blanche d'emails admin (CSV, `ADMIN_EMAILS`), en minuscules."""
-    raw = os.getenv("ADMIN_EMAILS", "")
+def root_emails() -> set[str]:
+    """Emails ROOT de l'administration (un seul en principe, `ADMIN_ROOT`),
+    en minuscules. Seul le root peut promouvoir (ou révoquer) un admin.
+    `ADMIN_EMAILS` reste accepté comme alias historique pour la migration
+    des .env existants."""
+    raw = os.getenv("ADMIN_ROOT", "") or os.getenv("ADMIN_EMAILS", "")
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def promoted_emails(db: Optional[Session]) -> set[str]:
+    """Emails promus ADMIN celui de la liste blanche (colonne
+    `users.role='admin'`, posée par un ADMIN_ROOT du back-office) — ce sont
+    des utilisateurs comme les autres, bannissables/délégables/retirables
+    depuis cette même table admin."""
+    if db is None:
+        return set()
+    return {email.lower() for (email,) in db.query(UserORM.email).filter(UserORM.role == "admin").all()}
+
+
+def allowed_emails(db: Optional[Session] = None) -> set[str]:
+    """Liste blanche admin = ROOT (`ADMIN_ROOT`) ∪ promus (`users.role =
+    "admin"`). Sans session (`db=None`), seuls les emails ROOT sont
+    retournés — appelé en défensif par du code hors requête (aucune requête
+    SQL n'est possible sans session)."""
+    return root_emails() | promoted_emails(db)
+
+
+def align_root_role(db: Session, email: str) -> None:
+    """Aligne `users.role` sur "admin" pour un email ROOT à son login : le
+    rôle en base reste LISIBLE et cohérent, mais la reconnaissance admin est
+    toujours calculée par `allowed_emails` (cette colonne ne fait pas foi à
+    elle seule)."""
+    if email.strip().lower() not in root_emails():
+        return
+    user = db.query(UserORM).filter(UserORM.email == email).one_or_none()
+    if user is not None and user.role != "admin":
+        user.role = "admin"
+        db.commit()
 
 
 def _get_lock(db: Session) -> Optional[AdminLockORM]:

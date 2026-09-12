@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
@@ -20,6 +21,7 @@ export function AdminPage() {
   const [token, setToken] = useState("");
   const [email, setEmail] = useState("");
   const [loginToken, setLoginToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [blocker, setBlocker] = useState<{ message: string; active_email: string } | null>(null);
 
@@ -59,19 +61,32 @@ export function AdminPage() {
   }
 
   /** Session admin expirée côté serveur (401) : repasse par le formulaire
-   * de connexion. Retourne vrai si c'était un 401 — les autres erreurs
-   * restent à la charge de l'appelant. */
+   * de connexion avec un champ jeton VIDÉ (le jeton de la session précédente
+   * ne doit pas rester lisible sur un poste partagé). Retourne vrai si c'était
+   * un 401 — les autres erreurs restent à la charge de l'appelant. */
   function handle401(err: unknown): boolean {
     if (!(err instanceof ApiError && err.status === 401)) return false;
     setToken("");
+    setLoginToken("");
+    setShowToken(false);
+    setError(null);
+    setBlocker(null);
     return true;
   }
 
   // Même purge, sans valeur de retour — à passer aux panneaux qui n'ont pas
   // accès à setToken (EpreuvesPanel gère ses 401 localement).
   function onSessionExpiree() {
-    setToken("");
+    handle401(new ApiError(401, "expirée"));
   }
+
+  // 401 signalé par un panneau distant (purgerSessionExpiree) : le shell
+  // purge sa session — la page repasse par le formulaire SANS rechargement.
+  useEffect(() => {
+    const handler = () => handle401(new ApiError(401, "expirée"));
+    window.addEventListener("admin:session-expiree", handler);
+    return () => window.removeEventListener("admin:session-expiree", handler);
+  }, []);
 
   async function loadStats(t: string): Promise<boolean> {
     try {
@@ -133,6 +148,9 @@ export function AdminPage() {
       // Le serveur a posé le cookie httpOnly : la session est active, mais
       // le jeton reste invisible pour le JS — `token` n'est qu'un drapeau.
       setToken("actif");
+      // Le cookie est déjà posé : charge les stats immédiatement au lieu de
+      // laisser le tableau de bord sans compteurs jusqu'à un rafraîchissement.
+      void loadStats("actif");
       showToast(`Connecté en tant que ${email}.`, "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -193,18 +211,32 @@ export function AdminPage() {
           <label htmlFor="admin-login-token" className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
             Jeton d'accès
           </label>
-          <input
-            id="admin-login-token"
-            type="password"
-            placeholder="Jeton d'accès (voir ADMIN_TOKEN)"
-            value={loginToken}
-            onChange={(e) => setLoginToken(e.target.value)}
-            autoComplete="current-password"
-            required
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? "admin-login-error" : undefined}
-            className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
-          />
+          <div className="relative">
+            <input
+              id="admin-login-token"
+              type={showToken ? "text" : "password"}
+              placeholder="Jeton d'accès (voir ADMIN_TOKEN)"
+              value={loginToken}
+              onChange={(e) => setLoginToken(e.target.value)}
+              autoComplete="current-password"
+              required
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "admin-login-error" : undefined}
+              className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-10 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => setShowToken((v) => !v)}
+              aria-label={showToken ? "Masquer le jeton" : "Afficher le jeton"}
+              className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full hover:bg-highlight-soft"
+            >
+              {showToken ? (
+                <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <Eye size={16} strokeWidth={1.75} aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </div>
         {error && (
           <p id="admin-login-error" role="alert" className="text-sm text-correction">

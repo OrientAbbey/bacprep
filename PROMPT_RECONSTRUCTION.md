@@ -278,8 +278,11 @@ mémoire) + `notify_kickout(user_id, message)` qui pousse un message
 l'utilisateur, si elle existe.
 
 ### 5.6 `app/core/admin_session.py`
-`ADMIN_SESSION_TIMEOUT = 30 minutes`. `allowed_emails()` lit
-`ADMIN_EMAILS` (CSV, minuscule). `attempt_login(email, force=False)` :
+`ADMIN_SESSION_TIMEOUT = 30 minutes`. `root_emails()` lit `ADMIN_ROOT`
+(CSV, minuscule ; `ADMIN_EMAILS` accepté comme alias historique).
+`promoted_emails(db)` lit `users.role="admin"` (comptes promus par le root
+depuis le back-office). `allowed_emails(db) = root ∪ promus`.
+`attempt_login(email, force=False)` :
 si une session différente est active et non expirée et `force=False`,
 retourne `(None, session_bloquante)` ; sinon crée une nouvelle session
 (jeton UUID), retourne `(nouvelle_session, None)`. `touch(token)` valide
@@ -331,8 +334,8 @@ ignore silencieusement ; sinon active la souscription liée) ; `GET
 (vérifie l'appartenance à l'utilisateur, passe le statut à `annulee`).
 
 **`admin.py`** — `POST /api/admin/login` (email, token, force) : vérifie
-`token == ADMIN_TOKEN`, vérifie l'email dans `ADMIN_EMAILS` (avertit et
-autorise tout email si la liste est vide), appelle
+`token == ADMIN_TOKEN`, vérifie l'email dans `allowed_emails(db)` (root ∪
+promus ; avertit et autorise tout email si la liste est vide), appelle
 `admin_session.attempt_login` → 409 avec détail `{message, active_email,
 since}` si bloqué ; `POST /api/admin/logout` ; toutes les autres routes
 admin protégées par `Depends(require_admin)` qui valide l'en-tête
@@ -371,7 +374,7 @@ GEMINI_MODEL=gemini-3.5-flash
 GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
 ADMIN_TOKEN=admin123
-ADMIN_EMAILS=admin@example.com
+ADMIN_ROOT=admin@example.com
 AUTH_MODE=mock
 GOOGLE_CLIENT_ID=
 # DATABASE_URL=postgresql://user:password@host:5432/bacprep
