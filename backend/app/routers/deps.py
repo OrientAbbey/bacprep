@@ -44,7 +44,7 @@ def get_public_epreuve_or_404(db: Session, epreuve_id: str, user=None) -> Epreuv
 
 def require_admin(
     x_admin_session: str = Header(default=""),
-    admin_session_cookie: str = Cookie(default=""),
+    admin_session_cookie: str | None = Cookie(default=None, alias="admin_session"),
     db: Session = Depends(get_db),
 ):
     """Dépendance FastAPI protégeant toutes les routes admin : valide la
@@ -53,7 +53,7 @@ def require_admin(
     défaut 3 min). Le jeton est lu dans le cookie httpOnly `admin_session`
     (posé à la connexion — illisible par le JavaScript) avec repli sur
     l'en-tête X-Admin-Session (curl / tests, ancien canal)."""
-    token = x_admin_session or admin_session_cookie
+    token = x_admin_session or (admin_session_cookie or "")
     lock = admin_session.touch(db, token)
     if not lock:
         raise HTTPException(401, "Session admin invalide ou expirée")

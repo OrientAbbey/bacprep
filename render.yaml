@@ -63,7 +63,7 @@ services:
       - key: FILE_URL_SECRET
         generateValue: true # clé HMAC des URLs signées de fichiers
       - key: ADMIN_ROOT
-        sync: false # email racine de l'administration (ancien ADMIN_EMAILS)
+        sync: false # email racine de l'administration (ex. admin@votre-domaine.cm)
       - key: AUTH_MODE
         value: google # authentification Google vérifiée ; "mock" réservé au dev/démo local
       - key: GOOGLE_CLIENT_ID

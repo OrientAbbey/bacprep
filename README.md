@@ -97,7 +97,7 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   masquée + garde serveur 403. Ancien `consent_given_at` auto-posé à la
   création : abandonné.
 - **Admin** : lien et page `/admin` réservés aux comptes connectés dont
-  l'email est **racine** (`ADMIN_ROOT`, hérite de l'ancien `ADMIN_EMAILS`)
+  l'email est **racine** (`ADMIN_ROOT`)
   ou **promu** administrateur délégué depuis la table Utilisateurs —
   `is_admin` calculé serveur, la liste n'est jamais exposée ; la console
   reste protégée par `ADMIN_TOKEN` + liste blanche à chaque appel. Seul le

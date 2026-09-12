@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # `load_dotenv()` sans argument ne trouve `.env` que si `uvicorn` est lancé
 # depuis le dossier `backend/` lui-même ; lancé depuis la racine du dépôt
 # (ou tout autre dossier), le fichier n'était pas trouvé et TOUTES les
-# variables d'environnement (ADMIN_EMAILS, ADMIN_TOKEN, clés LLM...)
+# variables d'environnement (ADMIN_ROOT, ADMIN_TOKEN, clés LLM...)
 # retombaient silencieusement sur leurs valeurs par défaut. Même principe
 # que pour BASE_DIR dans db.py (voir CAHIER_DES_CHARGES, section 3).
 _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"

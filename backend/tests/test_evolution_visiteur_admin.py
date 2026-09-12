@@ -302,7 +302,7 @@ def test_session_ttl_glissant_et_maximum(client):
 
 def test_login_admin_inclut_is_admin(eleve):
     me = eleve.get("/api/auth/me").json()
-    assert me["is_admin"] is False  # eleve@test.cm n'est pas dans ADMIN_EMAILS
+    assert me["is_admin"] is False  # eleve@test.cm n'est ni ROOT ni promu
 
 
 # ---------- RGPD (H1) : portabilité & effacement ----------

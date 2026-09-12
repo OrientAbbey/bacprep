@@ -231,9 +231,8 @@ refuse) :
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-**`ADMIN_ROOT`** : email **racine** de l'administration (prédécesseur
-`ADMIN_EMAILS` encore accepté comme alias). Il peut ouvrir la console
-`/admin` (et promouvoir d'autres comptes en **admin délégué** depuis la
+**`ADMIN_ROOT`** : email **racine** de l'administration. Il peut ouvrir la
+console `/admin` (et promouvoir d'autres comptes en **admin délégué** depuis la
 table Utilisateurs — les deux doivent AUSSI se connecter comme élève : le
 lien admin n'apparaît que pour ces comptes).
 

@@ -92,9 +92,9 @@ def admin_login(
         # Sans liste blanche, quiconque devine le jeton devient admin.
         # En dev on tolère (warning) ; en production c'est un refus franc.
         if is_prod():
-            log.error("ADMIN_EMAILS/ADMIN_ROOT vide en production — connexion admin refusée")
-            raise HTTPException(500, "ADMIN_EMAILS non configuré côté serveur")
-        log.warning("ADMIN_EMAILS/ADMIN_ROOT vide — tout email valide avec le bon jeton est autorisé")
+            log.error("ADMIN_ROOT vide en production — connexion admin refusée")
+            raise HTTPException(500, "ADMIN_ROOT non configuré côté serveur")
+        log.warning("ADMIN_ROOT vide — tout email valide avec le bon jeton est autorisé")
     elif email not in allowed:
         raise HTTPException(401, "Adresse e-mail non autorisée")
 
@@ -118,14 +118,14 @@ def admin_login(
 def admin_logout(
     response: Response,
     x_admin_session: str = Header(default=""),
-    admin_session_cookie: str = Cookie(default=""),
+    admin_session_cookie: str | None = Cookie(default=None, alias="admin_session"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Libère le verrou admin s'il correspond au jeton fourni et efface le
     cookie de session. Le jeton est lu dans le cookie httpOnly (chemin
     normal du navigateur) avec repli sur l'en-tête X-Admin-Session
     (curl / tests), l'ancien canal de transport."""
-    token = x_admin_session or admin_session_cookie
+    token = x_admin_session or (admin_session_cookie or "")
     from ..db_models import AdminLockORM
 
     lock = db.query(AdminLockORM).filter(AdminLockORM.token == token).one_or_none()
@@ -138,17 +138,33 @@ def admin_logout(
 
 
 @router.post("/heartbeat")
-def admin_heartbeat(db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+def admin_heartbeat(
+    response: Response,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
     """Battement de cœur de la console admin : appelé périodiquement PAR LE
     FRONTEND tant que la page /admin est ouverte, il rafraîchit le verrou
-    (`require_admin` touche déjà l'horodatage) — l'admin restant sur la
-    console n'est JAMAIS déconnecté. La déconnexion automatique ne survient
-    qu'après avoir QUITTÉ la page (onglet fermé ou navigation ailleurs) :
-    les battements s'arrêtent et le verrou expire après
-    ADMIN_SESSION_TIMEOUT_MINUTES (défaut 3)."""
+    (`require_admin` touche déjà l'horodatage) et rallonge la durée de vie
+    du cookie httpOnly (le `max_age` posé au login expirerait sinon après
+    3 min même en activité) — l'admin restant sur la console n'est JAMAIS
+    déconnecté. La déconnexion automatique ne survient qu'après avoir
+    QUITTÉ la page (onglet fermé ou navigation ailleurs) : les battements
+    s'arrêtent et le verrou expire après ADMIN_SESSION_TIMEOUT_MINUTES
+    (défaut 3)."""
+    timeout_minutes = admin_session.session_timeout().total_seconds() / 60
+    response.set_cookie(
+        "admin_session",
+        lock.token,
+        httponly=True,
+        samesite="lax",
+        secure=is_prod(),
+        path="/",
+        max_age=int(admin_session.session_timeout().total_seconds()),
+    )
     return {
         "ok": True,
-        "timeout_minutes": admin_session.session_timeout().total_seconds() / 60,
+        "timeout_minutes": timeout_minutes,
     }
 
 

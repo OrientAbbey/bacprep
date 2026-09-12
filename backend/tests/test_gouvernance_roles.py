@@ -1,5 +1,5 @@
 """Gouvernance des rôles admin : promotion/révocation par le ROOT
-(ADMIN_EMAILS/ADMIN_ROOT) uniquement, et statut `is_admin` reflété dans la
+(ADMIN_ROOT) uniquement, et statut `is_admin` reflété dans la
 table utilisateurs et `/api/auth/me`.
 
 Le rôle vit dans `users.role` ("user"/"admin") : politiquement, un admin
@@ -93,3 +93,27 @@ def test_promotion_deja_admin_et_demotion_eleve(client, admin):
 def test_utilisateurs_introuvable_promotion(client, admin):
     assert admin.post("/api/admin/utilisateurs/inconnu/promouvoir").status_code == 404
     assert admin.post("/api/admin/utilisateurs/inconnu/demouvoir").status_code == 404
+
+
+def test_session_admin_par_cookie_httpoly(client):
+    """Le parcours NAVIGATEUR : login posant le cookie httpOnly `admin_session`,
+    puis routes admin appelées SANS en-tête X-Admin-Session (le frontend ne
+    l'envoie plus) — le serveur doit lire le cookie. Régression du bug où la
+    dépendance lisait un cookie inexistant `admin_session_cookie` (nom du
+    paramètre au lieu de l'alias), renvoyant 401 après login."""
+    c = TestClient(app_main.app)
+    assert c.post("/api/auth/mock-login", json={"email": "root@example.com", "nom": "Admin Root"}).status_code == 200
+
+    r = c.post("/api/admin/login", json={"email": "admin@example.com", "token": "test-admin-token"})
+    assert r.status_code == 200, r.text
+    assert "session_token" in r.json()
+    assert dict(c.cookies).get("admin_session")
+
+    # Aucun en-tête X-Admin-Session : ces appels ne doivent PAS faire 401.
+    assert c.get("/api/admin/stats").status_code == 200
+    assert c.get("/api/admin/epreuves?limit=30").status_code == 200
+    assert c.post("/api/admin/heartbeat").status_code == 200
+
+    # Logout : le cookie et le verrou sont libérés → 401 ensuite.
+    assert c.post("/api/admin/logout").status_code == 200
+    assert c.get("/api/admin/stats").status_code == 401

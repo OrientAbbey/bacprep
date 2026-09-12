@@ -150,7 +150,7 @@ committé, docs API masquées en prod.
   agrégateur, aucune vérification de signature. `PAIEMENT.md` documente déjà la marche à suivre
   (Notch Pay/Monetbil + test signature invalide/replay).
 - **[REQUIS] `render.yaml:62-63`** — `AUTH_MODE=mock` en prod : n'importe qui crée un compte avec
-  un email arbitraire. → `AUTH_MODE=google` + vraie whitelist `ADMIN_EMAILS`.
+  un email arbitraire. → `AUTH_MODE=google` + vraie whitelist `ADMIN_ROOT`.
 - **[REQUIS] `routers/files.py:50-55` + `core/signing.py:49-77`** — URL signée basée sur `file_id`
   seul, TTL 1 h + 5 min, jamais révoquée à la dépublication → signer `epreuve_id+statut` et
   vérifier `statut=="publie"` à la lecture.

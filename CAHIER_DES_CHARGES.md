@@ -779,7 +779,7 @@ Le Module 8 (back-office) reflète directement la fusion du modèle décrite en 
 **Constat :** n'importe qui connaissant le jeton admin partagé pouvait se connecter, sans limite sur le nombre de connexions simultanées — aucune protection contre deux personnes modifiant la même épreuve en même temps sans le savoir.
 
 **Solution :** deux mécanismes combinés :
-- **Liste blanche d'emails** (`ADMIN_ROOT` — email RACINE, l'ancien `ADMIN_EMAILS` reste un alias — complétée par les comptes **promus admin délégué** depuis la table Utilisateurs, réservé au root ; configurable) — le jeton seul ne suffit plus, l'email utilisé doit aussi figurer dans la liste autorisée.
+- **Liste blanche d'emails** (`ADMIN_ROOT` — email RACINE, complétée par les comptes **promus admin délégué** depuis la table Utilisateurs, réservé au root ; configurable) — le jeton seul ne suffit plus, l'email utilisé doit aussi figurer dans la liste autorisée.
 - **Session admin unique** : une seule connexion active à la fois, tenue en mémoire côté serveur. Une deuxième personne autorisée qui tente de se connecter reçoit un message explicite (qui est connecté, depuis quand) plutôt qu'un accès silencieusement partagé ou un refus sans explication, avec la possibilité de **forcer la prise de contrôle** si la première session a été oubliée. Une session inactive depuis plus de 30 minutes se libère automatiquement pour ne pas bloquer indéfiniment l'accès. Testé : connexion, tentative bloquée par un second email, prise de contrôle forcée réussie.
 
 Voir Module 1 (principe similaire déjà en place côté élève) et Module 8.
@@ -847,7 +847,7 @@ faisait partir silencieusement l'appel `GET` sans le jeton d'authentification.
 en-têtes, comme les autres méthodes. Corrigé au passage : `load_dotenv()`
 était appelé sans chemin explicite côté backend, ce qui ne trouvait le
 fichier `.env` que si `uvicorn` était lancé depuis le dossier `backend/`
-lui-même — lancé d'ailleurs, `ADMIN_ROOT`/`ADMIN_EMAILS` et les autres variables
+lui-même — lancé d'ailleurs, `ADMIN_ROOT` et les autres variables
 retombaient silencieusement sur leurs valeurs par défaut. Le chemin est
 désormais résolu en absolu, comme `BASE_DIR` (voir section 3).
 
@@ -1123,7 +1123,7 @@ sélectionnables au clavier (`radiogroup`), au lieu de pills compactes.
 
 Le lien « Admin » et la route `/admin` ne sont accessibles qu'à un
 utilisateur **connecté** dont l'email est **racine** (`ADMIN_ROOT`, alias
-`ADMIN_EMAILS`) ou **promu** administrateur délégué —
+`ADMIN_ROOT`) ou **promu** administrateur délégué —
 `is_admin` est calculé **serveur** dans `UserOut` (la liste blanche ne part
 jamais au client). Il s'agit d'une commodité d'affichage : la console reste
 réellement protégée par le jeton `ADMIN_TOKEN` + liste blanche vérifiés à

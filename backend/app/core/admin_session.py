@@ -36,10 +36,8 @@ def session_timeout() -> timedelta:
 
 def root_emails() -> set[str]:
     """Emails ROOT de l'administration (un seul en principe, `ADMIN_ROOT`),
-    en minuscules. Seul le root peut promouvoir (ou révoquer) un admin.
-    `ADMIN_EMAILS` reste accepté comme alias historique pour la migration
-    des .env existants."""
-    raw = os.getenv("ADMIN_ROOT", "") or os.getenv("ADMIN_EMAILS", "")
+    en minuscules. Seul le root peut promouvoir (ou révoquer) un admin."""
+    raw = os.getenv("ADMIN_ROOT", "")
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 

@@ -279,8 +279,7 @@ l'utilisateur, si elle existe.
 
 ### 5.6 `app/core/admin_session.py`
 `ADMIN_SESSION_TIMEOUT = 30 minutes`. `root_emails()` lit `ADMIN_ROOT`
-(CSV, minuscule ; `ADMIN_EMAILS` accepté comme alias historique).
-`promoted_emails(db)` lit `users.role="admin"` (comptes promus par le root
+(CSV, minuscule). `promoted_emails(db)` lit `users.role="admin"` (comptes promus par le root
 depuis le back-office). `allowed_emails(db) = root ∪ promus`.
 `attempt_login(email, force=False)` :
 si une session différente est active et non expirée et `force=False`,

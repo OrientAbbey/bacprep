@@ -24,8 +24,8 @@ class UserOut(BaseModel):
     email: str
     nom: str
     created_at: datetime
-    # Gating admin côté client : vrai si l'email est dans ADMIN_EMAILS
-    # (calculé serveur — la liste elle-même ne part jamais au frontend).
+    # Gating admin côté client : vrai si l'email est le ROOT (ADMIN_ROOT) ou
+    # un admin promu (calculé serveur — la liste elle-même ne part pas au frontend).
     is_admin: bool = False
     # Consentements (NULL = pas encore demandé, la modale doit s'afficher).
     consent_ia: Optional[bool] = None

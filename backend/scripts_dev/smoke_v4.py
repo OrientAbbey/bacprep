@@ -87,7 +87,7 @@ def main() -> None:
         assert {"connexion", "consultation", "abonnement", "paiement"} <= types, types
         print("OK activité", sorted(types))
 
-        # --- Admin (ADMIN_EMAILS vide dans l'environnement de test : tout
+        # --- Admin (ADMIN_ROOT vide dans l'environnement de test : tout
         # email avec le bon jeton est autorisé, cf. admin_login)
         r = c.post("/api/admin/login", json={"email": "admin@x.cm", "token": os.getenv("ADMIN_TOKEN", "admin123")})
         assert r.status_code == 200, r.text

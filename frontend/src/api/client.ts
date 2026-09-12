@@ -25,7 +25,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   // IMPORTANT : fusionner les en-têtes (headers) après avoir étalé `rest`,
   // sans jamais étaler `options` (qui contient déjà `headers`) par-dessus un
   // objet headers déjà construit — sinon Content-Type est silencieusement
-  // écrasé dès qu'un appel fournit ses propres en-têtes (ex. X-Admin-Session).
+  // écrasé dès qu'un appel fournit ses propres en-têtes.
   const res = await fetch(`${BASE_URL}${path}`, {
     credentials: "include",
     ...rest,

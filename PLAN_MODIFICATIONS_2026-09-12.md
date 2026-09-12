@@ -109,8 +109,8 @@ Légende : `[x]` réalisé · `[ ]` à faire.
       badges « Admin délégué » / « Admin racine », boutons Promote/Démouvoir,
       réservés coté serveur au root (403 sinon) ; les admins échappent à
       bannir/supprimer.
-- [x] **ADMIN_EMAILS → ADMIN_ROOT** : `admin_session.root_emails()` lit
-      `ADMIN_ROOT` (alias historique `ADMIN_EMAILS`) ; `allowed_emails(db)` =
+- [x] **Renommage admin root → ADMIN_ROOT** : `admin_session.root_emails()` lit
+      `ADMIN_ROOT` ; `allowed_emails(db)` =
       ROOT ∪ promus (`users.role="admin"`) ; le root est aligné en base à son
       login et ne peut ni être banni, ni supprimé, ni révoqué ; migration
       idempotente de la colonne `users.role` au démarrage (`main.py`).
