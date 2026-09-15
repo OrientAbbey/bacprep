@@ -223,21 +223,22 @@ export function ProfilePage() {
 
   if (!profil)
     return erreurChargement ? (
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className="space-y-6">
         <ErreurChargement onReessayer={refresh} />
       </div>
     ) : (
-      <div role="status" aria-busy="true" className="mx-auto max-w-2xl space-y-6">
-        <p className="sr-only">Chargement du profil…</p>
-        <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-6">
-          <div className="flex items-center gap-4">
-            <Skeleton className="h-14 w-14 rounded-full" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-6 w-1/2" />
-              <Skeleton className="h-3 w-2/3" />
+      <div role="status" aria-busy="true" className="grid gap-6 lg:grid-cols-[300px_1fr]">
+        <div className="space-y-4">
+          <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-6">
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-14 w-14 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
             </div>
+            <Skeleton className="mt-3 h-3 w-1/3" />
           </div>
-          <Skeleton className="mt-3 h-3 w-1/3" />
         </div>
         <div className="space-y-3">
           <Skeleton className="h-10 w-48 rounded-full" />
@@ -247,8 +248,10 @@ export function ProfilePage() {
     );
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      {/* Carte identité + infos étendues */}
+    <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+      {/* Colonne identité/résumé (sticky sur lg) : avatar, nom, classe,
+          statut d'abonnement, dépense — et infos étendues. */}
+      <aside className="h-fit lg:sticky lg:top-24">
       <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-6">
         <div className="flex items-center gap-4">
           <div
@@ -262,9 +265,18 @@ export function ProfilePage() {
             <p className="text-sm text-ink-soft">{profil.email}</p>
           </div>
         </div>
+        {profil.abonnements.length > 0 ? (
+          <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-valide px-3 py-1 font-mono-tag text-[10px] text-paper">
+            <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
+            {profil.abonnements.length} abonnement{profil.abonnements.length > 1 ? "s" : ""} actif
+            {profil.abonnements.length > 1 ? "s" : ""}
+          </span>
+        ) : null}
         <p className="mt-3 text-sm text-slate">
-          Membre depuis le {new Date(profil.membre_depuis).toLocaleDateString("fr-FR")} · Total dépensé :{" "}
-          {profil.total_depense_fcfa} FCFA
+          Membre depuis le {new Date(profil.membre_depuis).toLocaleDateString("fr-FR")}
+        </p>
+        <p className="mt-1 text-sm text-slate">
+          Total dépensé : {profil.total_depense_fcfa} FCFA
         </p>
 
         {/* Infos étendues (optionnelles) : niveau, classe, établissement. */}
@@ -367,13 +379,17 @@ export function ProfilePage() {
           Se déconnecter
         </button>
       </div>
+      </aside>
 
+      {/* Colonne principale : onglets abonnements / notes / activité /
+          confidentialité, puis le panneau correspondant. */}
+      <section className="min-w-0 space-y-6">
       {/* Onglets : abonnements / notes / activité / confidentialité */}
       {erreurChargement && <ErreurChargement onReessayer={refresh} />}
       <div
         role="tablist"
         aria-label="Sections du profil"
-        className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px] w-fit"
+        className="flex w-fit flex-wrap gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]"
       >
         {ONGLETS_PROFIL.map(([v, label]) => (
           <button
@@ -424,6 +440,7 @@ export function ProfilePage() {
         />
       )}
       </div>
+      </section>
 
       {noteEdition && (
         <NoteEditor

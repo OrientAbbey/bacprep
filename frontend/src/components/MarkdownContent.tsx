@@ -6,6 +6,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { resolveMediaUrl } from "../api/client";
 import { rehypeSourceOffsets, rehypeStripAnchorText } from "../lib/markdownSource";
+import { rehypeImageWidths } from "../lib/markdownImages";
 import { normalizeLatexDelimiters } from "../lib/latex";
 
 /** Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
@@ -61,8 +62,8 @@ export const MarkdownContent = React.memo(function MarkdownContent({
   const rehypePlugins = useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>>(
     () =>
       trackSourcePositions
-        ? [rehypeKatex, rehypeSourceOffsets, rehypeStripAnchorText]
-        : [rehypeKatex, rehypeStripAnchorText],
+        ? [rehypeKatex, rehypeImageWidths, rehypeSourceOffsets, rehypeStripAnchorText]
+        : [rehypeKatex, rehypeImageWidths, rehypeStripAnchorText],
     [trackSourcePositions]
   );
 

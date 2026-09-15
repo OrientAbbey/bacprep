@@ -1,10 +1,28 @@
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { AdminStats } from "../../api/types";
 import { formatBytes } from "../../lib/format";
 import { classeLabel } from "../../lib/referentiel";
 
-/** Tableau de bord du back-office : compteurs globaux + graphiques maison
- * (aucune dépendance). */
+/** Tableau de bord du back-office : compteurs globaux + graphiques recharts
+ * pour les revenus mensuels et les épreuves publiées par classe. Le donut
+ * de stockage reste en SVG maison (cas à 2 segments, inchangé). */
 export function StatsPanel({ stats }: { stats: AdminStats }) {
+  const revenus = Object.entries(stats.revenus_par_mois ?? {}).map(([k, v]) => ({
+    mois: k,
+    montant: v,
+  }));
+  const parClasse = Object.entries(stats.epreuves_par_classe ?? {}).map(([k, v]) => ({
+    classe: classeLabel(k),
+    nombre: v,
+  }));
   return (
     <div className="space-y-3">
       <h2 className="font-serif-brand text-lg">Statistiques</h2>
@@ -24,27 +42,14 @@ export function StatsPanel({ stats }: { stats: AdminStats }) {
           sub={`${stats.stockage?.nb_fichiers ?? 0} fichiers`}
         />
       </div>
-      {/* Graphiques maison (aucune dépendance) : épreuves publiées par
-          classe, revenus confirmés par mois, répartition du stockage. */}
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
           <p className="mb-2 font-mono-tag text-[10px] text-slate">ÉPREUVES PUBLIÉES PAR CLASSE</p>
-          <BarList
-            data={Object.entries(stats.epreuves_par_classe ?? {}).map(([k, v]) => ({
-              label: classeLabel(k),
-              value: v,
-            }))}
-          />
+          <EpreuvesParClasseChart data={parClasse} />
         </div>
         <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
           <p className="mb-2 font-mono-tag text-[10px] text-slate">REVENUS CONFIRMÉS (FCFA)</p>
-          <BarList
-            data={Object.entries(stats.revenus_par_mois ?? {}).map(([k, v]) => ({
-              label: k,
-              value: v,
-            }))}
-            formatValue={(v) => v.toLocaleString("fr-FR")}
-          />
+          <RevenusMensuelsChart data={revenus} />
         </div>
         <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
           <p className="mb-2 font-mono-tag text-[10px] text-slate">RÉPARTITION DU STOCKAGE</p>
@@ -68,36 +73,41 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
   );
 }
 
-/** Barres horizontales maison (aucune dépendance) — largeur proportionnelle
- *  à la valeur, étiquette + valeur alignées. */
-function BarList({
-  data,
-  formatValue = String,
-}: {
-  data: { label: string; value: number }[];
-  formatValue?: (v: number) => string;
-}) {
+/** Barres verticales des 6 derniers mois (recharts) — étiquette AAAA-MM en
+ * abscisse, tooltip formaté fr-FR. Couleurs via les variables du thème. */
+function RevenusMensuelsChart({ data }: { data: { mois: string; montant: number }[] }) {
   if (data.length === 0) return <p className="text-xs text-slate">Aucune donnée.</p>;
-  const max = Math.max(...data.map((d) => d.value), 1);
   return (
-    <div className="space-y-1.5">
-      {data.map((d) => (
-        <div key={d.label} className="flex items-center gap-2 text-xs">
-          <span className="w-20 shrink-0 truncate text-ink-soft" title={d.label}>
-            {d.label}
-          </span>
-          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-highlight-soft/50">
-            <div
-              className="h-full rounded-full bg-highlight"
-              style={{ width: `${Math.max((d.value / max) * 100, 2)}%` }}
-            />
-          </div>
-          <span className="w-16 shrink-0 text-right font-mono-tag text-[10px] text-ink-soft">
-            {formatValue(d.value)}
-          </span>
-        </div>
-      ))}
-    </div>
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-ink-soft)" opacity={0.15} vertical={false} />
+        <XAxis dataKey="mois" tick={{ fontSize: 10 }} stroke="var(--color-ink-soft)" />
+        <YAxis tick={{ fontSize: 10 }} stroke="var(--color-ink-soft)" />
+        <Tooltip
+          formatter={(value) => [`${Number(value).toLocaleString("fr-FR")} FCFA`, "Revenus"]}
+          contentStyle={{ fontSize: 12 }}
+        />
+        <Bar dataKey="montant" fill="var(--color-highlight)" radius={[3, 3, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Barres horizontales (recharts, layout vertical) — une barre par classe,
+ * la plus longue à gauche (tri descendant), tooltip nombre d'épreuves. */
+function EpreuvesParClasseChart({ data }: { data: { classe: string; nombre: number }[] }) {
+  if (data.length === 0) return <p className="text-xs text-slate">Aucune donnée.</p>;
+  const triees = [...data].sort((a, b) => b.nombre - a.nombre);
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={triees} layout="vertical" margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-ink-soft)" opacity={0.15} horizontal={false} />
+        <XAxis type="number" tick={{ fontSize: 10 }} stroke="var(--color-ink-soft)" allowDecimals={false} />
+        <YAxis type="category" dataKey="classe" tick={{ fontSize: 11 }} stroke="var(--color-ink-soft)" width={64} />
+        <Tooltip formatter={(value) => [`${value} épreuve(s)`, "Publiées"]} contentStyle={{ fontSize: 12 }} />
+        <Bar dataKey="nombre" fill="var(--color-highlight)" radius={[0, 3, 3, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
 

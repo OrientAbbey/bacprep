@@ -180,12 +180,13 @@ _IMAGE_MD_RE = extraits.IMAGE_MD_RE
 
 def file_id_from_url(url: str) -> str | None:
     """Extrait l'identifiant d'un fichier depuis une URL ``/api/files/{id}``
-    (la suite du chemin et une query string éventuelle — URL signée — sont
-    ignorées). None si l'URL ne pointe pas vers /api/files/."""
+    (la suite du chemin, une query string éventuelle — URL signée — et un
+    fragment ``#w=NNN`` de taille d'affichage sont ignorés). None si l'URL
+    ne pointe pas vers /api/files/."""
     marker = "/api/files/"
     if marker not in url:
         return None
-    file_id = url.split(marker, 1)[1].split("/")[0].split("?")[0]
+    file_id = url.split(marker, 1)[1].split("/")[0].split("?")[0].split("#")[0]
     return file_id or None
 
 
@@ -194,7 +195,12 @@ def sign_image_urls(markdown: str, epreuve: EpreuveORM) -> str:
     ajoutant un jeton d'accès court lié à l'épreuve et à son statut courant
     (les balises ``<img>`` générées par le lecteur ne transportent pas le
     cookie de session en cross-origin, le jeton remplace donc la session pour
-    ces requêtes — voir `core/signing.py`)."""
+    ces requêtes — voir `core/signing.py`).
+
+    Le fragment ``#w=NNN`` (taille d'affichage de l'image, chantier
+    « images redimensionnables ») est PRÉSERVÉ : il est ré-accolé après
+    l'URL signée pour que le lecteur continue d'appliquer la largeur
+    demandée (sans lui, la taille disparaîtrait à l'envoi)."""
     from .signing import signed_file_url
 
     def _replace(match: re.Match) -> str:
@@ -202,6 +208,9 @@ def sign_image_urls(markdown: str, epreuve: EpreuveORM) -> str:
         file_id = file_id_from_url(url)
         if not file_id:
             return match.group(0)
-        return f"![{alt}]({signed_file_url(file_id, epreuve.id, epreuve.statut)})"
+        fragment = ""
+        if "#" in url:
+            fragment = "#" + url.split("#", 1)[1]
+        return f"![{alt}]({signed_file_url(file_id, epreuve.id, epreuve.statut)}{fragment})"
 
     return _IMAGE_MD_RE.sub(_replace, markdown or "")

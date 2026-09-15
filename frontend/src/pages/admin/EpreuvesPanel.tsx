@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Check, Search } from "lucide-react";
-import { api, ApiError } from "../../api/client";
-import { AdminEpreuveCounts } from "../../api/types";
+import { Bot, Check, Search } from "lucide-react";
+import { api, ApiError, ensureReferentielOption } from "../../api/client";
+import { AdminEpreuveCounts, ReferentielOptions } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
+import { AdminAssistantPanel } from "./AdminAssistantPanel";
 import { authHeaders, Asset, ContentBlock, DocumentFile, EMPTY_FORM, EpreuveForm, Field, Select } from "./shared";
 
 interface AdminEpreuveSummary {
@@ -28,10 +29,11 @@ function escapeRegExp(text: string): string {
 
 /** Retire la première occurrence d'une balise `![...](url)` référençant
  * cette URL précise, quel que soit le texte de légende (l'admin a pu le
- * modifier depuis l'insertion automatique) — utilisé quand une image est
- * supprimée, pour garder le Markdown cohérent avec les fichiers restants. */
+ * modifier depuis l'insertion automatique) et un éventuel fragment de
+ * taille d'affichage (`#w=NNN`) — utilisé quand une image est supprimée,
+ * pour garder le Markdown cohérent avec les fichiers restants. */
 function removeImageTag(markdown: string, url: string): string {
-  const re = new RegExp(`!\\[[^\\]]*\\]\\(${escapeRegExp(url)}\\)\\n?`, "g");
+  const re = new RegExp(`!\\[[^\\]]*\\]\\(${escapeRegExp(url)}(?:#w=\\d+)?\\)\\n?`, "g");
   return markdown.replace(re, "");
 }
 
@@ -69,6 +71,32 @@ export function EpreuvesPanel({
     message: string;
     action: () => void | Promise<void>;
   } | null>(null);
+  // Options du référentiel (table `referentiel_options`, onglet Paramètres)
+  // : alimentent les listes du formulaire. `null` avant le premier
+  // chargement — les constantes `lib/referentiel.ts` servent alors de repli.
+  const [referentiel, setReferentiel] = useState<ReferentielOptions | null>(null);
+  // Statut de l'épreuve en cours d'édition (pour le snapshot envoyé à
+  // l'assistant admin) — dérivé du détail chargé par `fetchDetail`, mis à
+  // jour après publication/dépublication, et remis à "brouillon" quand on
+  // passe en mode « Nouvelle épreuve ».
+  const [statutForm, setStatutForm] = useState("brouillon");
+  // État du tiroir droit de l'assistant admin.
+  const [assistantOuvert, setAssistantOuvert] = useState(false);
+
+  /** Recharge les listes du référentiel — aussi après une sauvegarde (le
+   * serveur auto-ajoute matières/sessions/séries saisies hors liste). Échec
+   * silencieux : le formulaire retombe sur les constantes. */
+  function refreshReferentiel() {
+    api
+      .get<ReferentielOptions>("/api/admin/referentiel-options", authHeaders(token))
+      .then(setReferentiel)
+      .catch(() => undefined);
+  }
+
+  useEffect(() => {
+    refreshReferentiel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   /** Session admin expirée côté serveur (401) : purge le jeton local pour
    * repasser par le formulaire de connexion. Retourne vrai si c'était un
@@ -145,6 +173,7 @@ export function EpreuvesPanel({
         assets: detail.assets || [],
         documents: (detail as unknown as { documents?: DocumentFile[] }).documents || [],
       });
+      setStatutForm((detail as unknown as { statut?: string }).statut || "brouillon");
     } catch (err) {
       if (!handle401(err)) {
         showToast("Le détail de l'épreuve n'a pas pu être chargé.", "error");
@@ -159,6 +188,23 @@ export function EpreuvesPanel({
         ? f.filieres.filter((s) => s !== serie)
         : [...f.filieres, serie],
     }));
+  }
+
+  /** Options d'un scope : celles de la table (onglet « Paramètres »)
+   * fusionnées avec les constantes `lib/referentiel.ts` — une valeur héritée
+   * reste proposable même si la table est vidée ou incomplète. */
+  function scopeOptions(scope: "niveau" | "classe" | "evaluation" | "serie"): { value: string; label: string }[] {
+    const ref = (referentiel?.[scope] ?? []).map((o) => ({ value: o.code, label: o.label || o.code }));
+    const chute: { value: string; label: string }[] =
+      scope === "niveau"
+        ? NIVEAUX.map((n) => ({ value: n.code, label: n.label }))
+        : scope === "classe"
+          ? CLASSES_SECONDAIRE.map((c) => ({ value: c.code, label: c.label }))
+          : scope === "evaluation"
+            ? EVALUATIONS.map((ev) => ({ value: ev, label: ev }))
+            : SERIES_CONNUES.map((s) => ({ value: s, label: s }));
+    const vus = new Set(ref.map((o) => o.value));
+    return [...ref, ...chute.filter((c) => !vus.has(c.value))];
   }
 
   async function save() {
@@ -187,6 +233,7 @@ export function EpreuvesPanel({
       }
       loadAll(token, search, statutFiltre);
       onEpreuvesChange?.();
+      refreshReferentiel();
     } catch {
       showToast("Échec de l'enregistrement — vérifie les champs.", "error");
     }
@@ -201,6 +248,7 @@ export function EpreuvesPanel({
     if (!form.id) return;
     try {
       await api.post(`/api/admin/epreuves/${form.id}/publish`, undefined, authHeaders(token));
+      setStatutForm("publie");
       showToast("Épreuve publiée.", "success");
       loadAll(token, search, statutFiltre);
       onEpreuvesChange?.();
@@ -213,6 +261,7 @@ export function EpreuvesPanel({
     if (!form.id) return;
     try {
       await api.post(`/api/admin/epreuves/${form.id}/unpublish`, undefined, authHeaders(token));
+      setStatutForm("a_reviser");
       showToast("Épreuve dépubliée.", "info");
       loadAll(token, search, statutFiltre);
       onEpreuvesChange?.();
@@ -231,6 +280,7 @@ export function EpreuvesPanel({
         try {
           await api.del(`/api/admin/epreuves/${id}`, authHeaders(token));
           setForm(EMPTY_FORM);
+          setStatutForm("brouillon");
           showToast("Épreuve supprimée.", "info");
           loadAll(token, search, statutFiltre);
           onEpreuvesChange?.();
@@ -315,9 +365,13 @@ export function EpreuvesPanel({
 
   /** Bouton "+" sur une vignette : (ré)insère la balise Markdown de cette
    * image dans le texte correspondant (utile si l'admin l'a retirée
-   * manuellement en éditant le Markdown, sans supprimer le fichier). */
-  function insertImageTag(asset: Asset) {
-    const tag = `![légende](${asset.url})`;
+   * manuellement en éditant le Markdown, sans supprimer le fichier). Une
+   * largeur d'affichage (`#w=NNN`, chantier « images redimensionnables »)
+   * est accolée à l'URL si demandée — elle est ensuite respectée par le
+   * rendu de l'éditeur ET du lecteur. */
+  function insertImageTag(asset: Asset, width?: number) {
+    const taille = width && width > 0 ? `#w=${width}` : "";
+    const tag = `![légende](${asset.url}${taille})`;
     setForm((f) => ({
       ...f,
       contenu_markdown: asset.cible === "sujet" ? f.contenu_markdown + "\n" + tag : f.contenu_markdown,
@@ -326,12 +380,38 @@ export function EpreuvesPanel({
     showToast("Balise image insérée dans le texte.", "success");
   }
 
+  /** Import d'un fichier `.md` fourni par un collègue : le contenu est
+   * recopié dans la zone de texte de la cible (l'admin garde la main,
+   * rien n'est envoyé au serveur à part le Markdown déjà enregistré avec
+   * l'épreuve). Écrasement confirmé si la zone n'est pas vide. */
+  function importMarkdown(text: string, cible: "sujet" | "corrige") {
+    const current = cible === "sujet" ? form.contenu_markdown : form.corrige_markdown;
+    const appliquer = () => {
+      const clean = text.replace(/^\uFEFF/, "");
+      setForm((f) => ({
+        ...f,
+        contenu_markdown: cible === "sujet" ? clean : f.contenu_markdown,
+        corrige_markdown: cible === "corrige" ? clean : f.corrige_markdown,
+      }));
+      showToast("Fichier importé dans la zone de texte.", "success");
+    };
+    if (current.trim()) {
+      setConfirmation({
+        titre: "Remplacer le contenu ?",
+        message: `Le ${cible === "sujet" ? "sujet" : "corrigé"} contient déjà du texte — il sera remplacé par le contenu du fichier importé.`,
+        action: appliquer,
+      });
+    } else {
+      appliquer();
+    }
+  }
+
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <div className="space-y-2">
           <button
-            onClick={() => setForm(EMPTY_FORM)}
+            onClick={() => { setForm(EMPTY_FORM); setStatutForm("brouillon"); }}
             className="min-h-[40px] w-full rounded-full border border-ink-soft/25 text-sm"
           >
             + Nouvelle épreuve
@@ -441,19 +521,19 @@ export function EpreuvesPanel({
               label="Niveau"
               value={form.niveau}
               onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
-              options={NIVEAUX.map((n) => ({ value: n.code, label: n.label }))}
+              options={scopeOptions("niveau")}
             />
             <Select
               label="Classe"
               value={form.classe}
               onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
-              options={CLASSES_SECONDAIRE.map((c) => ({ value: c.code, label: c.label }))}
+              options={scopeOptions("classe")}
             />
             <Select
               label="Évaluation"
               value={form.evaluation}
               onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
-              options={EVALUATIONS.map((ev) => ({ value: ev, label: ev }))}
+              options={scopeOptions("evaluation")}
             />
             <Field
               label="Année"
@@ -466,12 +546,14 @@ export function EpreuvesPanel({
               value={form.matiere}
               onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
               placeholder="ex. Mathématiques"
+              list="ref-matiere"
             />
             <Field
               label="Session"
               value={form.session}
               onChange={(v) => setForm((f) => ({ ...f, session: v }))}
               placeholder="ex. Session normale"
+              list="ref-session"
             />
             <Field
               label="Durée"
@@ -487,12 +569,28 @@ export function EpreuvesPanel({
             />
           </div>
 
+          {/* Suggestions des champs libres Matière / Session (saisie libre
+              conservée, valeurs déjà connues du référentiel proposées). */}
+          <datalist id="ref-matiere">
+            {(referentiel?.matiere ?? []).map((o) => (
+              <option key={o.id} value={o.label || o.code} />
+            ))}
+          </datalist>
+          <datalist id="ref-session">
+            {(referentiel?.session ?? []).map((o) => (
+              <option key={o.id} value={o.label || o.code} />
+            ))}
+          </datalist>
+
           {/* Séries : sélection multiple par puces (une épreuve peut couvrir
-              PLUSIEURS séries) + champ libre pour une série hors référentiel. */}
+              PLUSIEURS séries) + champ libre pour une série hors référentiel.
+              Les puces viennent de la table `referentiel_options` (onglet
+              Paramètres), et toute nouvelle série saisie y est mémorisée
+              (best-effort). */}
           <div>
             <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">Séries / filières</p>
             <div className="flex flex-wrap gap-1.5">
-              {SERIES_CONNUES.map((s) => {
+              {scopeOptions("serie").map(({ value: s, label }) => {
                 const active = form.filieres.includes(s);
                 return (
                   <button
@@ -507,12 +605,12 @@ export function EpreuvesPanel({
                     }`}
                   >
                     {active && <Check size={12} strokeWidth={2.5} aria-hidden="true" />}
-                    {s}
+                    {label}
                   </button>
                 );
               })}
               {form.filieres
-                .filter((s) => !SERIES_CONNUES.includes(s))
+                .filter((s) => !scopeOptions("serie").some((o) => o.value === s))
                 .map((s) => (
                   <button
                     key={s}
@@ -539,6 +637,12 @@ export function EpreuvesPanel({
                   const v = nouvelleSerie.trim();
                   if (v && !form.filieres.includes(v)) {
                     setForm((f) => ({ ...f, filieres: [...f.filieres, v] }));
+                    // Mémorise la valeur hors liste dans le référentiel
+                    // (best-effort, jamais bloquant) puis rafraîchit pour
+                    // qu'elle apparaisse dans les puces.
+                    void ensureReferentielOption("serie", v, authHeaders(token)).then(() =>
+                      refreshReferentiel()
+                    );
                   }
                   setNouvelleSerie("");
                 }
@@ -565,6 +669,7 @@ export function EpreuvesPanel({
             onTogglePreview={() => setSujetPreview((p) => !p)}
             onChange={(v) => setForm((f) => ({ ...f, contenu_markdown: v }))}
             onUpload={(file) => uploadImage(file, "sujet")}
+            onImportMarkdown={(text) => importMarkdown(text, "sujet")}
             assets={form.assets.filter((a) => a.cible === "sujet")}
             documents={form.documents.filter((d) => d.cible === "sujet")}
             onDeleteImage={deleteImage}
@@ -580,6 +685,7 @@ export function EpreuvesPanel({
             onTogglePreview={() => setCorrigePreview((p) => !p)}
             onChange={(v) => setForm((f) => ({ ...f, corrige_markdown: v }))}
             onUpload={(file) => uploadImage(file, "corrige")}
+            onImportMarkdown={(text) => importMarkdown(text, "corrige")}
             assets={form.assets.filter((a) => a.cible === "corrige")}
             documents={form.documents.filter((d) => d.cible === "corrige")}
             onDeleteImage={deleteImage}
@@ -590,6 +696,18 @@ export function EpreuvesPanel({
           <div className="flex flex-wrap gap-2 border-t border-ink-soft/10 pt-4">
             <button type="submit" className="min-h-[40px] rounded-full bg-ink px-5 text-sm text-paper">
               Enregistrer
+            </button>
+            {/* Assistant admin : tiroir droit éphémère contextuel de
+                l'épreuve en cours (metadonnées + sujet + corrigé du
+                formulaire — snapshottés à chaque envoi, voir
+                AdminAssistantPanel). */}
+            <button
+              type="button"
+              onClick={() => setAssistantOuvert(true)}
+              className="ml-auto flex min-h-[40px] items-center gap-1.5 rounded-full border border-highlight/50 px-5 text-sm text-highlight"
+            >
+              <Bot size={16} strokeWidth={1.75} aria-hidden="true" />
+              Assistant
             </button>
             {form.id && (
               <>
@@ -619,6 +737,12 @@ export function EpreuvesPanel({
           </div>
         </form>
       </div>
+
+      {/* Tiroir assistant admin : conversation éphémère (perdue à la
+          fermeture), contexte = formulaire d'édition courant. */}
+      {assistantOuvert && (
+        <AdminAssistantPanel form={form} statut={statutForm} onClose={() => setAssistantOuvert(false)} />
+      )}
 
       {confirmation && (
         <ConfirmDialog

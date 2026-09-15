@@ -336,3 +336,23 @@ class SignalementORM(Base):
     statut = Column(String, nullable=False, default="ouvert")  # ouvert|resolu
     created_at = Column(UTCDateTime, default=utc_now)
     resolved_at = Column(UTCDateTime, nullable=True)
+
+
+class ReferentielOptionORM(Base):
+    """Option d'une liste énumérative du référentiel (chantier « paramètres
+    à valeurs discrètes reconfigurables ») : `scope` nomme la liste (niveau,
+    classe, evaluation, matiere, session, serie), `code` est la valeur
+    canonique stockée sur les épreuves et `label` le libellé affiché (repli
+    sur `code` si absent). Seedée au démarrage depuis `core/referentiel.py`,
+    puis alimentée par l'onglet « Paramètres » du back-office et par l'usage
+    (auto-ajout d'une matière/série/session saisie hors liste)."""
+
+    __tablename__ = "referentiel_options"
+    __table_args__ = (UniqueConstraint("scope", "code", name="uq_referentiel_scope_code"),)
+
+    id = Column(String, primary_key=True, default=_uid)
+    scope = Column(String, nullable=False, index=True)
+    code = Column(String, nullable=False)
+    label = Column(String, nullable=True)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(UTCDateTime, default=utc_now)

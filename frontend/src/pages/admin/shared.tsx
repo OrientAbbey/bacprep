@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useState, useId } from "react";
 import { FileText, Plus, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
 import { MarkdownContent } from "../../components/MarkdownContent";
@@ -94,11 +94,14 @@ export function Field({
   value,
   onChange,
   placeholder,
+  list,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  /** id d'une `<datalist>` de suggestions (champ libre enrichi). */
+  list?: string;
 }) {
   const id = useId();
   return (
@@ -111,9 +114,51 @@ export function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        list={list}
         className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
       />
     </div>
+  );
+}
+
+/** Description « Format attendu » partagée par les deux zones de contenu
+ * (sujet et corrigé) : un résumé + un bloc dépliable listant le Markdown
+ * accepté. Rédigée comme un prompt — un admin qui colle un document brut
+ * comprend d'emblée ce que l'éditeur attend et ce qui sera filtré. */
+export function FormatAttendu() {
+  return (
+    <details className="group rounded-lg border border-ink-soft/15 bg-paper/60 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-medium text-slate group-open:text-ink">
+        Format attendu — Markdown enrichi (titres, formules, tableaux, images)
+      </summary>
+      <div className="mt-2 space-y-1.5 text-xs text-slate">
+        <p>Un sujet/corrigé est rédigé en Markdown : il peut utiliser :</p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            les <strong>titres hiérarchisés</strong> <code>#</code>, <code>##</code>, <code>###</code> pour
+            structurer les parties ;
+          </li>
+          <li>les paragraphes, <strong>listes</strong> à puces ou numérotées et <strong>tableaux</strong> Markdown ;</li>
+          <li>
+            les <strong>formules</strong> : <code>$…$</code> en ligne, <code>$$…$$</code> en bloc (environnements
+            LaTeX placés <em>dans</em> <code>$$…$$</code>) ;
+          </li>
+          <li>
+            les <strong>images</strong> <code>![légende](/api/files/…)</code>, avec une largeur d'affichage
+            optionnelle <code>#w=300</code> (le rendu du lecteur la respecte) ;
+          </li>
+          <li>
+            les <strong>ancres</strong> <code>{"{#id}"}</code> après un titre pour les renvois entre
+            énoncés ;
+          </li>
+          <li>le code court <code>`…`</code> ou en blocs <code>```</code>.</li>
+        </ul>
+        <p>
+          Le HTML brut est ignoré au rendu, et seuls les liens <code>http(s)</code>, <code>mailto:</code> et
+          internes sont conservés. Rien d'autre n'est nécessaire : pas d'en-tête, pas de style.
+        </p>
+      </div>
+    </details>
   );
 }
 
@@ -158,6 +203,7 @@ export function ContentBlock({
   onTogglePreview,
   onChange,
   onUpload,
+  onImportMarkdown,
   assets,
   documents,
   onDeleteImage,
@@ -171,13 +217,15 @@ export function ContentBlock({
   onTogglePreview: () => void;
   onChange: (v: string) => void;
   onUpload: (file: File) => void;
+  onImportMarkdown: (text: string) => void;
   assets: Asset[];
   documents: DocumentFile[];
   onDeleteImage: (asset: Asset) => void;
-  onInsertImage: (asset: Asset) => void;
+  onInsertImage: (asset: Asset, width?: number) => void;
   onDeleteDocument: (doc: DocumentFile) => void;
 }) {
   const textareaId = useId();
+  const [imageWidths, setImageWidths] = useState<Record<string, number>>({});
   return (
     <div className="space-y-2 border-t border-ink-soft/10 pt-4">
       <div className="flex items-center justify-between">
@@ -192,10 +240,7 @@ export function ContentBlock({
           {preview ? "Texte" : "Rendu"}
         </button>
       </div>
-      <p className="text-xs text-slate">
-        Format attendu : titres Markdown, ancres <code>{"{#id}"}</code>, LaTeX <code>$...$</code>, tableaux
-        Markdown, images <code>![légende](url)</code>.
-      </p>
+      <FormatAttendu />
 
       {preview ? (
         <div className="max-h-[420px] overflow-y-auto rounded-lg border border-ink-soft/15 p-3">
@@ -246,16 +291,36 @@ export function ContentBlock({
             ))}
           </ul>
         )}
-        <input
-          type="file"
-          accept="image/*"
-          className="block cursor-pointer text-sm file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-paper"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onUpload(file);
-            e.target.value = "";
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-ink-soft">Importer un fichier .md :</span>
+            <input
+              type="file"
+              accept=".md,.markdown,text/markdown"
+              className="block cursor-pointer text-sm file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-paper"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  file.text().then(onImportMarkdown).catch(() => undefined);
+                }
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-ink-soft">Image :</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="block cursor-pointer text-sm file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-paper"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onUpload(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
         {assets.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {assets.map((a) => (
@@ -283,7 +348,7 @@ export function ContentBlock({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onInsertImage(a)}
+                  onClick={() => onInsertImage(a, imageWidths[a.id])}
                   title="Insérer la balise Markdown de cette image dans le texte"
                   aria-label="Insérer cette image dans le texte"
                   className="absolute bottom-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-valide text-paper shadow"
@@ -292,14 +357,32 @@ export function ContentBlock({
                 </button>
               </div>
             ))}
-            {/* Métadonnées des fichiers : dimensions et poids, visibles en
-                clair sous la rangée de vignettes (aussi en info-bulle). */}
-            <div className="w-full space-y-0.5 text-xs text-slate">
+            {/* Métadonnées des fichiers : dimensions, poids et taille
+                d'affichage choisie, visibles en clair sous la rangée de
+                vignettes (aussi en info-bulle). La taille d'affichage est
+                persistée dans la balise Markdown à l'insertion (#w=NNN). */}
+            <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate">
               {assets.map((a) => (
-                <p key={`meta-${a.id}`} className="truncate">
+                <p key={`meta-${a.id}`} className="flex items-center gap-2">
                   <span className="font-mono-tag text-[10px]">{a.filename}</span>
                   {a.width && a.height ? ` · ${a.width}×${a.height} px` : ""}
                   {a.size_bytes ? ` · ${formatBytes(a.size_bytes)}` : ""}
+                  <label className="flex items-center gap-1">
+                    <span className="sr-only">Taille d'affichage de {a.filename}</span>
+                    <select
+                      value={imageWidths[a.id] ?? 0}
+                      onChange={(e) =>
+                        setImageWidths((w) => ({ ...w, [a.id]: Number(e.target.value) }))
+                      }
+                      className="rounded-[2px] border border-ink-soft/25 bg-paper px-1.5 py-0.5 text-xs"
+                    >
+                      <option value={0}>Pleine</option>
+                      <option value={240}>240 px</option>
+                      <option value={320}>320 px</option>
+                      <option value={480}>480 px</option>
+                      <option value={640}>640 px</option>
+                    </select>
+                  </label>
                 </p>
               ))}
             </div>

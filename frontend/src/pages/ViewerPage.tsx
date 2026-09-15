@@ -1,4 +1,4 @@
-import { ClipboardCheck, FileText, Flag, Lock } from "lucide-react";
+import { ChevronRight, ClipboardCheck, FileText, Flag, Lock } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
@@ -305,13 +305,13 @@ export function ViewerPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-7rem)] flex-col">
+    <div className={`flex flex-col ${mobile ? "h-[calc(100dvh-6rem)]" : "h-[calc(100dvh-7rem)]"}`}>
       {/* Rangées d'en-tête FIXES (ne défilent pas) : tout l'espace vertical
           restant est réservé au panneau de lecture ci-dessous. */}
       <div className="shrink-0">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h1 className="font-serif-brand text-2xl">{epreuve.matiere}</h1>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate font-serif-brand text-2xl">{epreuve.matiere}</h1>
             {/* Signalement : toujours VISIBLE (découvrabilité), en rouge
                 « correction » ; désactivé en visiteur avec le motif du
                 verrou — l'API exige de toute façon une session. */}
@@ -327,7 +327,7 @@ export function ViewerPage() {
             </button>
           </div>
           {epreuve.corrige_disponible && (
-            <div role="tablist" aria-label="Contenu de l'épreuve" className="flex rounded-full border border-ink-soft/20 p-1">
+            <div role="tablist" aria-label="Contenu de l'épreuve" className="flex shrink-0 rounded-full border border-ink-soft/20 p-1">
               {([
                 ["sujet", "Sujet", FileText],
                 ["corrige", "Corrigé", ClipboardCheck],
@@ -354,48 +354,113 @@ export function ViewerPage() {
           )}
         </div>
 
-        <p className="font-mono-tag text-xs text-slate">
-          {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · SÉRIES{" "}
-          {epreuve.filieres.join(",")}
-          {epreuve.duree ? ` · ${epreuve.duree}` : ""}
-        </p>
-
-        {/* Motif signature n°3 : double filet (letterhead), uniquement sur cette page */}
-        <div className="my-3" aria-hidden="true">
-          <div className="h-px bg-ink-soft/20" />
-          <div className="h-[3px] bg-paper" />
-          <div className="h-px bg-ink-soft/20" />
-        </div>
-
-        {!user && (
-          <div className="mb-3 rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
-            <p className="text-xs text-ink-soft">
-              Consultation libre en mode visiteur — les fonctionnalités du compte sont
-              visibles mais verrouillées :
+        {/* MOBILE : la méta + le bandeau visiteur se replient dans une ligne
+            fine (élément <details>, replié par défaut) — zéro hauteur
+            permanente ; on ne conserve que le strict minimum (titre + onglets,
+            ci-dessus). L'épreuve gagne ainsi toute la place. */}
+        {mobile ? (
+          <details className="group mb-3 overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised">
+            <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2">
+              <ChevronRight
+                size={13}
+                strokeWidth={1.75}
+                aria-hidden="true"
+                className="shrink-0 text-slate transition-transform group-open:rotate-90"
+              />
+              <span className="truncate font-mono-tag text-[10px] uppercase tracking-wide text-ink-soft">
+                {epreuve.evaluation} {epreuve.annee} · SÉRIES {epreuve.filieres.join(",")}
+              </span>
+              {!user && (
+                <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-highlight/40 px-2 py-0.5 font-mono-tag text-[10px] text-ink-soft">
+                  <Lock size={9} strokeWidth={2} aria-hidden="true" className="text-slate" />
+                  Visiteur
+                </span>
+              )}
+            </summary>
+            <div className="border-t border-ink-soft/15 px-4 py-3">
+              <p className="font-mono-tag text-xs text-slate">
+                {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · SÉRIES{" "}
+                {epreuve.filieres.join(",")}
+                {epreuve.duree ? ` · ${epreuve.duree}` : ""}
+              </p>
+              {!user && (
+                <div className="mt-3 rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
+                  <p className="text-xs text-ink-soft">
+                    Consultation libre en mode visiteur — les fonctionnalités du compte sont
+                    visibles mais verrouillées :
+                  </p>
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {[
+                      "Tuteur IA Prep — poser des questions",
+                      "Notes personnelles",
+                      "Signaler un problème",
+                    ].map((libelle) => (
+                      <li
+                        key={libelle}
+                        title="Connecte-toi pour utiliser cette fonctionnalité"
+                        className="flex cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 py-1.5 text-xs text-ink-soft"
+                      >
+                        <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
+                        {libelle}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    to="/connexion"
+                    className="mt-2 inline-flex min-h-[36px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
+                  >
+                    Se connecter pour tout débloquer
+                  </Link>
+                </div>
+              )}
+            </div>
+          </details>
+        ) : (
+          <>
+            <p className="font-mono-tag text-xs text-slate">
+              {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · SÉRIES{" "}
+              {epreuve.filieres.join(",")}
+              {epreuve.duree ? ` · ${epreuve.duree}` : ""}
             </p>
-            <ul className="mt-2 flex flex-wrap gap-2">
-              {[
-                "Tuteur IA Prep — poser des questions",
-                "Notes personnelles",
-                "Signaler un problème",
-              ].map((libelle) => (
-                <li
-                  key={libelle}
-                  title="Connecte-toi pour utiliser cette fonctionnalité"
-                  className="flex cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 py-1.5 text-xs text-ink-soft"
+
+            {/* Motif signature n°3 : double filet (letterhead), uniquement sur cette page */}
+            <div className="my-3" aria-hidden="true">
+              <div className="h-px bg-ink-soft/20" />
+              <div className="h-[3px] bg-paper" />
+              <div className="h-px bg-ink-soft/20" />
+            </div>
+
+            {!user && (
+              <div className="rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
+                <p className="text-xs text-ink-soft">
+                  Consultation libre en mode visiteur — les fonctionnalités du compte sont
+                  visibles mais verrouillées :
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {[
+                    "Tuteur IA Prep — poser des questions",
+                    "Notes personnelles",
+                    "Signaler un problème",
+                  ].map((libelle) => (
+                    <li
+                      key={libelle}
+                      title="Connecte-toi pour utiliser cette fonctionnalité"
+                      className="flex cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 py-1.5 text-xs text-ink-soft"
+                    >
+                      <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
+                      {libelle}
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  to="/connexion"
+                  className="mt-2 inline-flex min-h-[36px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
                 >
-                  <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
-                  {libelle}
-                </li>
-              ))}
-            </ul>
-            <Link
-              to="/connexion"
-              className="mt-2 inline-flex min-h-[36px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
-            >
-              Se connecter pour tout débloquer
-            </Link>
-          </div>
+                  Se connecter pour tout débloquer
+                </Link>
+              </div>
+            )}
+          </>
         )}
       </div>
 

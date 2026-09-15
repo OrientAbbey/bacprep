@@ -30,9 +30,11 @@ from .core.config import is_prod
 from .core.logging_config import get_logger, setup_logging
 from .db import Base, SessionLocal, engine
 from .routers import (
+    admin_assistant,
     admin_epreuves,
     admin_import,
     admin_misc,
+    admin_referentiel,
     assistant,
     auth,
     epreuves,
@@ -88,6 +90,12 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _ensure_users_role_column()
     db = SessionLocal()
+    try:
+        from .core.referentiel_options import seed_referentiel_options
+
+        seed_referentiel_options(db)
+    except Exception:
+        log.exception("Seed referentiel_options impossible au démarrage")
     try:
         seed_database_if_empty(db)
     except Exception:
@@ -215,6 +223,8 @@ app.include_router(subscriptions.router)
 app.include_router(admin_misc.router)
 app.include_router(admin_epreuves.router)
 app.include_router(admin_import.router)
+app.include_router(admin_referentiel.router)
+app.include_router(admin_assistant.router)
 app.include_router(assistant.router)
 app.include_router(me.router)
 app.include_router(ws.router)

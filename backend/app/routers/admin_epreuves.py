@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..core import epreuve_files, images, referentiel, signing
+from ..core import epreuve_files, images, referentiel, referentiel_options, signing
 from ..core.logging_config import get_logger
 from ..db import get_db, utc_now
 from ..db_models import (
@@ -61,6 +61,17 @@ def _replace_filieres(db: Session, epreuve_id: str, filieres: list[str]) -> None
     db.query(EpreuveFiliereORM).filter(EpreuveFiliereORM.epreuve_id == epreuve_id).delete()
     for f in filieres:
         db.add(EpreuveFiliereORM(epreuve_id=epreuve_id, filiere=f))
+
+
+def _auto_ajout_referentiel(db: Session, matiere: str, session: str, filieres: list[str]) -> None:
+    """Après une sauvegarde, mémorise toute valeur saisie hors référentiel
+    (matière, session, séries) dans `referentiel_options` — best-effort et
+    sans jamais bloquer l'enregistrement : la liste s'alimente à l'usage,
+    les formulaires d'épreuve proposeront ces valeurs la fois suivante."""
+    referentiel_options.ensure_option(db, "matiere", matiere)
+    referentiel_options.ensure_option(db, "session", session)
+    for f in filieres:
+        referentiel_options.ensure_option(db, "serie", f)
 
 
 @router.get("/epreuves")
@@ -192,12 +203,14 @@ def admin_create_epreuve(payload: EpreuveIn, db: Session = Depends(get_db), lock
     db.add(e)
     db.flush()
 
+    filieres = _normalize_filieres(payload.filieres)
     epreuve_files.write_document(db, e, "sujet", payload.contenu_markdown or "")
     if payload.corrige_markdown:
         epreuve_files.write_document(db, e, "corrige", payload.corrige_markdown)
-    _replace_filieres(db, e.id, _normalize_filieres(payload.filieres))
+    _replace_filieres(db, e.id, filieres)
 
     db.commit()
+    _auto_ajout_referentiel(db, e.matiere, e.session or "", filieres or [])
     log_admin_event(
         db, e.id, "created", email=lock.email,
         details={"matiere": e.matiere, "classe": e.classe, "annee": e.annee},
@@ -271,6 +284,9 @@ def admin_update_epreuve(
 
     e.updated_at = utc_now()
     db.commit()
+    _auto_ajout_referentiel(
+        db, e.matiere, e.session or "", _normalize_filieres(filieres) if filieres is not None else []
+    )
     log_admin_event(db, epreuve_id, "updated", email=lock.email, details={"champs": champs_modifies})
     return {"ok": True}
 

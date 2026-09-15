@@ -51,6 +51,13 @@ export const api = {
     request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined, headers, signal }),
   put: <T>(path: string, body?: unknown, headers?: Record<string, string>, signal?: AbortSignal) =>
     request<T>(path, { method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined, headers, signal }),
+  patch: <T>(path: string, body?: unknown, headers?: Record<string, string>, signal?: AbortSignal) =>
+    request<T>(path, {
+      method: "PATCH",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers,
+      signal,
+    }),
   del: <T>(path: string, headers?: Record<string, string>, signal?: AbortSignal) =>
     request<T>(path, { method: "DELETE", headers, signal }),
   upload: async <T>(path: string, formData: FormData, headers?: Record<string, string>): Promise<T> => {
@@ -83,4 +90,24 @@ export function resolveMediaUrl(url: string): string {
   if (/^https?:\/\//.test(url)) return url; // déjà absolue
   if (!BASE_URL) return url; // production : même origine, rien à faire
   return `${BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+/**
+ * Ajoute (ou vérifie) une option du référentiel — BEST-EFFORT : sert aux
+ * auto-ajouts des formulaires (série/matière/session saisies hors liste).
+ * L'échec (option déjà présente, réseau, 401) est SILENCIEUX pour ne
+ * jamais bloquer une sauvegarde d'épreuve. `headers` doit porter
+ * l'authentification admin (voir authHeaders) pour les voies admin.
+ */
+export async function ensureReferentielOption(
+  scope: string,
+  code: string,
+  headers?: Record<string, string>
+): Promise<void> {
+  if (!code || !code.trim()) return;
+  try {
+    await api.post("/api/admin/referentiel-options", { scope, code }, headers);
+  } catch {
+    // Best-effort volontaire : aucune erreur ne doit bloquer l'appelant.
+  }
 }

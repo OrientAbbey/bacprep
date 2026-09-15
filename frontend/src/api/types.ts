@@ -176,6 +176,26 @@ export interface ActiviteItem {
 
 // ---------- Admin ----------
 
+/** Liste énumérative du référentiel (table `referentiel_options`,
+ * onglet « Paramètres » du back-office). */
+export type ReferentielScope = "niveau" | "classe" | "evaluation" | "matiere" | "session" | "serie";
+
+/** Option d'une liste du référentiel. `label` est le libellé affiché
+ * (repli sur `code` côté serveur) ; `en_usage` compte les épreuves qui
+ * utilisent encore cette valeur (utile avant une suppression). */
+export interface ReferentielOption {
+  id: string;
+  scope: ReferentielScope;
+  code: string;
+  label: string;
+  position: number;
+  en_usage: number;
+}
+
+/** Options du référentiel groupées par scope (réponse de
+ * GET /api/admin/referentiel-options). */
+export type ReferentielOptions = Partial<Record<ReferentielScope, ReferentielOption[]>>;
+
 export interface AdminEpreuveCounts {
   tous: number;
   brouillon: number;

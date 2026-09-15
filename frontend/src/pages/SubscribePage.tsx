@@ -284,9 +284,9 @@ export function SubscribePage() {
 
   if (erreurPricing) {
     return (
-      <div
+<div
         role="alert"
-        className="mx-auto max-w-2xl rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction"
+        className="rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction"
       >
         La grille tarifaire n'a pas pu être chargée.{" "}
         <button type="button" onClick={chargerTarifs} className="underline">
@@ -298,10 +298,10 @@ export function SubscribePage() {
 
   if (!pricing)
     return (
-      <div className="mx-auto max-w-2xl space-y-6" aria-busy="true">
+      <div className="space-y-6" aria-busy="true">
         <Skeleton className="h-8 w-40" />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, i) => (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-busy="true">
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="space-y-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
               <Skeleton className="h-5 w-2/3" />
               <Skeleton className="h-4 w-1/3" />
@@ -318,7 +318,7 @@ export function SubscribePage() {
     );
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="space-y-6">
       <h1 className="font-serif-brand text-2xl">S'abonner</h1>
 
       {step === "confirmed" ? (
@@ -372,7 +372,11 @@ export function SubscribePage() {
           </button>
         </div>
       ) : (
-        <>
+        // Deux colonnes sur lg : sélecteur de plans à gauche, récap de
+        // commande (prix + moyens de paiement) à droite, sticky — le
+        // récap suit l'élève pendant qu'il affine sa sélection.
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
+          <div className="min-w-0 space-y-6">
           {/* Le type d'abonnement se choisit dans une grille de cartes :
               libellé + prix + description (le tarif le plus lisible en
               un coup d'œil, au lieu de pills compactes). */}
@@ -455,7 +459,10 @@ export function SubscribePage() {
               )}
             </div>
           )}
+          </div>
 
+          {/* Colonne récapitulative : sticky, elle suit la sélection. */}
+          <aside className="min-w-0 space-y-6 lg:sticky lg:top-24">
           {/* Carte récapitulative : bandeau prix mis en avant, phrase de
               synthèse, puis le détail en tuiles à icônes. Elle est amenée
               dans le champ de vision dès qu'elle apparaît (voir effet
@@ -569,7 +576,8 @@ export function SubscribePage() {
               </div>
             </div>
           )}
-        </>
+          </aside>
+          </div>
       )}
     </div>
   );

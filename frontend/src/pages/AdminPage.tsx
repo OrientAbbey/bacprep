@@ -6,12 +6,13 @@ import { useToast } from "../components/Toast";
 import { EpreuvesPanel } from "./admin/EpreuvesPanel";
 import { ImportPanel } from "./admin/ImportPanel";
 import { JournalPanel } from "./admin/JournalPanel";
+import { ParametresPanel } from "./admin/ParametresPanel";
 import { SignalementsPanel } from "./admin/SignalementsPanel";
 import { StatsPanel } from "./admin/StatsPanel";
 import { UtilisateursPanel } from "./admin/UtilisateursPanel";
 import { authHeaders } from "./admin/shared";
 
-type Onglet = "epreuves" | "import" | "utilisateurs" | "journal" | "signalements";
+type Onglet = "epreuves" | "import" | "utilisateurs" | "parametres" | "journal" | "signalements";
 
 /** Coquille du back-office : connexion admin, onglets, statistiques et
  * battement de cœur du verrou. Chaque onglet vit dans son propre panneau
@@ -31,7 +32,7 @@ export function AdminPage() {
   // volontaire pour garder l'URL stable).
   const [tab, setTab] = useState<Onglet>(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    return (["epreuves", "import", "utilisateurs", "journal", "signalements"] as const).includes(t as never)
+    return (["epreuves", "import", "utilisateurs", "parametres", "journal", "signalements"] as const).includes(t as never)
       ? (t as Onglet)
       : "epreuves";
   });
@@ -44,7 +45,7 @@ export function AdminPage() {
   // Navigation clavier des onglets (pattern WAI-ARIA) : flèches droite/
   // gauche, Origine (Home) et Fin circulent dans l'ordre visuel affiché.
   function onTabsKeyDown(e: React.KeyboardEvent, current: Onglet) {
-    const order: Onglet[] = ["epreuves", "import", "utilisateurs", "signalements", "journal"];
+    const order: Onglet[] = ["epreuves", "import", "utilisateurs", "parametres", "signalements", "journal"];
     const idx = order.indexOf(current);
     let next: Onglet | null = null;
     if (e.key === "ArrowRight") next = order[(idx + 1) % order.length];
@@ -286,6 +287,7 @@ export function AdminPage() {
             ["epreuves", "Épreuves"],
             ["import", "Import massif"],
             ["utilisateurs", `Utilisateurs${stats?.utilisateurs ? ` (${stats.utilisateurs})` : ""}`],
+            ["parametres", "Paramètres"],
             ["signalements", `Signalements${stats?.signalements_ouverts ? ` (${stats.signalements_ouverts})` : ""}`],
             ["journal", "Journal"],
           ] as [Onglet, string][]
@@ -319,6 +321,8 @@ export function AdminPage() {
           <ImportPanel token={token} />
         ) : tab === "utilisateurs" ? (
           <UtilisateursPanel token={token} />
+        ) : tab === "parametres" ? (
+          <ParametresPanel token={token} />
         ) : tab === "signalements" ? (
           <SignalementsPanel token={token} />
         ) : (
