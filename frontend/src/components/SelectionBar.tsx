@@ -52,7 +52,7 @@ export function SelectionBar({
         disabled={!peutDemander}
         aria-label="Demander à Tuteur IA Prep sur ce passage"
         title={peutDemander ? "Demander à Tuteur IA Prep sur ce passage" : motifVerrou}
-        className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
+        className={`flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
           peutDemander ? "verrou-ink" : "verrou-ink cursor-not-allowed opacity-50"
         }`}
       >
@@ -65,7 +65,7 @@ export function SelectionBar({
         disabled={!peutNoter}
         aria-label="Prendre une note sur ce passage"
         title={peutNoter ? "Prendre une note sur ce passage" : motifVerrou}
-        className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
+        className={`flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
           peutNoter ? "verrou-valide" : "verrou-valide cursor-not-allowed opacity-50"
         }`}
       >

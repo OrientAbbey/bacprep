@@ -103,7 +103,7 @@ export function SignalementsPanel({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => resoudre(s.id)}
-              className="mt-3 min-h-[36px] rounded-full border border-valide/40 px-4 text-xs font-medium text-valide hover:bg-valide-soft/40"
+              className="mt-3 min-h-[44px] rounded-full border border-valide/40 px-4 text-xs font-medium text-valide hover:bg-valide-soft/40"
             >
               Marquer résolu
             </button>

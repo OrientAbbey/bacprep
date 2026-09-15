@@ -70,7 +70,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Rechercher…"
                 aria-label="Recherche globale"
-                className="min-h-[36px] w-full rounded-full border border-ink-soft/25 bg-paper px-3 pl-9 text-xs"
+                className="min-h-[44px] w-full rounded-full border border-ink-soft/25 bg-paper px-3 pl-9 text-xs"
               />
             </div>
           </form>
@@ -82,7 +82,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               onClick={() => setMenuOpen(true)}
               aria-label="Ouvrir le menu"
               aria-expanded={menuOpen}
-              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft sm:hidden"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft sm:hidden after:absolute after:-inset-1 after:rounded-full after:content-['']"
             >
               <Menu size={20} strokeWidth={1.75} aria-hidden="true" />
             </button>
@@ -110,7 +110,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                   to="/profil"
                   aria-label={`Profil de ${user.nom}`}
                   title={user.nom}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper"
+className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper after:absolute after:-inset-1 after:rounded-full after:content-['']"
                 >
                   {getInitials(user.nom)}
                 </Link>
@@ -118,7 +118,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 <Link
                   to="/connexion"
                   state={{ from: location }}
-                  className="min-h-[36px] rounded-full bg-ink px-4 text-sm font-medium leading-[36px] text-paper hover:opacity-90"
+                  className="min-h-[44px] rounded-full bg-ink px-4 text-sm font-medium leading-[44px] text-paper hover:opacity-90"
                 >
                   Connexion
                 </Link>
@@ -129,7 +129,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               type="button"
               onClick={toggleTheme}
               aria-label="Changer de thème"
-              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
             >
               {theme === "dark" ? (
                 <Sun size={20} strokeWidth={1.75} aria-hidden="true" />
@@ -153,7 +153,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 type="button"
                 onClick={() => setMenuOpen(false)}
                 aria-label="Fermer le menu"
-                className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft"
+className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
               >
                 <X size={18} strokeWidth={1.75} aria-hidden="true" />
               </button>
@@ -172,7 +172,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 placeholder="Rechercher une épreuve…"
                 aria-label="Recherche globale"
                 autoFocus
-                className="min-h-[42px] w-full rounded-full border border-ink-soft/25 bg-paper-raised px-3 pl-9 text-sm"
+                className="min-h-[44px] w-full rounded-full border border-ink-soft/25 bg-paper-raised px-3 pl-9 text-sm"
               />
             </form>
 

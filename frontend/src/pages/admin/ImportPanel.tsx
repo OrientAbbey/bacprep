@@ -132,7 +132,7 @@ export function ImportPanel({ token }: { token: string }) {
           <button
             onClick={startImport}
             disabled={!file || uploading}
-            className="min-h-[40px] rounded-full bg-ink px-5 text-sm text-paper disabled:opacity-50"
+            className="min-h-[44px] rounded-full bg-ink px-5 text-sm text-paper disabled:opacity-50"
           >
             {uploading ? "Envoi…" : "Lancer l'import"}
           </button>

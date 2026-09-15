@@ -426,7 +426,7 @@ export function EpreuvesPanel({
         <div className="space-y-2">
           <button
             onClick={() => { setForm(EMPTY_FORM); setStatutForm("brouillon"); }}
-            className="min-h-[40px] w-full rounded-full border border-ink-soft/25 text-sm"
+            className="min-h-[44px] w-full rounded-full border border-ink-soft/25 text-sm"
           >
             + Nouvelle épreuve
           </button>
@@ -472,7 +472,7 @@ export function EpreuvesPanel({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Rechercher une épreuve…"
               aria-label="Rechercher une épreuve par matière ou année"
-              className="min-h-[40px] w-full rounded-full border border-ink-soft/25 bg-paper-raised pl-9 pr-3 text-sm"
+              className="min-h-[44px] w-full rounded-full border border-ink-soft/25 bg-paper-raised pl-9 pr-3 text-sm"
             />
           </div>
 
@@ -621,7 +621,7 @@ export function EpreuvesPanel({
                     type="button"
                     onClick={() => toggleSerie(s)}
                     aria-pressed
-                    className="flex items-center gap-1 rounded-full border border-ink bg-ink px-3 py-1.5 text-xs text-paper"
+                    className="flex min-h-[44px] items-center gap-1 rounded-full border border-ink bg-ink px-3 text-xs text-paper"
                   >
                     <Check size={12} strokeWidth={2.5} aria-hidden="true" />
                     {s}
@@ -652,7 +652,7 @@ export function EpreuvesPanel({
                 }
               }}
               placeholder="Ajouter une série hors référentiel puis Entrée…"
-              className="mt-2 min-h-[36px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-xs"
+              className="mt-2 min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-xs"
             />
           </div>
 
@@ -698,7 +698,7 @@ export function EpreuvesPanel({
           />
 
           <div className="flex flex-wrap gap-2 border-t border-ink-soft/10 pt-4">
-            <button type="submit" className="min-h-[40px] rounded-full bg-ink px-5 text-sm text-paper">
+            <button type="submit" className="min-h-[44px] rounded-full bg-ink px-5 text-sm text-paper">
               Enregistrer
             </button>
             {form.id && (
@@ -706,21 +706,21 @@ export function EpreuvesPanel({
                 <button
                   type="button"
                   onClick={publish}
-                  className="min-h-[40px] rounded-full bg-valide px-5 text-sm text-paper"
+                  className="min-h-[44px] rounded-full bg-valide px-5 text-sm text-paper"
                 >
                   Publier
                 </button>
                 <button
                   type="button"
                   onClick={unpublish}
-                  className="min-h-[40px] rounded-full border border-ink-soft/25 px-5 text-sm"
+                  className="min-h-[44px] rounded-full border border-ink-soft/25 px-5 text-sm"
                 >
                   Dépublier
                 </button>
                 <button
                   type="button"
                   onClick={() => remove(form.id!)}
-                  className="min-h-[40px] rounded-full border border-correction/40 px-5 text-sm text-correction"
+                  className="min-h-[44px] rounded-full border border-correction/40 px-5 text-sm text-correction"
                 >
                   Supprimer
                 </button>

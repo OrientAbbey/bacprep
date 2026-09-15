@@ -180,21 +180,21 @@ export function ParametresPanel({ token }: { token: string }) {
                             value={enEdition.code}
                             onChange={(e) => setEnEdition((ed) => (ed ? { ...ed, code: e.target.value } : ed))}
                             aria-label="Valeur (code) de l'option"
-                            className="min-h-[32px] w-32 rounded-[2px] border border-ink-soft/25 bg-paper px-2 font-mono text-xs"
+                            className="min-h-[44px] w-32 rounded-[2px] border border-ink-soft/25 bg-paper px-2 font-mono text-xs"
                           />
                           <input
                             value={enEdition.label}
                             onChange={(e) => setEnEdition((ed) => (ed ? { ...ed, label: e.target.value } : ed))}
                             aria-label="Libellé affiché"
                             placeholder="Libellé"
-                            className="min-h-[32px] flex-1 rounded-[2px] border border-ink-soft/25 bg-paper px-2 text-xs"
+                            className="min-h-[44px] flex-1 rounded-[2px] border border-ink-soft/25 bg-paper px-2 text-xs"
                           />
                           <button
                             type="button"
                             onClick={() => saveEdition(meta.scope)}
                             title="Enregistrer"
                             aria-label="Enregistrer le renommage"
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-valide text-paper"
+                            className="relative flex h-8 w-8 items-center justify-center rounded-full bg-valide text-paper after:absolute after:-inset-1.5 after:rounded-full after:content-['']"
                           >
                             <Check size={14} strokeWidth={2.5} aria-hidden="true" />
                           </button>
@@ -203,7 +203,7 @@ export function ParametresPanel({ token }: { token: string }) {
                             onClick={() => setEnEdition(null)}
                             title="Annuler"
                             aria-label="Annuler le renommage"
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-ink-soft/25"
+                            className="relative flex h-8 w-8 items-center justify-center rounded-full border border-ink-soft/25 after:absolute after:-inset-1.5 after:rounded-full after:content-['']"
                           >
                             <X size={14} strokeWidth={2} aria-hidden="true" />
                           </button>
@@ -229,7 +229,7 @@ export function ParametresPanel({ token }: { token: string }) {
                             onClick={() => setEnEdition({ id: o.id, code: o.code, label: o.label === o.code ? "" : o.label })}
                             title="Renommer cette option"
                             aria-label={`Renommer ${o.label}`}
-                            className="flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-highlight-soft hover:text-highlight"
+                            className="relative flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-highlight-soft hover:text-highlight after:absolute after:-inset-2 after:rounded-full after:content-['']"
                           >
                             <Pencil size={13} strokeWidth={1.75} aria-hidden="true" />
                           </button>
@@ -238,7 +238,7 @@ export function ParametresPanel({ token }: { token: string }) {
                             onClick={() => demanderSuppression(meta.scope, o)}
                             title="Supprimer de la liste"
                             aria-label={`Supprimer ${o.label} de la liste`}
-                            className="flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-correction-soft hover:text-correction"
+                            className="relative flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-correction-soft hover:text-correction after:absolute after:-inset-2 after:rounded-full after:content-['']"
                           >
                             <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
                           </button>
@@ -266,7 +266,7 @@ export function ParametresPanel({ token }: { token: string }) {
                   }}
                   placeholder={meta.codePh}
                   aria-label={`Nouvelle valeur — ${meta.titre}`}
-                  className="min-h-[32px] w-40 rounded-[2px] border border-ink-soft/25 bg-paper px-2 text-xs"
+                  className="min-h-[44px] w-40 rounded-[2px] border border-ink-soft/25 bg-paper px-2 text-xs"
                 />
                 {meta.labelPh && (
                   <input
@@ -282,13 +282,13 @@ export function ParametresPanel({ token }: { token: string }) {
                     }}
                     placeholder={meta.labelPh}
                     aria-label={`Libellé affiché — ${meta.titre}`}
-                    className="min-h-[32px] flex-1 rounded-[2px] border border-ink-soft/25 bg-paper px-2 text-xs"
+                    className="min-h-[44px] flex-1 rounded-[2px] border border-ink-soft/25 bg-paper px-2 text-xs"
                   />
                 )}
                 <button
                   type="button"
                   onClick={() => addSort(meta.scope)}
-                  className="flex min-h-[32px] items-center gap-1 rounded-full bg-ink px-3 text-xs font-medium text-paper"
+                  className="flex min-h-[44px] items-center gap-1 rounded-full bg-ink px-3 text-xs font-medium text-paper"
                 >
                   <Plus size={13} strokeWidth={2.5} aria-hidden="true" />
                   Ajouter

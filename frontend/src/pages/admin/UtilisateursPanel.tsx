@@ -233,7 +233,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                           type="button"
                           onClick={() => demouvoir(u)}
                           title="Révocation réservée à l'admin root (colonne users.role)"
-                          className="min-h-[32px] rounded-full border border-correction/40 px-3 text-xs font-medium text-correction hover:bg-correction-soft/40"
+                          className="min-h-[44px] rounded-full border border-correction/40 px-3 text-xs font-medium text-correction hover:bg-correction-soft/40"
                         >
                           Démouvoir
                         </button>
@@ -244,7 +244,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                           <button
                             type="button"
                             onClick={() => debannir(u)}
-                            className="flex min-h-[32px] items-center gap-1 rounded-full border border-valide/40 px-3 text-xs font-medium text-valide hover:bg-valide-soft/40"
+                            className="flex min-h-[44px] items-center gap-1 rounded-full border border-valide/40 px-3 text-xs font-medium text-valide hover:bg-valide-soft/40"
                           >
                             <ShieldCheck size={12} strokeWidth={2} aria-hidden="true" />
                             Débannir
@@ -253,7 +253,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                           <button
                             type="button"
                             onClick={() => bannir(u)}
-                            className="flex min-h-[32px] items-center gap-1 rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-correction/50 hover:text-correction"
+                            className="flex min-h-[44px] items-center gap-1 rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-correction/50 hover:text-correction"
                           >
                             <Ban size={12} strokeWidth={2} aria-hidden="true" />
                             Bannir
@@ -262,7 +262,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                         <button
                           type="button"
                           onClick={() => supprimer(u)}
-                          className="min-h-[32px] rounded-full border border-correction/40 px-3 text-xs font-medium text-correction hover:bg-correction-soft/40"
+                          className="min-h-[44px] rounded-full border border-correction/40 px-3 text-xs font-medium text-correction hover:bg-correction-soft/40"
                         >
                           Supprimer
                         </button>
@@ -270,7 +270,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                           type="button"
                           onClick={() => promouvoir(u)}
                           title="Promotion réservée à l'admin root"
-                          className="min-h-[32px] rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-highlight/50 hover:text-highlight"
+                          className="min-h-[44px] rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-highlight/50 hover:text-highlight"
                         >
                           Promouvoir
                         </button>

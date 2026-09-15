@@ -24,10 +24,14 @@ export async function streamEventSource<T>(
   });
 
   if (!res.ok || !res.body) {
-    // Le contrat SSE attend que l'erreur passe par onEvent (type "error").
-    // On rejette donc avec le statut HTTP pour que les appelants puissent
-    // distinguer un échec réseau d'un échec applicatif (ex. 401 admin).
-    throw new Error(`Le serveur a répondu ${res.status}.`);
+    // Le contrat SSE attend que l'erreur applicative passe par onEvent
+    // (type "error"). L'échec HTTP/transport, lui, REJETTE le fetch : les
+    // appelants distinguent ainsi une panne réseau d'une erreur applicative
+    // (et les statuts 4xx d'un 5xx transitoire, pour le comportement de
+    // reconnexion automatique). Le statut HTTP est attaché à l'erreur.
+    const err = new Error(`Le serveur a répondu ${res.status}.`);
+    (err as Error & { status?: number }).status = res.status;
+    throw err;
   }
 
   const reader = res.body.getReader();
@@ -94,15 +98,19 @@ export async function streamAssistantAsk(
   payload: AssistantAskPayload,
   onEvent: (event: AssistantStreamEvent) => void
 ): Promise<void> {
-  try {
-    await streamEventSource("/api/assistant/ask/stream", payload, onEvent);
-  } catch (err) {
-    const message =
-      err instanceof Error && err.message.includes("Le serveur a répondu")
-        ? err.message
-        : "Connexion interrompue pendant la réponse.";
-    onEvent({ type: "error", message });
-  }
+  // Les erreurs de TRANSPORT (fetch rejeté) et HTTP (statut non-2xx)
+  // se propagent par rejet (avec `.status` pour les HTTP) — les panneaux
+  // les distinguent ainsi des erreurs applicatives, qui elles arrivent en
+  // évènement `error` du flux SSE. Un flux qui se ferme SANS `done` ni
+  // `error` (connexion interrompue en plein vol) résout sans évènement :
+  // l'appelant détecte l'absence de `done` pour déclencher la reconnexion.
+  await streamEventSource("/api/assistant/ask/stream", payload, onEvent);
+}
+
+/** Délai d'attente (ms) avant une tentative de reconnexion, croissant avec
+ * le numéro de l'essai (1 → 1200 ms, 2 → 2400 ms, …, plafonné à 8 s). */
+export function delaiReconnexion(essai: number): number {
+  return Math.min(1200 * 2 ** (essai - 1), 8000);
 }
 
 /**

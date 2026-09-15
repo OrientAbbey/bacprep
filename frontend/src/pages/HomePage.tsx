@@ -160,7 +160,7 @@ export function HomePage() {
               type="button"
               onClick={() => setNiveauActif(null)}
               aria-label="Revenir à la sélection des niveaux"
-              className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
+              className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
             >
               <ArrowLeft size={14} strokeWidth={1.75} aria-hidden="true" />
               Niveaux
@@ -176,7 +176,7 @@ export function HomePage() {
             <button
               type="button"
               onClick={chargerNav}
-              className="mt-3 min-h-[36px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction hover:text-paper"
+              className="mt-3 min-h-[44px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction hover:text-paper"
             >
               Réessayer
             </button>

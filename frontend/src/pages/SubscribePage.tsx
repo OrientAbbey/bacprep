@@ -332,21 +332,21 @@ export function SubscribePage() {
             {scope === "epreuve" && epreuveId ? (
               <Link
                 to={`/epreuve/${epreuveId}`}
-                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
+                className="min-h-[44px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
               >
                 Ouvrir l'épreuve
               </Link>
             ) : (
               <Link
                 to="/catalogue"
-                className="min-h-[40px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
+                className="min-h-[44px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
               >
                 Voir le catalogue
               </Link>
             )}
             <Link
               to="/profil"
-              className="min-h-[40px] rounded-full border border-valide/40 px-4 py-2 text-sm font-medium text-valide"
+              className="min-h-[44px] rounded-full border border-valide/40 px-4 py-2 text-sm font-medium text-valide"
             >
               Aller à mon profil
             </Link>

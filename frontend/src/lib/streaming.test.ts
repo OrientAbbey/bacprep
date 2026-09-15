@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { streamAdminAsk } from "./streaming";
+import { streamAdminAsk, streamAssistantAsk } from "./streaming";
 
 /** Réponse SSE construite à partir de fragments réseau arbitraires — permet
  * de tester le découpage/colmatage du tampon de `streamEventSource`
@@ -99,5 +99,44 @@ describe("streamAdminAsk — décodage du flux admin", () => {
     await expect(
       streamAdminAsk({ question: "Q", historique: [], epreuve: {} }, vi.fn())
     ).rejects.toThrow("Le serveur a répondu 401.");
+  });
+});
+
+describe("streamAssistantAsk — propagation des erreurs de transport", () => {
+  it("adresse /api/assistant/ask/stream avec la charge utile", async () => {
+    fetchMock.mockResolvedValue(sseResponse([]));
+    await streamAssistantAsk(
+      { conversation_id: "c1", message: "Q" },
+      vi.fn()
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/assistant/ask/stream"),
+      expect.objectContaining({ method: "POST", credentials: "include" })
+    );
+  });
+
+  it("transmet l'évènement error du flux tel quel", async () => {
+    fetchMock.mockResolvedValue(sseResponse(['data:{"type":"error","message":"boom"}']));
+    const events: unknown[] = [];
+    await streamAssistantAsk({ message: "Q" }, (e) => events.push(e));
+    expect(events).toEqual([{ type: "error", message: "boom" }]);
+  });
+
+  it("rejette sur erreur HTTP en attachant le statut (reconnexion)", async () => {
+    fetchMock.mockResolvedValue(sseResponse([], 503));
+    let captured: (Error & { status?: number }) | undefined;
+    try {
+      await streamAssistantAsk({ message: "Q" }, vi.fn());
+    } catch (e) {
+      captured = e as Error & { status?: number };
+    }
+    expect(captured).toBeDefined();
+    expect(captured!.message).toContain("503");
+    expect(captured!.status).toBe(503);
+  });
+
+  it("rejette sur panne réseau (fetch rejeté)", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    await expect(streamAssistantAsk({ message: "Q" }, vi.fn())).rejects.toThrow();
   });
 });

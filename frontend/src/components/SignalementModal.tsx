@@ -66,7 +66,7 @@ export function SignalementModal({
             type="button"
             onClick={onClose}
             aria-label="Fermer"
-            className="p-1 text-ink-soft hover:text-ink"
+            className="relative p-1 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
           >
             <X size={18} strokeWidth={1.75} aria-hidden="true" />
           </button>

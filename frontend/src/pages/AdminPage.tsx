@@ -249,7 +249,7 @@ export function AdminPage() {
               type="button"
               onClick={() => setShowToken((v) => !v)}
               aria-label={showToken ? "Masquer le jeton" : "Afficher le jeton"}
-              className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full hover:bg-highlight-soft"
+              className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1.5 after:rounded-full after:content-['']"
             >
               {showToken ? (
                 <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -270,7 +270,7 @@ export function AdminPage() {
             <button
               type="button"
               onClick={() => login(true)}
-              className="min-h-[36px] rounded-full bg-correction px-4 text-xs font-medium text-paper"
+              className="min-h-[44px] rounded-full bg-correction px-4 text-xs font-medium text-paper"
             >
               Forcer la connexion
             </button>
@@ -321,7 +321,7 @@ export function AdminPage() {
             tabIndex={tab === v ? 0 : -1}
             onClick={() => setTab(v)}
             onKeyDown={(e) => onTabsKeyDown(e, v)}
-            className={`rounded-full px-4 py-1.5 ${tab === v ? "bg-ink text-paper" : "text-ink-soft"}`}
+            className={`min-h-[44px] rounded-full px-4 py-1.5 ${tab === v ? "bg-ink text-paper" : "text-ink-soft"}`}
           >
             {label}
           </button>

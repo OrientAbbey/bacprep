@@ -364,7 +364,7 @@ export function ProfilePage() {
             <button
               type="button"
               onClick={() => setFormOuvert(true)}
-              className="ml-auto flex items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50"
+              className="ml-auto flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50"
             >
               <Pencil size={12} strokeWidth={1.75} aria-hidden="true" />
               {profil.classe || profil.etablissement ? "Modifier" : "Compléter mes infos"}
@@ -406,7 +406,7 @@ export function ProfilePage() {
             }}
             onClick={() => setOnglet(v)}
             onKeyDown={onTabKeyDown}
-            className={`rounded-full px-4 py-1.5 ${onglet === v ? "bg-ink text-paper" : "text-ink-soft"}`}
+            className={`min-h-[44px] rounded-full px-4 py-1.5 ${onglet === v ? "bg-ink text-paper" : "text-ink-soft"}`}
           >
             {label}
           </button>
@@ -528,7 +528,7 @@ function PanneauAbonnements({
         <p className="text-sm text-ink-soft">Aucun abonnement actif pour l'instant.</p>
         <Link
           to="/abonnement"
-          className="mt-3 inline-flex min-h-[40px] items-center rounded-full bg-ink px-5 text-sm font-medium text-paper hover:opacity-90"
+          className="mt-3 inline-flex min-h-[44px] items-center rounded-full bg-ink px-5 text-sm font-medium text-paper hover:opacity-90"
         >
           Découvrir les forfaits
         </Link>
@@ -605,7 +605,7 @@ function PanneauAbonnements({
                 </p>
                 <button
                   onClick={() => onAnnuler(s.id)}
-                  className="min-h-[36px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction-soft/40"
+                  className="min-h-[44px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction-soft/40"
                 >
                   Annuler cet abonnement
                 </button>
@@ -651,7 +651,7 @@ function PanneauNotes({
                 onClick={() => onEditer(n)}
                 aria-label="Modifier la note"
                 title="Modifier"
-                className="p-1.5 text-ink-soft hover:text-ink"
+                className="relative p-1.5 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
               >
                 <Edit3 size={15} strokeWidth={1.75} aria-hidden="true" />
               </button>
@@ -660,7 +660,7 @@ function PanneauNotes({
                 onClick={() => onSupprimer(n.id)}
                 aria-label="Supprimer la note"
                 title="Supprimer"
-                className="p-1.5 text-ink-soft hover:text-correction"
+                className="relative p-1.5 text-ink-soft hover:text-correction after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
               >
                 <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
               </button>
@@ -789,7 +789,7 @@ function PanneauDonnees({
             type="button"
             disabled={savingConsent}
             onClick={onSauver}
-            className="mt-3 min-h-[36px] rounded-full bg-ink px-4 text-xs font-medium text-paper disabled:opacity-50"
+            className="mt-3 min-h-[44px] rounded-full bg-ink px-4 text-xs font-medium text-paper disabled:opacity-50"
           >
             {savingConsent ? "Enregistrement…" : "Enregistrer mes choix"}
           </button>

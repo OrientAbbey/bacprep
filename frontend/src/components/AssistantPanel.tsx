@@ -1,9 +1,10 @@
-import { Bot, ChevronDown, ChevronRight, Plus, Send, StickyNote, X } from "lucide-react";
+import { Bot, Check, ChevronDown, ChevronRight, Clock, Pencil, Plus, RotateCcw, Send, StickyNote, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { dateLongue, heureCourte } from "../lib/dates";
 import { getInitials } from "../lib/initials";
-import { streamAssistantAsk } from "../lib/streaming";
+import { delaiReconnexion, streamAssistantAsk, type AssistantAskPayload } from "../lib/streaming";
 import { MarkdownContent } from "./MarkdownContent";
 import { useToast } from "./Toast";
 
@@ -15,6 +16,11 @@ export const ASSISTANT_SIGNATURE = "Assistant Pédagogique";
 export interface Message {
   role: "user" | "assistant";
   content: string;
+  /** Horodatage ISO de création, posé par le serveur (voie persistée) ou
+   * par le client (éphémère) — affiché en HH:MM à côté de la bulle. Les
+   * messages stockés AVANT ce changement n'en portent pas (aucun
+   * affichage d'heure pour eux). */
+  ts?: string;
 }
 
 export interface Conversation {
@@ -137,6 +143,11 @@ export function AssistantPanel({
   // italique dans la dernière bulle, où elle était indiscernable d'une
   // vraie réponse de l'assistant).
   const [erreurStream, setErreurStream] = useState<string | null>(null);
+  // Messages en file d'attente : envoyés automatiquement dès que la
+  // réponse en cours est terminée (voir l'effet de dépilement).
+  const [queue, setQueue] = useState<string[]>([]);
+  // Tentative de reconnexion automatique en cours (SSE) : 0 = aucune.
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useAuth();
@@ -154,6 +165,14 @@ export function AssistantPanel({
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  // Ref miroir de l'onglet actif : les fonctions de l'envoi (y compris le
+  // dépilement automatique de la file d'attente) doivent lire l'état le
+  // PLUS RÉCENT, jamais une closure figée au moment où elles ont été créées.
+  const activeRef = useRef<Conversation | null>(null);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
 
   // Fermeture de l'onglet actif : au rendu suivant, activeId n'est plus dans
   // la liste — on retombe sur le dernier onglet (ou aucun). Décision de
@@ -341,105 +360,259 @@ export function AssistantPanel({
    * défaut). Voir lib/streaming.ts pour le détail du protocole SSE. En
    * mode éphémère, la charge utile embarque epreuve_id/contexte/historique
    * et le serveur ne persiste RIEN (`done.conversation` vaut null). */
-  async function send() {
-    if (!active || !input.trim() || sending) return;
-    const convId = active.id;
-    const question = input.trim();
+  /** Soumission depuis le champ de saisie (bouton ou Entrée) : si une
+   * réponse est déjà en cours, la question part en FILE D'ATTENTE plutôt
+   * que d'être ignorée — elle sera envoyée automatiquement dès que la
+   * réponse en cours se termine (succès ou échec définitif). */
+  function submitQuestion() {
+    const text = input.trim();
+    if (!text) return;
+    if (sending) {
+      setQueue((q) => [...q, text]);
+      setInput("");
+      return;
+    }
+    const conv = activeRef.current;
+    if (!conv) return;
     setInput("");
-    setSending(true);
-    setErreurStream(null);
+    void applyExchange(conv.id, text, conv.messages);
+  }
 
+  // Dépilement automatique de la file d'attente : dès que l'échange en
+  // cours se termine (`sending` repasse à false), la première question
+  // mise en attente est envoyée par la même voie.
+  useEffect(() => {
+    if (sending || queue.length === 0) return;
+    const [prochaine, ...restantes] = queue;
+    setQueue(restantes);
+    const conv = activeRef.current;
+    if (!conv) return;
+    void applyExchange(conv.id, prochaine, conv.messages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sending, queue]);
+
+  /**
+   * Exécute UN échange complet (question → réponse streamée) sur la
+   * conversation `convId`. `base` = l'état des messages AVANT la question :
+   * c'est à la fois l'état local de départ (on y ajoute la question + la
+   * bulle assistant vide) et l'état de persistance attendu côté serveur.
+   *
+   * RECONNEXION AUTOMATIQUE : si le flux s'interrompt SANS `done` (panne
+   * réseau, fermeture serveur) — et seulement dans ce cas — la charge utile
+   * est renvoyée telle quelle (identique) après un délai croissant, jusqu'à
+   * MAX_ATTEMPTES tentatives. Les erreurs applicatives du flux (évènement
+   * `error`) et les 4xx ne sont PAS relancées automatiquement.
+   *
+   * Voie persistée : avant CHAQUE tentative, les messages serveur sont
+   * ramenés à `base` (une tentative interrompue laisse un message
+   * utilisateur résiduel écrit à la volée — une réémission l'aurait sinon
+   * dupliqué). C'est aussi ce qui rend l'édition/régénération et le
+   * réessai corrects : la troncature locale est reproduite côté serveur.
+   */
+  async function applyExchange(convId: string, question: string, base: Message[]) {
+    const conversation = conversationsRef.current.find((c) => c.id === convId);
+    if (!conversation) return;
+    const url = `/api/epreuves/${epreuveId}/conversations/${convId}`;
+    const nowIso = new Date().toISOString();
+
+    // Ajout optimiste : la question + une bulle assistant vide (remplie au
+    // fil du streaming).
     setConversations((prev) =>
       prev.map((c) =>
         c.id === convId
           ? {
               ...c,
-              messages: [...c.messages, { role: "user", content: question }, { role: "assistant", content: "" }],
+              messages: [
+                ...base,
+                { role: "user", content: question, ts: nowIso },
+                { role: "assistant", content: "", ts: nowIso },
+              ],
             }
           : c
       )
     );
+    setSending(true);
+    setErreurStream(null);
 
-    // Fragments SSE tamponnés : appliqués une fois par frame (rAF) au lieu
-    // de re-rendre à CHAQUE paquet réseau — le panneau reste fluide pendant
-    // qu'un long texte défile. `flushChunk` est aussi forcé avant toute
-    // réconciliation serveur (événement `done`).
-    let pendingChunkText = "";
-    let chunkRaf: number | null = null;
-    function flushChunk() {
-      chunkRaf = null;
-      if (!pendingChunkText) return;
-      const fragment = pendingChunkText;
-      pendingChunkText = "";
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.id !== convId) return c;
-          const messages = [...c.messages];
-          const last = messages[messages.length - 1];
-          messages[messages.length - 1] = { ...last, content: last.content + fragment };
-          return { ...c, messages };
-        })
-      );
+    // Charge utile FIGÉE à la première tentative : chaque reconnexion
+    // renvoie exactement la même question (jamais l'état local du moment,
+    // qui contiendrait déjà la question optimiste et la dupliquerait).
+    const payload: AssistantAskPayload = ephemere
+      ? {
+          epreuve_id: epreuveId,
+          contexte: conversation.contexte,
+          historique: base,
+          message: question,
+        }
+      : { conversation_id: convId, message: question };
+
+    const MAX_ATTEMPTES = 3;
+    let erreurFinale: string | null = null;
+    let aReussi = false;
+
+    for (let tentative = 1; tentative <= MAX_ATTEMPTES; tentative++) {
+      let gotDone = false;
+      let gotErrorEvent = false;
+      let pendingChunkText = "";
+      let chunkRaf: number | null = null;
+
+      // Fragments SSE tamponnés : appliqués une fois par frame (rAF) au
+      // lieu de re-rendre à CHAQUE paquet réseau — le panneau reste fluide
+      // pendant qu'un long texte défile. `flushChunk` est aussi forcé
+      // avant toute réconciliation serveur (événement `done`).
+      function flushChunk() {
+        chunkRaf = null;
+        if (!pendingChunkText) return;
+        const fragment = pendingChunkText;
+        pendingChunkText = "";
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== convId) return c;
+            const messages = [...c.messages];
+            const last = messages[messages.length - 1];
+            messages[messages.length - 1] = { ...last, content: last.content + fragment };
+            return { ...c, messages };
+          })
+        );
+      }
+
+      if (tentative > 1) {
+        // Nouvelle tentative : toute réponse partielle est remise à zéro.
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id !== convId
+              ? c
+              : {
+                  ...c,
+                  messages: [
+                    ...c.messages.slice(0, -1),
+                    { role: "assistant", content: "", ts: new Date().toISOString() },
+                  ],
+                }
+          )
+        );
+        setReconnectAttempt(tentative);
+      }
+
+      if (!ephemere) {
+        // Réconciliation : ramène les messages serveur à `base` (le résidu
+        // éventuel d'une tentative interrompue ne doit pas être dupliqué).
+        try {
+          const actuels = await api.get<Conversation>(url);
+          if (JSON.stringify(actuels.messages) !== JSON.stringify(base)) {
+            await api.put<Conversation>(url, { messages: base });
+          }
+        } catch {
+          erreurFinale = "Connexion au serveur interrompue.";
+          break;
+        }
+      }
+
+      try {
+        await streamAssistantAsk(payload, (event) => {
+          if (event.type === "chunk") {
+            pendingChunkText += event.text;
+            if (chunkRaf === null) chunkRaf = requestAnimationFrame(flushChunk);
+          } else if (event.type === "done") {
+            gotDone = true;
+            // Vider le tampon de chunks restants AVANT toute réconciliation,
+            // sinon le rAF en attente écraserait l'état serveur reçu.
+            if (chunkRaf !== null) cancelAnimationFrame(chunkRaf);
+            flushChunk();
+            if (!event.conversation) return; // voie éphémère : rien à réconcilier
+            const conversation = event.conversation;
+            setConversations((prev) => prev.map((c) => (c.id === conversation.id ? conversation : c)));
+            // Premier échange : l'onglet prend le titre de la question de
+            // l'élève (bien plus reconnaissable qu'un libellé générique),
+            // dédoublonné contre les onglets restants — lu depuis la ref
+            // miroir, jamais depuis la closure figée de l'envoi.
+            if (isDefaultLabel(conversation.label)) {
+              const nouveau = labelUnique(
+                resumeLabel(question),
+                conversationsRef.current.filter((c) => c.id !== convId)
+              );
+              void (async () => {
+                try {
+                  const updated = await api.put<Conversation>(url, {
+                    messages: conversation.messages,
+                    label: nouveau,
+                  });
+                  setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+                } catch {
+                  /* renommage cosmétique : silencieux si l'aller-retour échoue */
+                }
+              })();
+            }
+          } else if (event.type === "error") {
+            gotErrorEvent = true;
+            erreurFinale = event.message;
+          }
+        });
+      } catch (err) {
+        const status = (err as Error & { status?: number })?.status;
+        if (typeof status === "number" && status >= 400 && status < 500) {
+          // Erreur client (ex. 403 consentement refusé) : pas de relance.
+          erreurFinale = err instanceof Error ? err.message : "Requête refusée.";
+          break;
+        }
+        // Panne transport ou 5xx transitoire : boucle de reconnexion.
+        erreurFinale =
+          err instanceof TypeError ? "Connexion au serveur interrompue." : err instanceof Error ? err.message : "Connexion interrompue pendant la réponse.";
+      }
+
+      if (gotDone) {
+        aReussi = true;
+        break;
+      }
+      if (gotErrorEvent) break;
+
+      if (tentative < MAX_ATTEMPTES) {
+        await new Promise((r) => setTimeout(r, delaiReconnexion(tentative)));
+      }
     }
 
-    try {
-      const askPayload = ephemere
-        ? {
-            epreuve_id: epreuveId,
-            contexte: active.contexte,
-            historique: active.messages,
-            message: question,
-          }
-        : { conversation_id: convId, message: question };
-      await streamAssistantAsk(askPayload, async (event) => {
-        if (event.type === "chunk") {
-          pendingChunkText += event.text;
-          if (chunkRaf === null) chunkRaf = requestAnimationFrame(flushChunk);
-        } else if (event.type === "done") {
-          // Vider le tampon de chunks restants AVANT toute réconciliation,
-          // sinon le rAF en attente écraserait l'état serveur reçu.
-          if (chunkRaf !== null) cancelAnimationFrame(chunkRaf);
-          flushChunk();
-          if (!event.conversation) return; // voie éphémère : rien à réconcilier
-          const conversation = event.conversation;
-          setConversations((prev) => prev.map((c) => (c.id === conversation.id ? conversation : c)));
-          // Premier échange : l'onglet prend le titre de la question de
-          // l'élève (bien plus reconnaissable qu'un libellé générique),
-          // dédoublonné contre les onglets restants — lu depuis la ref
-          // miroir, jamais depuis la closure figée de send().
-          if (isDefaultLabel(conversation.label)) {
-            const nouveau = labelUnique(
-              resumeLabel(question),
-              conversationsRef.current.filter((c) => c.id !== convId)
-            );
-            try {
-              const updated = await api.put<Conversation>(
-                `/api/epreuves/${epreuveId}/conversations/${convId}`,
-                { messages: conversation.messages, label: nouveau }
-              );
-              setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-            } catch {
-              /* renommage cosmétique : silencieux si l'aller-retour échoue */
-            }
-          }
-        } else if (event.type === "error") {
-          setErreurStream(event.message);
-        }
-      });
-    } catch {
-      setErreurStream("Connexion au serveur interrompue.");
-    } finally {
-      setSending(false);
+    setReconnectAttempt(0);
+    setSending(false);
+    if (!aReussi) {
+      setErreurStream(erreurFinale ?? "La réponse n'a pas pu être reçue — réessaie.");
     }
   }
 
+  /** Réessaye la DERNIÈRE réponse : retire le dernier échange
+   * (question + réponse assistant) puis renvoie exactement la même
+   * question — réutilise la reconnexion/la persistance d'`applyExchange`. */
+  function retryLast() {
+    if (sending) return;
+    const conv = activeRef.current;
+    if (!conv) return;
+    const msgs = conv.messages;
+    const dernier = msgs[msgs.length - 1];
+    if (!dernier || dernier.role !== "assistant") return;
+    const question = msgs[msgs.length - 2];
+    if (!question || question.role !== "user") return;
+    void applyExchange(conv.id, question.content, msgs.slice(0, -2));
+  }
+
+  /** Édition d'un message de l'élève + régénération À PARTIR DE CE POINT :
+   * la conversation est tronquée juste avant le message édité, qui est
+   * renvoyé tel quel (c'est la nouvelle question) — tout ce qui suivait
+   * (réponses, questions suivantes) est abandonné. */
+  function regenerateFrom(index: number, contenu: string) {
+    if (sending) return;
+    const conv = activeRef.current;
+    if (!conv) return;
+    const msgs = conv.messages;
+    if (!msgs[index] || msgs[index].role !== "user") return;
+    void applyExchange(conv.id, contenu, msgs.slice(0, index));
+  }
+
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Entrée seule envoie le message ; Maj+Entrée insère un saut de ligne
-    // (convention standard des interfaces de discussion), nécessaire
-    // maintenant que le champ est multi-ligne.
+    // Entrée seule envoie (ou met en file d'attente si une réponse est en
+    // cours) ; Maj+Entrée insère un saut de ligne, nécessaire maintenant
+    // que le champ est multi-ligne.
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      send();
+      submitQuestion();
     }
   }
 
@@ -477,7 +650,7 @@ export function AssistantPanel({
                 onClick={() => createConversation(fullEpreuveContext, labelUnique("Discussion générale", conversations))}
                 title="Nouvelle discussion"
                 aria-label="Nouvelle discussion"
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-ink-soft/25 text-ink-soft disabled:opacity-40"
+                className="relative flex h-8 w-8 items-center justify-center rounded-full border border-ink-soft/25 text-ink-soft after:absolute after:-inset-1.5 after:rounded-full after:content-[''] disabled:opacity-40"
               >
                 <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
               </button>
@@ -486,7 +659,7 @@ export function AssistantPanel({
                 onClick={onClose}
                 title="Fermer l'assistant"
                 aria-label="Fermer l'assistant"
-                className="p-1 text-ink-soft hover:text-ink"
+                className="relative p-1 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:content-['']"
               >
                 <X size={18} strokeWidth={1.75} aria-hidden="true" />
               </button>
@@ -521,7 +694,7 @@ export function AssistantPanel({
                 type="button"
                 onClick={() => setContextOpen((o) => !o)}
                 aria-expanded={contextOpen}
-                className="flex w-full items-center gap-1 text-left font-mono-tag text-[10px] text-ink-soft"
+                className="flex min-h-[44px] w-full items-center gap-1 text-left font-mono-tag text-[10px] text-ink-soft"
               >
                 {contextOpen ? (
                   <ChevronDown size={12} strokeWidth={2} aria-hidden="true" />
@@ -558,6 +731,7 @@ export function AssistantPanel({
               // la masque pour ne pas afficher une boîte vide en parallèle
               // de l'indicateur « Assistant Pédagogique réfléchit… ».
               if (m.role === "assistant" && m.content === "" && sending) return null;
+              const estDernier = i === active.messages.length - 1;
               return (
                 <ChatBubble
                   key={`${m.role}-${i}`}
@@ -566,6 +740,12 @@ export function AssistantPanel({
                   userNom={userNom}
                   onSaveAsNote={onSaveAsNote}
                   peutSauvegarder={user?.consent_notes !== false}
+                  estDernier={estDernier}
+                  enCours={sending}
+                  onEditer={m.role === "user" && !sending ? (contenu) => regenerateFrom(i, contenu) : undefined}
+                  onRegenerer={
+                    m.role === "assistant" && !sending && estDernier ? retryLast : undefined
+                  }
                 />
               );
             })}
@@ -575,7 +755,11 @@ export function AssistantPanel({
             active.messages[active.messages.length - 1]?.content === "" && (
               <div className="flex items-end gap-2">
                 <Avatar role="assistant" nom={ASSISTANT_SIGNATURE} />
-                <p className="text-sm text-slate">{ASSISTANT_SIGNATURE} réfléchit…</p>
+                <p className="text-sm text-slate">
+                  {reconnectAttempt > 0
+                    ? `Connexion instable — reconnexion (${reconnectAttempt}/3)…`
+                    : `${ASSISTANT_SIGNATURE} réfléchit…`}
+                </p>
               </div>
             )}
           {erreurStream && (
@@ -590,8 +774,8 @@ export function AssistantPanel({
           input={input}
           onChange={setInput}
           onKeyDown={onInputKeyDown}
-          onSend={send}
-          disabled={sending}
+          onSend={submitQuestion}
+          queueCount={queue.length}
         />
       </div>
     </>
@@ -651,7 +835,7 @@ function ConversationTabs({
         return (
           <div
             key={c.id}
-            className={`flex shrink-0 items-center rounded-full py-1 pr-1 pl-3 text-xs ${
+            className={`flex min-h-[44px] shrink-0 items-center rounded-full py-1 pr-1 pl-3 text-xs ${
               active ? "bg-highlight text-highlight-ink" : "text-ink-soft"
             }`}
           >
@@ -676,7 +860,7 @@ function ConversationTabs({
                 onClose(c.id);
                 requestAnimationFrame(() => focusTab(activeId ?? ""));
               }}
-              className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-ink/10"
+              className="relative flex h-6 w-6 items-center justify-center rounded-full hover:bg-ink/10 after:absolute after:-inset-2.5 after:rounded-full after:content-['']"
             >
               <X size={12} strokeWidth={2} aria-hidden="true" />
             </button>
@@ -687,50 +871,146 @@ function ConversationTabs({
   );
 }
 
-/** Bulle de message : avatar + contenu Markdown (rounded-2xl réservé aux
- * bulles par le référentiel) + bouton « Sauvegarder en note » pour les
- * réponses de l'assistant. */
+/** Bulle de message : avatar + auteur + horodatage (HH:MM, date complète
+ * au survol via `title`) + contenu Markdown (rounded-2xl réservé aux
+ * bulles par le référentiel).
+ *
+ * Actions selon le rôle :
+ * - élève : « Modifier » — édition inline de la question puis régénération
+ *   de la discussion À PARTIR de ce point ;
+ * - assistant : « Sauvegarder en note » et, pour la DERNIÈRE bulle,
+ *   « Réessayer » (relance la même question). */
 function ChatBubble({
   m,
   questionContexte,
   userNom,
   onSaveAsNote,
   peutSauvegarder,
+  estDernier,
+  enCours,
+  onEditer,
+  onRegenerer,
 }: {
   m: Message;
   questionContexte: string;
   userNom: string;
   onSaveAsNote?: (contenu: string, contexte: string) => void;
   peutSauvegarder: boolean;
+  estDernier: boolean;
+  enCours: boolean;
+  onEditer?: (contenu: string) => void;
+  onRegenerer?: () => void;
 }) {
   const isUser = m.role === "user";
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(m.content);
+
+  const heure = heureCourte(m.ts);
+  const titreDate = dateLongue(m.ts);
+
+  function demarrerEdition() {
+    setEditValue(m.content);
+    setEditing(true);
+  }
+
+  function validerEdition() {
+    const contenu = editValue.trim();
+    if (!contenu) return;
+    setEditing(false);
+    onEditer?.(contenu);
+  }
+
   return (
     <div className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <Avatar role={m.role} nom={isUser ? userNom : ASSISTANT_SIGNATURE} />
       <div className="min-w-0 max-w-[78%]">
-        <p className={`mb-0.5 font-mono-tag text-[10px] text-slate ${isUser ? "text-right" : ""}`}>
-          {isUser ? userNom : ASSISTANT_SIGNATURE}
+        <p className={`mb-0.5 flex items-center gap-1.5 font-mono-tag text-[10px] text-slate ${isUser ? "flex-row-reverse" : ""}`}>
+          <span>{isUser ? userNom : ASSISTANT_SIGNATURE}</span>
+          {/* Horodatage : HH:MM à côté du nom, date complète au survol. */}
+          {heure && (
+            <span title={titreDate ?? undefined} className="text-slate/70">
+              {heure}
+            </span>
+          )}
         </p>
-        <div
-          className={`rounded-2xl px-3 py-2 ${
-            isUser ? "bg-highlight-soft text-ink" : "border border-ink-soft/15 bg-paper text-ink"
-          }`}
-        >
-          <MarkdownContent content={m.content} variant="chat" />
-        </div>
-        {/* Sauvegarde d'une réponse en note personnelle (uniquement les
-            réponses non vides de l'assistant, acheminées par le lecteur ;
-            masquée si l'élève a refusé le stockage de ses notes). */}
-        {!isUser && m.content.trim() && onSaveAsNote && peutSauvegarder && (
-          <button
-            type="button"
-            onClick={() => onSaveAsNote(m.content, questionContexte)}
-            title="Sauvegarder cette réponse dans tes notes"
-            className="mt-1 flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink"
+        {editing ? (
+          <div className="rounded-2xl border border-ink-soft/15 bg-paper px-3 py-2">
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              rows={3}
+              aria-label="Modifier ta question"
+              className="w-full resize-y rounded-[2px] border border-ink-soft/20 bg-paper-raised px-3 py-2 text-sm text-ink outline-none"
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={validerEdition}
+                disabled={!editValue.trim()}
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-4 text-xs font-medium text-paper disabled:opacity-40"
+              >
+                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+                Valider
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-ink-soft/25 px-4 text-xs text-ink-soft hover:text-ink"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={`rounded-2xl px-3 py-2 ${
+              isUser ? "bg-highlight-soft text-ink" : "border border-ink-soft/15 bg-paper text-ink"
+            }`}
           >
-            <StickyNote size={11} strokeWidth={1.75} aria-hidden="true" />
-            Sauvegarder en note
-          </button>
+            <MarkdownContent content={m.content} variant="chat" />
+          </div>
+        )}
+        {!editing && (
+          <div className="mt-0.5 flex flex-wrap gap-x-3">
+            {/* Édition de la question et régénération depuis ce point. */}
+            {isUser && onEditer && (
+              <button
+                type="button"
+                onClick={demarrerEdition}
+                title="Modifier ta question et régénérer la réponse"
+                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
+              >
+                <Pencil size={11} strokeWidth={1.75} aria-hidden="true" />
+                Modifier
+              </button>
+            )}
+            {/* Sauvegarde d'une réponse en note personnelle (uniquement les
+                réponses non vides de l'assistant, acheminées par le lecteur ;
+                masquée si l'élève a refusé le stockage de ses notes). */}
+            {!isUser && m.content.trim() && onSaveAsNote && peutSauvegarder && (
+              <button
+                type="button"
+                onClick={() => onSaveAsNote(m.content, questionContexte)}
+                title="Sauvegarder cette réponse dans tes notes"
+                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
+              >
+                <StickyNote size={11} strokeWidth={1.75} aria-hidden="true" />
+                Sauvegarder en note
+              </button>
+            )}
+            {/* Relance de la dernière question (dernière bulle seulement). */}
+            {!isUser && estDernier && onRegenerer && !enCours && (
+              <button
+                type="button"
+                onClick={onRegenerer}
+                title="Relancer la même question"
+                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
+              >
+                <RotateCcw size={11} strokeWidth={1.75} aria-hidden="true" />
+                Réessayer
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -739,44 +1019,54 @@ function ChatBubble({
 
 /** Champ de question + bouton d'envoi. Le textarea est une zone de TEXTE
  * → rayon `rounded-[2px]` du référentiel (et non rounded-2xl, réservé aux
- * bulles). Nom accessible via aria-label (pas de libellé visible). */
+ * bulles). Nom accessible via aria-label (pas de libellé visible). Tant
+ * qu'une réponse est en cours, l'envoi est TOUJOURS possible : la question
+ * part en file d'attente (`queueCount` visible au-dessus du champ). */
 function MessageComposer({
   inputRef,
   input,
   onChange,
   onKeyDown,
   onSend,
-  disabled,
+  queueCount,
 }: {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   input: string;
   onChange: (value: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
-  disabled: boolean;
+  queueCount: number;
 }) {
   return (
-    <div className="flex items-end gap-2 border-t border-ink-soft/15 bg-paper p-3">
-      <textarea
-        ref={inputRef}
-        value={input}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Pose ta question… (Maj+Entrée pour une nouvelle ligne)"
-        aria-label="Question à Tuteur IA Prep"
-        rows={1}
-        style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
-        className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
-      />
-      <button
-        type="button"
-        onClick={onSend}
-        disabled={disabled || !input.trim()}
-        aria-label="Envoyer"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
-      >
-        <Send size={18} strokeWidth={1.75} aria-hidden="true" />
-      </button>
+    <div className="border-t border-ink-soft/15 bg-paper">
+      {queueCount > 0 && (
+        <p role="status" className="flex items-center gap-1.5 px-3 pt-2 font-mono-tag text-[10px] text-slate">
+          <Clock size={11} strokeWidth={1.75} aria-hidden="true" />
+          {queueCount} question{queueCount > 1 ? "s" : ""} en attente…
+        </p>
+      )}
+      <div className="flex items-end gap-2 p-3">
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Pose ta question… (Maj+Entrée pour une nouvelle ligne)"
+          aria-label="Question à Tuteur IA Prep"
+          rows={1}
+          style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
+          className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
+        />
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={!input.trim()}
+          aria-label="Envoyer"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
+        >
+          <Send size={18} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }

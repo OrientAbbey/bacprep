@@ -303,7 +303,7 @@ export function ContentBlock({
             type="button"
             onClick={() => importRef.current?.click()}
             title="Importer un fichier Markdown (.md) dans cette zone de texte"
-            className="flex items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 py-1 text-xs"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs"
           >
             <FileUp size={13} strokeWidth={1.75} aria-hidden="true" />
             Importer un .md
@@ -311,7 +311,7 @@ export function ContentBlock({
           <button
             type="button"
             onClick={onTogglePreview}
-            className="rounded-full border border-ink-soft/25 px-3 py-1 text-xs"
+            className="min-h-[44px] rounded-full border border-ink-soft/25 px-3 text-xs"
           >
             {preview ? "Texte" : "Rendu"}
           </button>
@@ -360,7 +360,7 @@ export function ContentBlock({
                   onClick={() => onDeleteDocument(d)}
                   title="Supprimer ce document"
                   aria-label={`Supprimer le document ${d.filename}`}
-                  className="p-1 text-ink-soft hover:text-correction"
+                  className="relative p-1 text-ink-soft hover:text-correction after:absolute after:-inset-[12px] after:rounded-full after:content-['']"
                 >
                   <X size={13} strokeWidth={2} aria-hidden="true" />
                 </button>

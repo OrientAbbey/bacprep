@@ -88,7 +88,7 @@ export function NoteEditor({
             type="button"
             onClick={onClose}
             aria-label="Fermer l'éditeur"
-            className="p-1 text-ink-soft hover:text-ink"
+            className="relative p-1 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
           >
             <X size={18} strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -109,7 +109,7 @@ export function NoteEditor({
             <button
               type="button"
               onClick={() => setApercu((a) => !a)}
-              className="flex items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 py-1 text-xs text-ink-soft hover:border-highlight/50"
+              className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50"
             >
               {apercu ? <Pencil size={13} strokeWidth={1.75} aria-hidden="true" /> : <Eye size={13} strokeWidth={1.75} aria-hidden="true" />}
               {apercu ? "Écrire" : "Aperçu"}

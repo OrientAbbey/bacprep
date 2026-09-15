@@ -248,7 +248,7 @@ export function CataloguePage() {
               key={v}
               onClick={() => setCorrige(v)}
               aria-pressed={corrige === v}
-              className={`rounded-full px-3 py-1.5 ${corrige === v ? "bg-ink text-paper" : "text-ink-soft"}`}
+              className={`min-h-[44px] rounded-full px-3 py-1.5 ${corrige === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
               {label}
             </button>
@@ -261,7 +261,7 @@ export function CataloguePage() {
               key={v}
               onClick={() => setAcces(v)}
               aria-pressed={acces === v}
-              className={`rounded-full px-3 py-1.5 ${acces === v ? "bg-ink text-paper" : "text-ink-soft"}`}
+              className={`min-h-[44px] rounded-full px-3 py-1.5 ${acces === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
               {label}
             </button>

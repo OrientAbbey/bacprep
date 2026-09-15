@@ -342,7 +342,7 @@ export function ViewerPage() {
                   onClick={() => setOnglet(o)}
                   onKeyDown={(e) => onTabsKeyDown(e, o)}
                   title={`${label} (raccourci : ${o === "sujet" ? "S" : "C"})`}
-                  className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
+                  className={`flex min-h-[44px] items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
                     onglet === o ? "bg-ink text-paper" : "text-ink-soft"
                   }`}
                 >
@@ -398,7 +398,7 @@ export function ViewerPage() {
                       <li
                         key={libelle}
                         title="Connecte-toi pour utiliser cette fonctionnalité"
-                        className="flex cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 py-1.5 text-xs text-ink-soft"
+                        className="flex min-h-[44px] cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 text-xs text-ink-soft"
                       >
                         <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
                         {libelle}
@@ -407,7 +407,7 @@ export function ViewerPage() {
                   </ul>
                   <Link
                     to="/connexion"
-                    className="mt-2 inline-flex min-h-[36px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
+                    className="mt-2 inline-flex min-h-[44px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
                   >
                     Se connecter pour tout débloquer
                   </Link>
@@ -445,7 +445,7 @@ export function ViewerPage() {
                     <li
                       key={libelle}
                       title="Connecte-toi pour utiliser cette fonctionnalité"
-                      className="flex cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 py-1.5 text-xs text-ink-soft"
+                      className="flex min-h-[44px] cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 text-xs text-ink-soft"
                     >
                       <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
                       {libelle}
@@ -454,7 +454,7 @@ export function ViewerPage() {
                 </ul>
                 <Link
                   to="/connexion"
-                  className="mt-2 inline-flex min-h-[36px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
+                  className="mt-2 inline-flex min-h-[44px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
                 >
                   Se connecter pour tout débloquer
                 </Link>

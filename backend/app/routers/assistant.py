@@ -12,7 +12,7 @@ from ..core import store
 from ..core.assistant import ask_assistant, ask_assistant_stream
 from ..core.logging_config import get_logger
 from ..core.rate_limit import SlidingWindowLimiter
-from ..db import get_db
+from ..db import get_db, utc_now
 from ..db_models import AIConversationORM
 from ..models import AskIn, ConversationOut
 from .auth import require_user
@@ -70,7 +70,7 @@ async def ask(payload: AskIn, db: Session = Depends(get_db), user=Depends(requir
     _ask_limiter.check(user.id)
 
     messages = json.loads(conv.messages_json or "[]")
-    messages.append({"role": "user", "content": payload.message})
+    messages.append({"role": "user", "content": payload.message, "ts": utc_now().isoformat()})
 
     reponse = await ask_assistant(
         epreuve_meta={"matiere": epreuve.matiere, "annee": epreuve.annee, "filieres": epreuve.filieres},
@@ -79,7 +79,7 @@ async def ask(payload: AskIn, db: Session = Depends(get_db), user=Depends(requir
         historique=messages,
         user_id=user.id,
     )
-    messages.append({"role": "assistant", "content": reponse})
+    messages.append({"role": "assistant", "content": reponse, "ts": utc_now().isoformat()})
 
     conv = store.update_conversation(db, conv, messages)
     return ConversationOut(**store.conversation_to_dict(conv))
@@ -127,7 +127,7 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
         _ask_limiter.check(user.id)
 
         messages = json.loads(conv.messages_json or "[]")
-        messages.append({"role": "user", "content": payload.message})
+        messages.append({"role": "user", "content": payload.message, "ts": utc_now().isoformat()})
         # Persistance IMMÉDIATE du message utilisateur (avant le streaming)
         # pour ne jamais le perdre si le flux échoue. La réponse assistant
         # sera écrite à la fin du flux dans event_stream() (double-écriture
@@ -179,7 +179,7 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
             if fresh_conv is None:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Discussion introuvable (supprimée entre-temps).'})}\n\n"
                 return
-            final_messages = messages + [{"role": "assistant", "content": accumulated}]
+            final_messages = messages + [{"role": "assistant", "content": accumulated, "ts": utc_now().isoformat()}]
             updated = store.update_conversation(local_db, fresh_conv, final_messages)
             out = jsonable_encoder(store.conversation_to_dict(updated))
             yield f"data: {json.dumps({'type': 'done', 'conversation': out}, ensure_ascii=False)}\n\n"
