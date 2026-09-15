@@ -7,7 +7,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
-import { authHeaders, Asset, ContentBlock, DocumentFile, EMPTY_FORM, EpreuveForm, Field, Select } from "./shared";
+import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, Field } from "./shared";
 
 interface AdminEpreuveSummary {
   id: string;
@@ -406,6 +406,20 @@ export function EpreuvesPanel({
     }
   }
 
+  /** Applique une modification proposée par l'assistant admin au formulaire
+   * d'édition (sujet et/ou corrigé réécrits par le LLM). Les zones sont
+   * remplies, mais l'admin garde la main : rien n'est envoyé au serveur —
+   * l'enregistrement ne se fait qu'avec son clic explicite sur
+   * « Enregistrer ». */
+  function appliquerModifications(modifications: { sujet?: string; corrige?: string }) {
+    const { sujet, corrige } = modifications;
+    if (sujet) setForm((f) => ({ ...f, contenu_markdown: sujet }));
+    if (corrige) setForm((f) => ({ ...f, corrige_markdown: corrige }));
+    if (sujet || corrige) {
+      showToast("Modification de l'assistant appliquée au formulaire.", "success");
+    }
+  }
+
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -517,19 +531,19 @@ export function EpreuvesPanel({
           className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-5"
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Select
+            <EditableSelect
               label="Niveau"
               value={form.niveau}
               onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
               options={scopeOptions("niveau")}
             />
-            <Select
+            <EditableSelect
               label="Classe"
               value={form.classe}
               onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
               options={scopeOptions("classe")}
             />
-            <Select
+            <EditableSelect
               label="Évaluation"
               value={form.evaluation}
               onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
@@ -541,19 +555,22 @@ export function EpreuvesPanel({
               onChange={(v) => setForm((f) => ({ ...f, annee: v }))}
               placeholder="ex. 2024"
             />
-            <Field
+            {/* Matière / Session : saisie libre (champ + datalist), valeurs
+                déjà connues du référentiel proposées — toute valeur hors
+                liste est mémorisée par le serveur à l'enregistrement. */}
+            <EditableSelect
               label="Matière"
               value={form.matiere}
               onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
               placeholder="ex. Mathématiques"
-              list="ref-matiere"
+              options={(referentiel?.matiere ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
             />
-            <Field
+            <EditableSelect
               label="Session"
               value={form.session}
               onChange={(v) => setForm((f) => ({ ...f, session: v }))}
               placeholder="ex. Session normale"
-              list="ref-session"
+              options={(referentiel?.session ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
             />
             <Field
               label="Durée"
@@ -568,19 +585,6 @@ export function EpreuvesPanel({
               placeholder="ex. 5"
             />
           </div>
-
-          {/* Suggestions des champs libres Matière / Session (saisie libre
-              conservée, valeurs déjà connues du référentiel proposées). */}
-          <datalist id="ref-matiere">
-            {(referentiel?.matiere ?? []).map((o) => (
-              <option key={o.id} value={o.label || o.code} />
-            ))}
-          </datalist>
-          <datalist id="ref-session">
-            {(referentiel?.session ?? []).map((o) => (
-              <option key={o.id} value={o.label || o.code} />
-            ))}
-          </datalist>
 
           {/* Séries : sélection multiple par puces (une épreuve peut couvrir
               PLUSIEURS séries) + champ libre pour une série hors référentiel.
@@ -697,18 +701,6 @@ export function EpreuvesPanel({
             <button type="submit" className="min-h-[40px] rounded-full bg-ink px-5 text-sm text-paper">
               Enregistrer
             </button>
-            {/* Assistant admin : tiroir droit éphémère contextuel de
-                l'épreuve en cours (metadonnées + sujet + corrigé du
-                formulaire — snapshottés à chaque envoi, voir
-                AdminAssistantPanel). */}
-            <button
-              type="button"
-              onClick={() => setAssistantOuvert(true)}
-              className="ml-auto flex min-h-[40px] items-center gap-1.5 rounded-full border border-highlight/50 px-5 text-sm text-highlight"
-            >
-              <Bot size={16} strokeWidth={1.75} aria-hidden="true" />
-              Assistant
-            </button>
             {form.id && (
               <>
                 <button
@@ -738,10 +730,29 @@ export function EpreuvesPanel({
         </form>
       </div>
 
+      {/* Bouton flottant de l'assistant admin : fixé en bas à droite, il
+          reste accessible pendant toute l'édition ; le tiroir s'ouvre
+          par-dessus (arrière-plan assombri). */}
+      <button
+        type="button"
+        onClick={() => setAssistantOuvert(true)}
+        title="Poser une question à l'assistant admin"
+        aria-label="Ouvrir l'assistant admin"
+        className="fixed bottom-6 right-6 z-30 flex min-h-[48px] items-center gap-2 rounded-full bg-ink px-5 text-sm font-medium text-paper shadow-lg"
+      >
+        <Bot size={18} strokeWidth={1.75} aria-hidden="true" />
+        Assistant
+      </button>
+
       {/* Tiroir assistant admin : conversation éphémère (perdue à la
           fermeture), contexte = formulaire d'édition courant. */}
       {assistantOuvert && (
-        <AdminAssistantPanel form={form} statut={statutForm} onClose={() => setAssistantOuvert(false)} />
+        <AdminAssistantPanel
+          form={form}
+          statut={statutForm}
+          onClose={() => setAssistantOuvert(false)}
+          onAppliquer={appliquerModifications}
+        />
       )}
 
       {confirmation && (

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildAdminAskPayload, nettoyerHistorique, resumeEpreuveName } from "./adminAssistant";
+import {
+  buildAdminAskPayload,
+  extraireModifications,
+  nettoyerHistorique,
+  resumeEpreuveName,
+} from "./adminAssistant";
 
 const FORM = {
   niveau: "SECONDAIRE",
@@ -95,5 +100,53 @@ describe("resumeEpreuveName", () => {
     expect(
       resumeEpreuveName({ ...FORM, matiere: "", annee: "", classe: "", evaluation: "" })
     ).toBe("épreuve en cours");
+  });
+});
+
+describe("extraireModifications", () => {
+  it("extrait le bloc sujet seul", () => {
+    const reponse = [
+      "Voici le sujet réécrit :",
+      "```modification-sujet",
+      "# Sujet corrigé",
+      "",
+      "Texte complété.",
+      "```",
+    ].join("\n");
+    expect(extraireModifications(reponse)).toEqual({ sujet: "# Sujet corrigé\n\nTexte complété." });
+  });
+
+  it("extrait le bloc corrigé seul", () => {
+    const reponse =
+      "```modification-corrige\nLe corrigé complet révisé.  \n```\n";
+    expect(extraireModifications(reponse)).toEqual({ corrige: "Le corrigé complet révisé." });
+  });
+
+  it("extrait les deux blocs dans une même réponse", () => {
+    const reponse = [
+      "Je vous propose les deux versions révisées.",
+      "```modification-sujet",
+      "Sujet revu.",
+      "```",
+      "```modification-corrige",
+      "Corrigé revu.",
+      "```",
+    ].join("\n");
+    expect(extraireModifications(reponse)).toEqual({ sujet: "Sujet revu.", corrige: "Corrigé revu." });
+  });
+
+  it("renvoie un objet vide sans aucun bloc", () => {
+    expect(extraireModifications("La question 2 est claire, rien à corriger.")).toEqual({});
+    expect(extraireModifications("")).toEqual({});
+  });
+
+  it("tolère une clôture de bloc manquante (raccourci de stream)", () => {
+    const reponse = "```modification-sujet\nContenu sans fermeture.";
+    expect(extraireModifications(reponse)).toEqual({ sujet: "Contenu sans fermeture." });
+  });
+
+  it("ne confond pas un bloc de code Markdown ordinaire avec une modification", () => {
+    const reponse = "```python\nprint('hello')\n```";
+    expect(extraireModifications(reponse)).toEqual({});
   });
 });

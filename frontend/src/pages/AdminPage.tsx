@@ -38,6 +38,12 @@ export function AdminPage() {
   });
 
   const [stats, setStats] = useState<AdminStats | null>(null);
+  // Vérification de la session en cours de sondage à l'ouverture : évite le
+  // FLASH du formulaire de connexion pendant que /stats répond (la session
+  // vit dans un cookie httpOnly illisible par le JS — voir commentaire du
+  // sondage ci-dessous). Un écran de vérification (spinner) tient lieu de
+  // formulaire jusqu'à la réponse.
+  const [verification, setVerification] = useState(true);
   // Épreuve demandée depuis le journal d'audit (lien cliquable) : le shell
   // bascule sur l'onglet Épreuves et EpreuvesPanel précharge son détail.
   const [detailAOpenir, setDetailAOpenir] = useState<string | null>(null);
@@ -108,7 +114,9 @@ export function AdminPage() {
   useEffect(() => {
     let alive = true;
     loadStats("actif").then((ok) => {
-      if (alive && ok) setToken("actif");
+      if (!alive) return;
+      setVerification(false);
+      if (ok) setToken("actif");
     });
     return () => {
       alive = false;
@@ -182,6 +190,18 @@ export function AdminPage() {
       setBlocker(null);
       showToast("Déconnexion admin réussie.", "info");
     }
+  }
+
+  if (verification) {
+    return (
+      <div role="status" aria-live="polite" className="flex items-center gap-3 text-sm text-slate">
+        <span
+          aria-hidden="true"
+          className="h-4 w-4 animate-spin rounded-full border-2 border-ink-soft/25 border-t-ink motion-reduce:animate-none"
+        />
+        Vérification de la session administrateur…
+      </div>
+    );
   }
 
   if (!token) {

@@ -173,7 +173,15 @@ def me(user=Depends(require_user), db: Session = Depends(get_db)) -> UserOut:
     """Retourne l'utilisateur courant si le cookie de session est valide,
     401 sinon. Interrogé par le frontend au montage de l'application pour
     savoir si l'utilisateur est déjà connecté (`is_admin` inclut les admin
-    promus de la base)."""
+    promus de la base).
+
+    Rafraîchit aussi `derniere_connexion` au passage : le champ ne doit
+    pas rester figé à la connexion explicite — revenir sur le site avec
+    une session qui a survécu au rechargement compte comme une nouvelle
+    connexion pour le tableau du back-office (« Dernière connexion »)."""
+    user.derniere_connexion = utc_now()
+    db.add(user)
+    db.commit()
     return _user_out(user, db)
 
 

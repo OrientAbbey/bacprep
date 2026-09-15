@@ -1,5 +1,5 @@
-import { useState, useId } from "react";
-import { FileText, Plus, X } from "lucide-react";
+import { useState, useId, useRef } from "react";
+import { FileText, FileUp, Plus, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatBytes } from "../../lib/format";
@@ -195,6 +195,54 @@ export function Select({
   );
 }
 
+/** Liste déroulante MODIFIABLE : un champ de saisie libre enrichi d'une
+ * `<datalist>` de suggestions (niveau, classe, évaluation, matière,
+ * session). L'admin peut choisir une valeur connue OU taper la sienne —
+ * le serveur normalise au besoin (niveau/classe/évaluation passent par le
+ * référentiel à l'enregistrement) et mémorise les valeurs hors liste. */
+export function EditableSelect({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+}) {
+  const id = useId();
+  const listId = `suggest-${id}`;
+  // Affiche le libellé lisible quand la valeur courante est un code connu
+  // (ex. "terminale" → "Terminale") ; sinon la saisie libre brute.
+  const affiche = options.find((o) => o.value === value)?.label ?? value;
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
+        {label}
+      </label>
+      <input
+        id={id}
+        value={affiche}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        role="combobox"
+        aria-expanded={false}
+        aria-label={label}
+        list={listId}
+        className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
+      />
+      <datalist id={listId}>
+        {options.map((o) => (
+          <option key={o.value} value={o.label} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
 export function ContentBlock({
   title,
   required,
@@ -226,19 +274,48 @@ export function ContentBlock({
 }) {
   const textareaId = useId();
   const [imageWidths, setImageWidths] = useState<Record<string, number>>({});
+  const importRef = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-2 border-t border-ink-soft/10 pt-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="font-serif-brand text-lg">
           {title} {required && <span className="text-correction">*</span>}
         </h3>
-        <button
-          type="button"
-          onClick={onTogglePreview}
-          className="rounded-full border border-ink-soft/25 px-3 py-1 text-xs"
-        >
-          {preview ? "Texte" : "Rendu"}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Import Markdown d'un fichier .md fourni par un collègue : le
+              contenu est recopié dans la zone de texte de la cible. */}
+          <input
+            ref={importRef}
+            type="file"
+            accept=".md,.markdown,text/markdown"
+            className="sr-only"
+            aria-hidden="true"
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                file.text().then(onImportMarkdown).catch(() => undefined);
+              }
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => importRef.current?.click()}
+            title="Importer un fichier Markdown (.md) dans cette zone de texte"
+            className="flex items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 py-1 text-xs"
+          >
+            <FileUp size={13} strokeWidth={1.75} aria-hidden="true" />
+            Importer un .md
+          </button>
+          <button
+            type="button"
+            onClick={onTogglePreview}
+            className="rounded-full border border-ink-soft/25 px-3 py-1 text-xs"
+          >
+            {preview ? "Texte" : "Rendu"}
+          </button>
+        </div>
       </div>
       <FormatAttendu />
 
@@ -292,21 +369,6 @@ export function ContentBlock({
           </ul>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-ink-soft">Importer un fichier .md :</span>
-            <input
-              type="file"
-              accept=".md,.markdown,text/markdown"
-              className="block cursor-pointer text-sm file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-paper"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  file.text().then(onImportMarkdown).catch(() => undefined);
-                }
-                e.target.value = "";
-              }}
-            />
-          </label>
           <label className="flex items-center gap-2 text-sm">
             <span className="text-ink-soft">Image :</span>
             <input

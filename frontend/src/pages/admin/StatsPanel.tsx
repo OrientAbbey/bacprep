@@ -78,7 +78,7 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
 function RevenusMensuelsChart({ data }: { data: { mois: string; montant: number }[] }) {
   if (data.length === 0) return <p className="text-xs text-slate">Aucune donnée.</p>;
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={150}>
       <BarChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--color-ink-soft)" opacity={0.15} vertical={false} />
         <XAxis dataKey="mois" tick={{ fontSize: 10 }} stroke="var(--color-ink-soft)" />
@@ -99,7 +99,7 @@ function EpreuvesParClasseChart({ data }: { data: { classe: string; nombre: numb
   if (data.length === 0) return <p className="text-xs text-slate">Aucune donnée.</p>;
   const triees = [...data].sort((a, b) => b.nombre - a.nombre);
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={150}>
       <BarChart data={triees} layout="vertical" margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--color-ink-soft)" opacity={0.15} horizontal={false} />
         <XAxis type="number" tick={{ fontSize: 10 }} stroke="var(--color-ink-soft)" allowDecimals={false} />
@@ -115,33 +115,33 @@ function EpreuvesParClasseChart({ data }: { data: { classe: string; nombre: numb
 function StorageDonut({ md, image }: { md: number; image: number }) {
   const total = md + image;
   if (total === 0) return <p className="text-xs text-slate">Aucun fichier stocké.</p>;
-  // Circonférence du cercle de rayon 40 : 2πr ≈ 251.2
-  const C = 2 * Math.PI * 40;
+  // Circonférence du cercle de rayon 30 : 2πr ≈ 188.5
+  const C = 2 * Math.PI * 30;
   const mdRatio = md / total;
   return (
     <div className="flex items-center gap-4">
-      <svg width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="Répartition du stockage">
-        <circle cx="48" cy="48" r="40" fill="none" stroke="var(--color-ink-soft)" strokeWidth="12" opacity="0.25" />
+      <svg width="72" height="72" viewBox="0 0 72 72" role="img" aria-label="Répartition du stockage">
+        <circle cx="36" cy="36" r="30" fill="none" stroke="var(--color-ink-soft)" strokeWidth="10" opacity="0.25" />
         <circle
-          cx="48"
-          cy="48"
-          r="40"
+          cx="36"
+          cy="36"
+          r="30"
           fill="none"
           stroke="var(--color-highlight)"
-          strokeWidth="12"
+          strokeWidth="10"
           strokeDasharray={`${C * mdRatio} ${C}`}
-          transform="rotate(-90 48 48)"
+          transform="rotate(-90 36 36)"
         />
         <circle
-          cx="48"
-          cy="48"
-          r="40"
+          cx="36"
+          cy="36"
+          r="30"
           fill="none"
           stroke="var(--color-valide)"
-          strokeWidth="12"
+          strokeWidth="10"
           strokeDasharray={`${C * (1 - mdRatio)} ${C}`}
           strokeDashoffset={-C * mdRatio}
-          transform="rotate(-90 48 48)"
+          transform="rotate(-90 36 36)"
         />
       </svg>
       <div className="space-y-1 text-xs">

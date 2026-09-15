@@ -67,3 +67,30 @@ export function resumeEpreuveName(form: AdminEpreuveSnapshot): string {
   const bits = [form.matiere, form.annee, form.classe, form.evaluation].filter((b) => b.trim());
   return bits.join(" · ") || "épreuve en cours";
 }
+
+/** Modifications du sujet/corrigé proposées par l'assistant admin, extraites
+ * des blocs fencés spéciaux de sa réponse (« ```modification-sujet … ``` »
+ * et « ```modification-corrige … ``` ») que le prompt backend lui demande
+ * de produire quand l'admin lui demande de réécrire un contenu. */
+export interface ModificationsEpreuve {
+  sujet?: string;
+  corrige?: string;
+}
+
+const BLOC_MODIFICATION_RE = /```modification-(sujet|corrige)\s*\n([\s\S]*?)(?:```|$)/g;
+
+/** Extrait les blocs de modification d'une réponse d'assistant : renvoie
+ * un objet `{ sujet?, corrige? }` avec le Markdown complet révisé (lignes
+ * de fin excédentaires retirées), sans les marqueurs. Une réponse sans
+ * bloc renvoie `{}` (rien à appliquer). */
+export function extraireModifications(markdown: string): ModificationsEpreuve {
+  const out: ModificationsEpreuve = {};
+  let m: RegExpExecArray | null;
+  BLOC_MODIFICATION_RE.lastIndex = 0;
+  while ((m = BLOC_MODIFICATION_RE.exec(markdown)) !== null) {
+    const contenu = m[2].replace(/\s+$/, "");
+    if (m[1] === "sujet") out.sujet = contenu;
+    else out.corrige = contenu;
+  }
+  return out;
+}

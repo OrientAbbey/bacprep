@@ -86,6 +86,13 @@ def build_admin_prompt(
         "Les images se référencent avec ![Légende](/api/files/{id}#w=300) (fragment #w=NNN "
         "pour la largeur d'affichage — absent = taille pleine). Les ancres `{#id}` servent "
         "aux renvois GPC/Théorique.",
+        "MODIFICATIONS APPLICABLES : si l'admin te demande de MODIFIER ou RÉÉCRIRE le sujet "
+        "ou le corrigé, fournis la version complète révisée dans un bloc de code fencé "
+        "portant le marqueur spécial correspondant — ```modification-sujet``` pour le sujet, "
+        "```modification-corrige``` pour le corrigé. Le bloc doit contenir TOUT le Markdown "
+        "révisé (prêt à remplacer la zone de texte correspondante), JAMAIS un extrait ou un "
+        "résumé des changements. Un seul bloc par cible ; garde une explication concise "
+        "avant le bloc et n'écris aucune autre version du contenu en dehors de lui.",
         "",
         "Contenu brut de l'épreuve (sujet et corrigé tels que saisis dans l'éditeur) :",
         contenu or "(épreuve vide — aucune métadonnée de contenu fournie)",

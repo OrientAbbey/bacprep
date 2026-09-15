@@ -87,10 +87,10 @@ export function JournalPanel({
                     >
                       épreuve {e.epreuve_id}
                     </button>
-                    {e.epreuve_resume ? <span className="text-xs text-ink-soft"> ({e.epreuve_resume})</span> : null}
+                    {e.epreuve_resume ? <span className="text-xs text-ink-soft"> ({tronquer(e.epreuve_resume)})</span> : null}
                   </>
                 )}
-                {details ? <span className="text-xs text-slate"> — {details}</span> : null}
+                {details ? <span className="text-xs text-slate"> — {tronquer(details)}</span> : null}
               </span>
               <span className="font-mono-tag text-[10px] text-slate" title={new Date(e.created_at).toLocaleString("fr-FR")}>
                 {formatRelativeTime(e.created_at)}
@@ -101,6 +101,18 @@ export function JournalPanel({
       </ul>
     </div>
   );
+}
+
+/** Longueur maximale d'une entrée de journal (résumé d'épreuve, détails) —
+ * au-delà, le texte est tronqué sur un mot et signalé par « … » : les
+ * lignes du journal restent lisibles sans étirer toute la colonne. */
+const INTREE_MAX_CHARS = 140;
+
+function tronquer(texte: string, max: number = INTREE_MAX_CHARS): string {
+  const plat = texte.replace(/\s+/g, " ").trim();
+  if (plat.length <= max) return plat;
+  const coupe = plat.slice(0, max);
+  return `${coupe.replace(/\s+\S*$/, "")}…`;
 }
 
 /** Détails d'un évènement d'audit traduits en phrase lisible (au lieu du

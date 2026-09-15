@@ -488,14 +488,15 @@ def _activite_discussions(conversations, epreuves) -> list[dict]:
     items = []
     for conv in conversations:
         e = epreuves.get(conv.epreuve_id)
+        libelle = _tronquer_libelle(conv.label or "")
         items.append(
             _activite_item(
                 "discussion_ia",
                 conv.updated_at,
                 (
-                    f"Discussion « {conv.label} » — {e.matiere} ({e.evaluation} {e.annee})"
+                    f"Discussion « {libelle} » — {e.matiere} ({e.evaluation} {e.annee})"
                     if e
-                    else f"Discussion « {conv.label} »"
+                    else f"Discussion « {libelle} »"
                 ),
                 epreuve_id=conv.epreuve_id,
                 # Permet de rouvrir l'onglet de discussion exact depuis le
@@ -505,3 +506,11 @@ def _activite_discussions(conversations, epreuves) -> list[dict]:
             )
         )
     return items
+
+
+def _tronquer_libelle(libelle: str, max_len: int = 60) -> str:
+    """Raccourcit le libellé libre d'une discussion pour que les entrées
+    du journal d'activité restent courtes (une seule ligne d'affichage —
+    la valeur complète reste dans la table sous-jacente)."""
+    plat = " ".join(libelle.split())
+    return plat if len(plat) <= max_len else f"{plat[: max_len - 1].strip()}…"

@@ -1,4 +1,4 @@
-import { Bot, Plus, Send, X } from "lucide-react";
+import { Bot, Check, Plus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, type Message } from "../../components/AssistantPanel";
 import { MarkdownContent } from "../../components/MarkdownContent";
@@ -6,8 +6,10 @@ import { getInitials } from "../../lib/initials";
 import { streamAdminAsk } from "../../lib/streaming";
 import {
   buildAdminAskPayload,
+  extraireModifications,
   resumeEpreuveName,
   type AdminEpreuveSnapshot,
+  type ModificationsEpreuve,
 } from "../../lib/adminAssistant";
 
 const INPUT_MAX_HEIGHT_PX = 120;
@@ -26,11 +28,15 @@ export function AdminAssistantPanel({
   form,
   statut,
   onClose,
+  onAppliquer,
 }: {
   /** Formulaire d'édition COURANT (hors `statut`, porté par la prop éponyme). */
   form: Omit<AdminEpreuveSnapshot, "statut">;
   statut: string;
   onClose: () => void;
+  /** Applique au formulaire d'édition une modification du sujet/corrigé
+   * proposée par l'assistant (blocs `modification-sujet`/`modification-corrige`). */
+  onAppliquer: (modifications: ModificationsEpreuve) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -207,7 +213,17 @@ export function AdminAssistantPanel({
             // Bulle d'assistant pré-créée VIDE pendant le streaming :
             // masquée, l'indicateur « génère… » la remplace.
             if (m.role === "assistant" && m.content === "" && sending && i === messages.length - 1) return null;
-            return <ChatBubble key={i} m={m} />;
+            return (
+              <ChatBubble
+                key={i}
+                m={m}
+                // Les boutons « Appliquer » n'apparaissent qu'une fois la
+                // réponse terminée (le bloc de modification doit être complet).
+                onAppliquer={
+                  m.role === "assistant" && i === messages.length - 1 && !sending ? onAppliquer : undefined
+                }
+              />
+            );
           })}
 
           {sending &&
@@ -243,9 +259,22 @@ export function AdminAssistantPanel({
 }
 
 /** Bulle de message : avatar + contenu Markdown (rounded-2xl réservé aux
- * bulles par le référentiel). */
-function ChatBubble({ m }: { m: Message }) {
+ * bulles par le référentiel). Pour une réponse d'assistant terminée, des
+ * boutons « Appliquer » apparaissent sous la bulle si elle contient des
+ * blocs de modification (`modification-sujet`/`modification-corrige`) —
+ * un clic remplit la zone de texte correspondante du formulaire. */
+function ChatBubble({
+  m,
+  onAppliquer,
+}: {
+  m: Message;
+  onAppliquer?: (modifications: ModificationsEpreuve) => void;
+}) {
   const isUser = m.role === "user";
+  // Les blocs de modification restent visibles dans le Markdown rendu
+  // (aperçu) ; les boutons ne s'affichent que s'il y a un bloc exploitable.
+  const modifs = m.role === "assistant" ? extraireModifications(m.content) : {};
+  const applicable = Boolean(onAppliquer) && (modifs.sujet !== undefined || modifs.corrige !== undefined);
   return (
     <div className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <Avatar role={m.role} nom={isUser ? "Admin" : ASSISTANT_SIGNATURE} />
@@ -260,6 +289,30 @@ function ChatBubble({ m }: { m: Message }) {
         >
           <MarkdownContent content={m.content} variant="chat" />
         </div>
+        {applicable && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {modifs.sujet !== undefined && (
+              <button
+                type="button"
+                onClick={() => onAppliquer!({ sujet: modifs.sujet })}
+                className="flex min-h-[32px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
+              >
+                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+                Appliquer au sujet
+              </button>
+            )}
+            {modifs.corrige !== undefined && (
+              <button
+                type="button"
+                onClick={() => onAppliquer!({ corrige: modifs.corrige })}
+                className="flex min-h-[32px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
+              >
+                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+                Appliquer au corrigé
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
