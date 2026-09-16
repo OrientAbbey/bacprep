@@ -44,19 +44,25 @@ export function nettoyerHistorique(
   return messages.filter((m) => m.content.trim().length > 0);
 }
 
-/** Charge utile ÉPHÉMÈRE de l'assistant admin : jamais de
- * `conversation_id` (rien n'est persisté côté serveur, `done.conversation`
- * vaut null) — chaque envoi embarque un instantané FRAIS du formulaire
- * d'édition, lu à l'appel de `send()` (pas de prop figée). */
+/** Charge utile de l'assistant admin : `epreuve_id` optionnel — présent
+ * (épreuve EN SAUVEGARDE), la conversation est persistée côté serveur et
+ * `done.conversation` la restitue ; absent (épreuve pas encore enregistrée),
+ * l'échange reste éphémère. Chaque envoi embarque un instantané FRAIS du
+ * formulaire d'édition, lu à l'appel de `send()` (pas de prop figée). */
 export function buildAdminAskPayload(
   form: AdminEpreuveSnapshot,
   historique: { role: string; content: string }[],
-  question: string
+  question: string,
+  epreuve_id?: string
 ): AdminAskPayload {
   const principal = sujetPrincipal(form);
   return {
     question,
     historique: nettoyerHistorique(historique),
+    // `epreuve_id` n'est présent DANS LE JSON que si l'épreuve est en
+    // sauvegarde (JSON.stringify omet les membres undefined, mais on évite
+    // aussi de créer la clé dans l'objet pour un coup d'œil sans ambiguïté).
+    ...(epreuve_id ? { epreuve_id } : {}),
     epreuve: {
       niveau: form.niveau,
       classe: form.classe,
@@ -87,21 +93,44 @@ export function resumeEpreuveName(form: AdminEpreuveSnapshot): string {
   return bits.join(" · ") || "épreuve en cours";
 }
 
-/** Modifications du sujet/corrigé proposées par l'assistant admin, extraites
- * des blocs fencés spéciaux de sa réponse (« ```modification-sujet … ``` »
- * et « ```modification-corrige … ``` ») que le prompt backend lui demande
- * de produire quand l'admin lui demande de réécrire un contenu. */
+/** Champs du formulaire d'édition que l'assistant peut proposer de corriger
+ * via son bloc `modification-form` (métadonnées + réglages, PAS les contenus
+ * sujet/corrigé ni la liste des sujets). Valeurs prêtes à être affectées à
+ * `AdminEpreuveSnapshot` (types convertis par `appliquerModifications`). */
+export interface ModificationFormulaire {
+  niveau?: string;
+  classe?: string;
+  evaluation?: string;
+  matiere?: string;
+  annee?: string;
+  session?: string;
+  duree?: string;
+  coefficient?: string;
+  gratuit?: boolean;
+  statut?: string;
+  filieres?: string[];
+}
+
+/** Modifications proposées par l'assistant admin, extraites des blocs fencés
+ * spéciaux de sa réponse — « ```modification-sujet … ``` » (sujet principal),
+ * « ```modification-corrige … ``` » (corrigé principal) et
+ * « ```modification-form … ``` » (objet JSON de métadonnées) — que le prompt
+ * backend lui demande de produire quand l'admin lui demande de réécrire un
+ * contenu ou de corriger les réglages. */
 export interface ModificationsEpreuve {
   sujet?: string;
   corrige?: string;
+  form?: ModificationFormulaire;
 }
 
-const BLOC_MODIFICATION_RE = /```modification-(sujet|corrige)\s*\n([\s\S]*?)(?:```|$)/g;
+const BLOC_MODIFICATION_RE = /```modification-(sujet|corrige|form)\s*\n([\s\S]*?)(?:```|$)/g;
 
 /** Extrait les blocs de modification d'une réponse d'assistant : renvoie
- * un objet `{ sujet?, corrige? }` avec le Markdown complet révisé (lignes
- * de fin excédentaires retirées), sans les marqueurs. Une réponse sans
- * bloc renvoie `{}` (rien à appliquer). */
+ * un objet `{ sujet?, corrige?, form? }` avec le Markdown complet révisé
+ * (lignes de fin excédentaires retirées), sans les marqueurs. Le bloc
+ * `form` est une chaîne JSON d'abord validée puis parsée (toute syntaxe
+ * invalide est ignorée : on n'applique jamais de métadonnées corrompues).
+ * Une réponse sans bloc renvoie `{}` (rien à appliquer). */
 export function extraireModifications(markdown: string): ModificationsEpreuve {
   const out: ModificationsEpreuve = {};
   let m: RegExpExecArray | null;
@@ -109,7 +138,17 @@ export function extraireModifications(markdown: string): ModificationsEpreuve {
   while ((m = BLOC_MODIFICATION_RE.exec(markdown)) !== null) {
     const contenu = m[2].replace(/\s+$/, "");
     if (m[1] === "sujet") out.sujet = contenu;
-    else out.corrige = contenu;
+    else if (m[1] === "corrige") out.corrige = contenu;
+    else {
+      try {
+        const json = JSON.parse(contenu);
+        if (json && typeof json === "object" && !Array.isArray(json)) {
+          out.form = json as ModificationFormulaire;
+        }
+      } catch {
+        // JSON invalide : bloc ignoré.
+      }
+    }
   }
   return out;
 }

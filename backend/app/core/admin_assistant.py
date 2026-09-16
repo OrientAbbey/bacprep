@@ -93,6 +93,16 @@ def build_admin_prompt(
         "révisé (prêt à remplacer la zone de texte correspondante), JAMAIS un extrait ou un "
         "résumé des changements. Un seul bloc par cible ; garde une explication concise "
         "avant le bloc et n'écris aucune autre version du contenu en dehors de lui.",
+        "MODIFICATIONS DU FORMULAIRE : si l'admin te demande de corriger les métadonnées ou "
+        "les réglages de l'épreuve (matière, niveau, classe, évaluation, année, session, durée, "
+        "coefficient, séries, statut ou gratuité), fournis le nouvel ensemble complet dans un "
+        "bloc de code fencé ```modification-form``` contenant un objet JSON. Inclus TOUTES les "
+        "clés que tu modifies — valeur doit être du bon type : `niveau` et `classe` en clair, "
+        "`evaluation` une évaluation valide, `annee` en `'AAAA'`, `session` une session valide, "
+        "`duree` en minutes (nombre), `coefficient` en nombre, `filieres` un tableau de codes "
+        "de séries, `gratuit` un booléen, `statut` parmi `brouillon`, `a_reviser`, `publie`. "
+        "Un seul bloc par réponse ; n'écris aucun autre contenu relevant du formulaire en "
+        "dehors du bloc.",
         "",
         "Contenu brut de l'épreuve (sujet et corrigé tels que saisis dans l'éditeur) :",
         contenu or "(épreuve vide — aucune métadonnée de contenu fournie)",

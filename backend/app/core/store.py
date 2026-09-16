@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..db import utc_now
 from ..db_models import (
+    AdminAIConversationORM,
     AIConversationORM,
     ConsultationORM,
     EpreuveFiliereORM,
@@ -531,4 +532,69 @@ def conversation_to_dict(conv: AIConversationORM) -> dict:
         "messages": json.loads(conv.messages_json or "[]"),
         "created_at": conv.created_at,
         "updated_at": conv.updated_at,
+    }
+
+
+# ---------- Conversations IA admin ----------
+
+def get_admin_conversation(db: Session, email: str, epreuve_id: str) -> Optional[AdminAIConversationORM]:
+    """Retrouve la conversation « roulante » d'un admin sur une épreuve
+    (une seule par couple, créée à la première question)."""
+    return (
+        db.query(AdminAIConversationORM)
+        .filter(AdminAIConversationORM.email == email, AdminAIConversationORM.epreuve_id == epreuve_id)
+        .order_by(AdminAIConversationORM.created_at.desc())
+        .first()
+    )
+
+
+def create_admin_conversation(db: Session, email: str, epreuve_id: str) -> AdminAIConversationORM:
+    """Crée la conversation roulante d'un admin sur une épreuve."""
+    conv = AdminAIConversationORM(email=email, epreuve_id=epreuve_id, label="Discussion admin", messages_json="[]")
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    log.info("Conversation admin créée: email=%s epreuve_id=%s", email, epreuve_id)
+    return conv
+
+
+def update_admin_conversation(
+    db: Session,
+    conv: AdminAIConversationORM,
+    messages: list[dict],
+) -> AdminAIConversationORM:
+    """Remplace intégralement les messages d'une conversation admin
+    (sérialisés en JSON) et rafraîchit l'horodatage."""
+    conv.messages_json = json.dumps(messages, ensure_ascii=False)
+    conv.updated_at = utc_now()
+    db.commit()
+    db.refresh(conv)
+    return conv
+
+
+def delete_admin_conversation(db: Session, conv: AdminAIConversationORM) -> None:
+    """Supprime la conversation roulante d'un admin sur une épreuve."""
+    db.delete(conv)
+    db.commit()
+
+
+def delete_admin_conversations_for_epreuve(db: Session, epreuve_id: str) -> int:
+    """Purge les conversations admin liées à une épreuve supprimée."""
+    count = db.query(AdminAIConversationORM).filter(AdminAIConversationORM.epreuve_id == epreuve_id).delete(synchronize_session=False)
+    if count:
+        db.commit()
+    return count
+
+
+def admin_conversation_to_dict(conv: AdminAIConversationORM) -> dict:
+    """Sérialise une conversation admin ORM pour la réponse API (horodatages
+    en ISO — le flux SSE est encodé avec `json.dumps` brut, pas de modèle
+    Pydantic pour coaguler les datetime)."""
+    return {
+        "id": conv.id,
+        "epreuve_id": conv.epreuve_id,
+        "label": conv.label,
+        "messages": json.loads(conv.messages_json or "[]"),
+        "created_at": conv.created_at.isoformat() if conv.created_at else None,
+        "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
     }

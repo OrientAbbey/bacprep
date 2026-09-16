@@ -114,22 +114,44 @@ export function delaiReconnexion(essai: number): number {
 }
 
 /**
+ * Conversation « roulante » de l'assistant admin, persistée côté serveur par
+ * (email admin, épreuve). Restituée à la réouverture du tiroir (`id`,
+ * `label`, `messages`) via `GET /api/admin/assistant/conversation/{epreuve_id}`.
+ */
+export interface AdminConversation {
+  id: string;
+  epreuve_id: string;
+  label: string;
+  messages: { role: "user" | "assistant"; content: string; ts?: string }[];
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * Charge utile de l'assistant ADMIN : la question de l'admin + un instantané
  * du formulaire d'épreuve en cours (`epreuve`, forme du formulaire
  * d'édition : niveau, classe, evaluation, matiere, annee, session, duree,
  * coefficient, gratuit, statut, filieres, contenu_markdown,
- * corrige_markdown). L'échange est ÉPHÉMÈRE : pas de conversation_id, rien
- * n'est persisté côté serveur — `done.conversation` vaut toujours null.
+ * corrige_markdown). Deux voies :
+ * - persistée : `epreuve_id` (id de l'épreuve EN SAUVEGARDE) — l'échange est
+ *   stocké côté serveur et `done.conversation` porte la conversation mise à
+ *   jour ;
+ * - éphémère : sans `epreuve_id` (épreuve pas encore enregistrée) — rien
+ *   n'est persisté, `done.conversation` vaut null.
+ * `historique` = l'état des messages attendu par le SÉRVEUR (base de
+ * réconciliation) : les messages persistés doivent lui être ramenés avant
+ * chaque tentative, ce qui neutralise les doublons d'une réponse interrompue.
  */
 export interface AdminAskPayload {
   question: string;
   historique: { role: string; content: string }[];
   epreuve: Record<string, unknown>;
+  epreuve_id?: string;
 }
 
 export type AdminStreamEvent =
   | { type: "chunk"; text: string }
-  | { type: "done"; conversation: null }
+  | { type: "done"; conversation: AdminConversation | null }
   | { type: "error"; message: string };
 
 /** Flux de l'assistant admin (`POST /api/admin/assistant/ask`). Les erreurs

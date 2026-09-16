@@ -292,6 +292,23 @@ class AIConversationORM(Base):
     updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
 
 
+class AdminAIConversationORM(Base):
+    """Discussion IA du back-office : une conversation « roulante » par
+    (email admin, épreuve) — l'assistant redevient persistant entre deux
+    ouvertures du tiroir. Pas de FK vers epreuves (la purge se fait
+    explicitement à la suppression de l'épreuve, comme les autres tables
+    qui la référencent)."""
+    __tablename__ = "admin_ai_conversations"
+
+    id = Column(String, primary_key=True, default=_uid)
+    email = Column(String, nullable=False, index=True)
+    epreuve_id = Column(String, nullable=False, index=True)
+    label = Column(String, nullable=False, default="Discussion admin")
+    messages_json = Column(Text, nullable=False, default="[]")
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
+
+
 class ConsultationORM(Base):
     """Consultation d'une épreuve par un élève : une seule ligne par
     (utilisateur, épreuve) pour la télémétrie catalogue (historique récent)."""

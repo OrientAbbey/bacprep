@@ -28,9 +28,15 @@ const FORM = {
 };
 
 describe("buildAdminAskPayload", () => {
-  it("n'envoie JAMAIS de conversation_id (échange éphémère)", () => {
+  it("n'envoie JAMAIS de conversation_id ; `epreuve_id` absent par défaut (échange éphémère)", () => {
     const payload = buildAdminAskPayload(FORM, [], "Une question");
     expect("conversation_id" in payload).toBe(false);
+    expect("epreuve_id" in payload).toBe(false);
+  });
+
+  it("embarque `epreuve_id` quand fourni (échange persisté)", () => {
+    const payload = buildAdminAskPayload(FORM, [], "Une question", "epr-123");
+    expect(payload.epreuve_id).toBe("epr-123");
   });
 
   it("embarque l'instantané complet du formulaire (sujet principal à plat + sujets)", () => {
@@ -160,5 +166,41 @@ describe("extraireModifications", () => {
   it("ne confond pas un bloc de code Markdown ordinaire avec une modification", () => {
     const reponse = "```python\nprint('hello')\n```";
     expect(extraireModifications(reponse)).toEqual({});
+  });
+
+  it("extrait les métadonnées du bloc `modification-form` (JSON)", () => {
+    const reponse = [
+      "Voici les métadonnées à corriger :",
+      "```modification-form",
+      '{"matiere": "SVT", "annee": "2025", "duree": 180, "gratuit": false, "statut": "a_reviser", "filieres": ["C", "D"]}',
+      "```",
+    ].join("\n");
+    expect(extraireModifications(reponse)).toEqual({
+      form: { matiere: "SVT", annee: "2025", duree: 180, gratuit: false, statut: "a_reviser", filieres: ["C", "D"] },
+    });
+  });
+
+  it("ignore un bloc `modification-form` au JSON invalide", () => {
+    const reponse = "```modification-form\n{pas du json}\n```";
+    expect(extraireModifications(reponse)).toEqual({});
+  });
+
+  it("combine sujet, corrigé et formulaire dans une même réponse", () => {
+    const reponse = [
+      "```modification-sujet",
+      "Sujet revu.",
+      "```",
+      "```modification-corrige",
+      "Corrigé revu.",
+      "```",
+      "```modification-form",
+      '{"annee": "2023"}',
+      "```",
+    ].join("\n");
+    expect(extraireModifications(reponse)).toEqual({
+      sujet: "Sujet revu.",
+      corrige: "Corrigé revu.",
+      form: { annee: "2023" },
+    });
   });
 });

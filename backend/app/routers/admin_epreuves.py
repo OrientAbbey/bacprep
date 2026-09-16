@@ -17,6 +17,7 @@ from ..core import epreuve_files, images, referentiel, referentiel_options, sign
 from ..core.logging_config import get_logger
 from ..db import get_db, utc_now
 from ..db_models import (
+    AdminAIConversationORM,
     AIConversationORM,
     ConsultationORM,
     EpreuveFiliereORM,
@@ -437,13 +438,13 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
     meta = {"matiere": e.matiere, "classe": e.classe, "annee": e.annee, "evaluation": e.evaluation}
     # Tables référençant l'épreuve et SANS cascade ORM — à traiter à la main
     # avant la suppression, sinon la contrainte de clé étrangère la fait
-    # échouer (liste exhaustive : subscriptions, ai_conversations,
-    # consultations, notes, signalements ; filières et fichiers partent en
-    # cascade ORM) :
+    # échouer (liste exhaustive : subscriptions, ai_conversations, consultations,
+    # notes, signalements ; filières et fichiers partent en cascade ORM) :
     # - les abonnements « épreuve précise » perdent leur cible (le paiement,
     #   lui, reste dans l'historique) ;
-    # - l'historique de consultation et les discussions IA de cette épreuve
-    #   sont supprimés (plus de sens sans leur épreuve) ;
+    # - l'historique de consultation et les discussions IA (élève ET
+    #   back-office) de cette épreuve sont supprimés (plus de sens sans leur
+    #   épreuve) ;
     # - les notes personnelles et signalements pointent sur l'épreuve (FK
     #   NOT NULL) : tout essai de suppression échouait sinon en 500 à la
     #   validation SQL, et leur contenu n'aurait plus de support.
@@ -451,6 +452,7 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
         {SubscriptionORM.epreuve_id: None}
     )
     db.query(AIConversationORM).filter(AIConversationORM.epreuve_id == epreuve_id).delete()
+    db.query(AdminAIConversationORM).filter(AdminAIConversationORM.epreuve_id == epreuve_id).delete()
     db.query(ConsultationORM).filter(ConsultationORM.epreuve_id == epreuve_id).delete()
     db.query(NoteORM).filter(NoteORM.epreuve_id == epreuve_id).delete()
     db.query(SignalementORM).filter(SignalementORM.epreuve_id == epreuve_id).delete()

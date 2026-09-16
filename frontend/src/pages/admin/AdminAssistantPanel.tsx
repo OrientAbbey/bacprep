@@ -1,10 +1,11 @@
 import { Bot, Check, Clock, Pencil, Plus, RotateCcw, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { api } from "../../api/client";
 import { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, type Message } from "../../components/AssistantPanel";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { dateLongue, heureCourte } from "../../lib/dates";
 import { getInitials } from "../../lib/initials";
-import { delaiReconnexion, streamAdminAsk } from "../../lib/streaming";
+import { delaiReconnexion, streamAdminAsk, type AdminConversation } from "../../lib/streaming";
 import {
   buildAdminAskPayload,
   extraireModifications,
@@ -17,9 +18,14 @@ const INPUT_MAX_HEIGHT_PX = 120;
 
 /**
  * Tiroir droit de l'assistant du back-office, ouvert depuis l'onglet
- * Épreuves. Conversations ÉPHÉMÈRES : la liste des messages vit dans
- * l'état du composant, perdue à la fermeture du tiroir ; le serveur ne
- * persiste RIEN (le flux n'envoie jamais de `conversation_id`).
+ * Épreuves. Deux modes :
+ * - PERSISTÉ (`epreuveId` fourni — épreuve déjà enregistrée) : la
+ *   conversation « roulante » de CET admin sur ce dossier est rechargeée à
+ *   l'ouverture (`GET /api/admin/assistant/conversation/{id}`), réécrite à
+ *   chaque `done` du flux, et « Nouvelle conversation » la purge côté
+ *   serveur (`DELETE`).
+ * - ÉPHÉMÈRE (épreuve pas encore enregistrée) : la liste des messages vit
+ *   dans l'état du composant, perdue à la fermeture ; rien n'est stocké.
  *
  * Le formulaire d'édition est resnapshotté à CHAQUE envoi : la prop `form`
  * (réactualisée par EpreuvesPanel à chaque frappe) est lue au moment de
@@ -35,15 +41,20 @@ const INPUT_MAX_HEIGHT_PX = 120;
 export function AdminAssistantPanel({
   form,
   statut,
+  epreuveId,
   onClose,
   onAppliquer,
 }: {
   /** Formulaire d'édition COURANT (hors `statut`, porté par la prop éponyme). */
   form: Omit<AdminEpreuveSnapshot, "statut">;
   statut: string;
+  /** Id de l'épreuve EN SAUVEGARDE : la conversation est persistée côté
+   * serveur. Absent = mode éphémère (rien n'est stocké). */
+  epreuveId?: string;
   onClose: () => void;
-  /** Applique au formulaire d'édition une modification du sujet/corrigé
-   * proposée par l'assistant (blocs `modification-sujet`/`modification-corrige`). */
+  /** Applique au formulaire d'édition une modification proposée par
+   * l'assistant (blocs `modification-sujet`, `modification-corrige`,
+   * `modification-form`). */
   onAppliquer: (modifications: ModificationsEpreuve) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -52,6 +63,7 @@ export function AdminAssistantPanel({
   const [erreurStream, setErreurStream] = useState<string | null>(null);
   const [queue, setQueue] = useState<string[]>([]);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [enChargement, setEnChargement] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -61,6 +73,40 @@ export function AdminAssistantPanel({
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Mode PERSISTÉ : recharge la conversation roulante de CET admin sur cette
+  // épreuve au montage (id, labels, horodatages inclus) — le tiroir rouvre
+  // exactement là où on l'avait laissé.
+  useEffect(() => {
+    if (!epreuveId) return;
+    let annule = false;
+    setEnChargement(true);
+    void (async () => {
+      try {
+        const { conversation } = await api.get<{ conversation: AdminConversation | null }>(
+          `/api/admin/assistant/conversation/${epreuveId}`
+        );
+        if (annule) return;
+        if (conversation) {
+          setMessages(
+            conversation.messages.map((m) => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: m.content,
+              ts: m.ts,
+            }))
+          );
+        }
+      } catch {
+        // Conversation introuvable ou serveur injoignable : panneau vide,
+        // la première question recréera la conversation côté serveur.
+      } finally {
+        if (!annule) setEnChargement(false);
+      }
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [epreuveId]);
 
   // Échap ferme le tiroir (même ergonomie que le panneau de l'élève).
   useEffect(() => {
@@ -94,9 +140,17 @@ export function AdminAssistantPanel({
   }, [input]);
 
   function nouvelleConversation() {
+    if (sending) return;
     setMessages([]);
     setErreurStream(null);
     setQueue([]);
+    // Mode persisté : purge côté serveur (le prochain envoi recrée une
+    // conversation vierge). BEST-EFFORT : un échec réseau n'empêche pas
+    // d'effacer l'écran — mais alors ne réapparaîtra pas la conversation
+    // à la prochaine ouverture du tiroir.
+    if (epreuveId) {
+      void api.del(`/api/admin/assistant/conversation/${epreuveId}`).catch(() => undefined);
+    }
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -132,7 +186,7 @@ export function AdminAssistantPanel({
    * applicatives du flux et les 4xx ne sont pas relancées. */
   async function applyExchange(question: string, base: Message[]) {
     if (sending) return;
-    const payload = buildAdminAskPayload({ ...form, statut }, base, question);
+    const payload = buildAdminAskPayload({ ...form, statut }, base, question, epreuveId);
     const nowIso = new Date().toISOString();
 
     setMessages([...base, { role: "user", content: question, ts: nowIso }, { role: "assistant", content: "", ts: nowIso }]);
@@ -181,10 +235,20 @@ export function AdminAssistantPanel({
             if (chunkRaf === null) chunkRaf = requestAnimationFrame(flushChunk);
           } else if (event.type === "done") {
             gotDone = true;
-            // Éphémère : `conversation` vaut null, rien à réconcilier — il
-            // faut seulement vider le tampon avant de déclarer la fin.
             if (chunkRaf !== null) cancelAnimationFrame(chunkRaf);
             flushChunk();
+            // Mode persisté : le serveur renvoie la conversation mise à jour ;
+            // les messages sont la source de vérité (question + réponse, ts
+            // inclus). Le remplacement est immédiat et écrase l'état local.
+            if (event.conversation) {
+              setMessages(
+                event.conversation.messages.map((m) => ({
+                  role: m.role === "assistant" ? "assistant" : "user",
+                  content: m.content,
+                  ts: m.ts,
+                }))
+              );
+            }
           } else if (event.type === "error") {
             gotErrorEvent = true;
             erreurFinale = event.message;
@@ -264,7 +328,7 @@ export function AdminAssistantPanel({
             <div className="min-w-0">
               <h2 className="font-serif-brand text-sm leading-tight">{ASSISTANT_TITRE}</h2>
               <p className="font-mono-tag text-[10px] text-slate">
-                {ASSISTANT_SIGNATURE} · back-office · éphémère (rien n'est enregistré)
+                {ASSISTANT_SIGNATURE} · back-office · {epreuveId ? "discussion enregistrée" : "éphémère (rien n'est enregistré)"}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
@@ -302,7 +366,13 @@ export function AdminAssistantPanel({
           aria-label={`Discussion avec ${ASSISTANT_TITRE}`}
           className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4"
         >
-          {messages.length === 0 && !sending && (
+          {enChargement && (
+            <div className="pt-6 text-center">
+              <p className="text-sm text-slate">Chargement de la discussion…</p>
+            </div>
+          )}
+
+          {messages.length === 0 && !sending && !enChargement && (
             <div className="pt-6 text-center">
               <Bot size={28} strokeWidth={1.5} aria-hidden="true" className="mx-auto text-slate" />
               <p className="mt-2 text-sm font-medium">Pose ta première question</p>
@@ -376,10 +446,10 @@ export function AdminAssistantPanel({
  * au survol) + contenu Markdown (rounded-2xl réservé aux bulles par le
  * référentiel). Pour une réponse d'assistant terminée, des boutons
  * « Appliquer » apparaissent sous la bulle si elle contient des blocs de
- * modification (`modification-sujet`/`modification-corrige`) — un clic
- * remplit la zone de texte correspondante du formulaire. Les questions
- * de l'admin sont éditables (« Modifier ») et la dernière réponse peut
- * être relancée (« Réessayer »). */
+ * modification (`modification-sujet`, `modification-corrige`,
+ * `modification-form`) — un clic remplit la zone de texte ou les champs de
+ * métadonnées du formulaire. Les questions de l'admin sont éditables
+ * (« Modifier ») et la dernière réponse peut être relancée (« Réessayer »). */
 function ChatBubble({
   m,
   onAppliquer,
@@ -401,7 +471,9 @@ function ChatBubble({
   // Les blocs de modification restent visibles dans le Markdown rendu
   // (aperçu) ; les boutons ne s'affichent que s'il y a un bloc exploitable.
   const modifs = m.role === "assistant" ? extraireModifications(m.content) : {};
-  const applicable = Boolean(onAppliquer) && (modifs.sujet !== undefined || modifs.corrige !== undefined);
+  const applicable =
+    Boolean(onAppliquer) &&
+    (modifs.sujet !== undefined || modifs.corrige !== undefined || modifs.form !== undefined);
 
   const heure = heureCourte(m.ts);
   const titreDate = dateLongue(m.ts);
@@ -487,6 +559,16 @@ function ChatBubble({
               >
                 <Check size={12} strokeWidth={2.5} aria-hidden="true" />
                 Appliquer au corrigé
+              </button>
+            )}
+            {modifs.form !== undefined && (
+              <button
+                type="button"
+                onClick={() => onAppliquer!({ form: modifs.form })}
+                className="flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
+              >
+                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+                Appliquer au formulaire
               </button>
             )}
           </div>

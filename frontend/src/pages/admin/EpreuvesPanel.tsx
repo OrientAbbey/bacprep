@@ -7,7 +7,8 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
-import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, Field, SujetFormData } from "./shared";
+import type { ModificationsEpreuve } from "../../lib/adminAssistant";
+import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur, SujetFormData } from "./shared";
 
 interface AdminEpreuveSummary {
   id: string;
@@ -22,10 +23,6 @@ interface AdminEpreuveSummary {
 }
 
 const SIDEBAR_LIMIT = 30;
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /** Retire la première occurrence d'une balise `![...](url)` référençant
  * cette URL précise, quel que soit le texte de légende (l'admin a pu le
@@ -397,13 +394,20 @@ export function EpreuvesPanel({
     });
   }
 
-  /** Bouton "+" sur une vignette : (ré)insère la balise Markdown de cette
-   * image dans le texte correspondant (utile si l'admin l'a retirée
-   * manuellement en éditant le Markdown, sans supprimer le fichier). Une
-   * largeur d'affichage (`#w=NNN`, chantier « images redimensionnables »)
+  /** Bouton "+" sur une vignette : insère la balise Markdown de cette image
+   * dans le texte correspondant (une seule rangée — jamais de doublon ; si
+   * la balise y est déjà, la taille d'affichage ci-dessous redimensionne).
+   * Une largeur d'affichage (`#w=NNN`, chantier « images redimensionnables »)
    * est accolée à l'URL si demandée — elle est ensuite respectée par le
    * rendu de l'éditeur ET du lecteur. */
   function insertImageTag(asset: Asset, width?: number) {
+    const sujet = form.sujets.find((s) => s.index === sujetActif);
+    if (!sujet) return;
+    const zone = asset.cible === "sujet" ? sujet.contenu_markdown : sujet.corrige_markdown;
+    if (extraireBaliseImage(zone, asset.url).presente) {
+      showToast("Cette image est déjà dans le texte — utilise la taille ci-dessous.", "info");
+      return;
+    }
     const taille = width && width > 0 ? `#w=${width}` : "";
     const tag = `![légende](${asset.url}${taille})`;
     setForm((f) => ({
@@ -419,6 +423,35 @@ export function EpreuvesPanel({
       ),
     }));
     showToast("Balise image insérée dans le texte.", "success");
+  }
+
+  /** Sélecteur « Taille d'affichage » : réécrit la largeur `#w=NNN` de la
+   * balise DÉJÀ insérée dans le texte du sujet en cours (la balise absente
+   * est insérée avec la largeur choisie). Contrairement à l'ancien
+   * comportement (largeur mémorisée puis balise insérée par « + »), le
+   * redimensionnement agit À LA VOLÉE et sans jamais dupliquer l'image. */
+  function resizeImage(asset: Asset, width: number) {
+    const sujet = form.sujets.find((s) => s.index === sujetActif);
+    if (!sujet) return;
+    const zone = asset.cible === "sujet" ? sujet.contenu_markdown : sujet.corrige_markdown;
+    if (extraireBaliseImage(zone, asset.url).presente) {
+      setForm((f) => ({
+        ...f,
+        sujets: f.sujets.map((s) =>
+          s.index === sujetActif
+            ? {
+                ...s,
+                contenu_markdown:
+                  asset.cible === "sujet" ? remplacerLargeur(s.contenu_markdown, asset.url, width) : s.contenu_markdown,
+                corrige_markdown:
+                  asset.cible === "corrige" ? remplacerLargeur(s.corrige_markdown, asset.url, width) : s.corrige_markdown,
+              }
+            : s
+        ),
+      }));
+    } else {
+      insertImageTag(asset, width || undefined);
+    }
   }
 
   /** Met à jour un champ (sujet ou corrigé) d'un sujet précis. */
@@ -503,12 +536,30 @@ export function EpreuvesPanel({
    * remplies, mais l'admin garde la main : rien n'est envoyé au serveur —
    * l'enregistrement ne se fait qu'avec son clic explicite sur
    * « Enregistrer ». */
-  function appliquerModifications(modifications: { sujet?: string; corrige?: string }) {
-    const { sujet, corrige } = modifications;
-    if (!sujet && !corrige) return;
-    // Applique les modifications au sujet EN COURS d'édition (onglet actif).
+  function appliquerModifications(modifications: ModificationsEpreuve) {
+    const { sujet, corrige, form: modifForm } = modifications;
+    if (!sujet && !corrige && !modifForm) return;
+    // Applique la modification au sujet EN COURS d'édition (onglet actif) et
+    // les métadonnées au formulaire (le `statut` vit dans `statutForm`, pas
+    // dans `form`). Les valeurs numériques JSON du modèle (durée, coefficient)
+    // sont ramenées en chaîne pour le formulaire ; `statut` n'est accepté que
+    // s'il est dans la liste des statuts valides du formulaire.
     setForm((f) => ({
       ...f,
+      ...(modifForm
+        ? {
+            niveau: modifForm.niveau ?? f.niveau,
+            classe: modifForm.classe ?? f.classe,
+            evaluation: modifForm.evaluation ?? f.evaluation,
+            matiere: modifForm.matiere ?? f.matiere,
+            annee: modifForm.annee ?? f.annee,
+            session: modifForm.session ?? f.session,
+            duree: modifForm.duree !== undefined ? String(modifForm.duree) : f.duree,
+            coefficient: modifForm.coefficient !== undefined ? String(modifForm.coefficient) : f.coefficient,
+            gratuit: modifForm.gratuit ?? f.gratuit,
+            filieres: modifForm.filieres ?? f.filieres,
+          }
+        : {}),
       sujets: f.sujets.map((s) =>
         s.index === sujetActif
           ? {
@@ -519,6 +570,10 @@ export function EpreuvesPanel({
           : s
       ),
     }));
+    const STATUTS_FORM = ["brouillon", "a_reviser", "publie"];
+    if (modifForm?.statut && STATUTS_FORM.includes(modifForm.statut)) {
+      setStatutForm(modifForm.statut);
+    }
     showToast("Modification de l'assistant appliquée au formulaire.", "success");
   }
 
@@ -850,6 +905,7 @@ export function EpreuvesPanel({
               documents={form.documents.filter((d) => d.cible === "sujet")}
               onDeleteImage={deleteImage}
               onInsertImage={insertImageTag}
+              onResizeImage={resizeImage}
               onDeleteDocument={deleteDocument}
             />
 
@@ -868,6 +924,7 @@ export function EpreuvesPanel({
               documents={form.documents.filter((d) => d.cible === "corrige")}
               onDeleteImage={deleteImage}
               onInsertImage={insertImageTag}
+              onResizeImage={resizeImage}
               onDeleteDocument={deleteDocument}
             />
           </div>
@@ -919,12 +976,14 @@ export function EpreuvesPanel({
         Assistant
       </button>
 
-      {/* Tiroir assistant admin : conversation éphémère (perdue à la
-          fermeture), contexte = formulaire d'édition courant. */}
+      {/* Tiroir assistant admin : conversation persistée si l'épreuve est
+          déjà enregistrée (`epreuveId`), sinon éphémère ; contexte =
+          formulaire d'édition courant. */}
       {assistantOuvert && (
         <AdminAssistantPanel
           form={form}
           statut={statutForm}
+          epreuveId={form.id}
           onClose={() => setAssistantOuvert(false)}
           onAppliquer={appliquerModifications}
         />
