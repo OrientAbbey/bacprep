@@ -1,9 +1,34 @@
-import { useState, useId, useRef } from "react";
+import { useId, useRef } from "react";
 import { FileText, FileUp, Plus, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatBytes } from "../../lib/format";
 import { formatRelativeTime } from "../../lib/time";
+
+/** Échappe un texte pour l'insérer dans une regex (caractères spéciaux). */
+export function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Balise image Markdown d'une image donnée dans un bloc de texte :
+ * extrait la largeur d'affichage `#w=NNN` éventuelle pour synchroniser
+ * le sélecteur « Taille d'affichage » et détecter une double insertion. */
+export function extraireBaliseImage(markdown: string, url: string): { presente: boolean; largeur: number } {
+  const re = new RegExp(`!\\[[^\\]]*\\]\\(${escapeRegExp(url)}(?:#w=(\\d+))?\\)`);
+  const match = re.exec(markdown);
+  if (!match) return { presente: false, largeur: 0 };
+  return { presente: true, largeur: match[1] ? Number(match[1]) : 0 };
+}
+
+/** Réécrit la largeur d'affichage (`#w=NNN`) d'une balise image
+ * existante — l'ajoute si la balise est présente sans largeur, la
+ * retire si `width` vaut 0 (« Pleine »). Si la balise est absente la
+ * chaîne n'est pas modifiée. */
+export function remplacerLargeur(markdown: string, url: string, width: number): string {
+  const re = new RegExp(`(!\\[[^\\]]*\\]\\(${escapeRegExp(url)}(?:#w=\\d+)?\\))`);
+  const frag = width && width > 0 ? `#w=${width}` : "";
+  return markdown.replace(re, (_all, balise: string) => balise.replace(/#w=\d+$/, "") + frag);
+}
 
 /** Image rattachée au sujet ou au corrigé d'une épreuve. */
 export interface Asset {
@@ -262,6 +287,7 @@ export function ContentBlock({
   documents,
   onDeleteImage,
   onInsertImage,
+  onResizeImage,
   onDeleteDocument,
 }: {
   title: string;
@@ -276,11 +302,18 @@ export function ContentBlock({
   documents: DocumentFile[];
   onDeleteImage: (asset: Asset) => void;
   onInsertImage: (asset: Asset, width?: number) => void;
+  /** Redimensionne (réécrit `#w=NNN` de la balise existante) ou insère la
+   * balise avec la largeur choisie si l'image n'est pas encore dans le
+   * texte — appelé par le sélecteur « Taille d'affichage ». */
+  onResizeImage?: (asset: Asset, width: number) => void;
   onDeleteDocument: (doc: DocumentFile) => void;
 }) {
   const textareaId = useId();
-  const [imageWidths, setImageWidths] = useState<Record<string, number>>({});
   const importRef = useRef<HTMLInputElement>(null);
+  // La largeur affichée est LUE depuis le Markdown lui-même (jamais d'état
+  // local dérivé) : le sélecteur reste synchronisé avec la balise réelle
+  // après une édition manuelle du texte, un changement d'onglet sujet, etc.
+  const largeurs = (a: Asset) => extraireBaliseImage(markdown, a.url);
   return (
     <div className="space-y-2 border-t border-ink-soft/10 pt-4">
       <div className="flex items-center justify-between gap-2">
@@ -414,15 +447,28 @@ export function ContentBlock({
                 >
                   <X size={12} strokeWidth={2.5} aria-hidden="true" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onInsertImage(a, imageWidths[a.id])}
-                  title="Insérer la balise Markdown de cette image dans le texte"
-                  aria-label="Insérer cette image dans le texte"
-                  className="absolute bottom-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-valide text-paper shadow"
-                >
-                  <Plus size={12} strokeWidth={2.5} aria-hidden="true" />
-                </button>
+                {/* Le bouton « + » n'apparaît QUE quand la balise est
+                    absente du texte ; quand elle est présente, le sélecteur
+                    « Taille d'affichage » en dessous gère le redimensionnement. */}
+                {!largeurs(a).presente && (
+                  <button
+                    type="button"
+                    onClick={() => onInsertImage(a, largeurs(a).largeur || undefined)}
+                    title="Insérer la balise Markdown de cette image dans le texte"
+                    aria-label="Insérer cette image dans le texte"
+                    className="absolute bottom-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-valide text-paper shadow"
+                  >
+                    <Plus size={12} strokeWidth={2.5} aria-hidden="true" />
+                  </button>
+                )}
+                {largeurs(a).presente && (
+                  <span
+                    title="Image déjà insérée — modifier la taille ci-dessous"
+                    className="absolute bottom-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-white/60 bg-ink/50 text-[8px] font-bold text-paper shadow"
+                  >
+                    #
+                  </span>
+                )}
               </div>
             ))}
             {/* Métadonnées des fichiers : dimensions, poids et taille
@@ -438,10 +484,11 @@ export function ContentBlock({
                   <label className="flex items-center gap-1">
                     <span className="sr-only">Taille d'affichage de {a.filename}</span>
                     <select
-                      value={imageWidths[a.id] ?? 0}
-                      onChange={(e) =>
-                        setImageWidths((w) => ({ ...w, [a.id]: Number(e.target.value) }))
-                      }
+                      value={largeurs(a).largeur}
+                      onChange={(e) => {
+                        const w = Number(e.target.value);
+                        if (onResizeImage) onResizeImage(a, w);
+                      }}
                       className="rounded-[2px] border border-ink-soft/25 bg-paper px-1.5 py-0.5 text-xs"
                     >
                       <option value={0}>Pleine</option>
