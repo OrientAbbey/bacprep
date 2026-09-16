@@ -82,10 +82,33 @@ class EpreuveFileOut(BaseModel):
     mime_type: str = ""
 
 
+class SujetOut(BaseModel):
+    """Un sujet d'une épreuve : son contenu Markdown et son corrigé — le
+    corrigé est optionnel et peut être absent (« corrigé manquant »)."""
+
+    index: int
+    contenu_markdown: str = ""
+    corrige_markdown: Optional[str] = ""
+    corrige_disponible: bool = False
+
+
+class SujetIn(BaseModel):
+    """Un sujet fourni à la création/mise à jour d'une épreuve."""
+
+    index: int
+    contenu_markdown: str = Field(default="", max_length=2_000_000)
+    corrige_markdown: Optional[str] = Field(default=None, max_length=2_000_000)
+
+
 class EpreuveDetail(EpreuveListItem):
+    # Champs historiques : l'index 0 (sujet principal) est exposé à plat
+    # pour rétrocompatibilité — le tableau `sujets` fait autorité pour le
+    # multi-sujets.
     contenu_markdown: str
     corrige_markdown: Optional[str] = ""
     assets: list[EpreuveFileOut] = []  # images d'illustration uniquement
+    sujets: list[SujetOut] = []
+    nb_sujets: int = 1
 
 
 class EpreuveIn(BaseModel):
@@ -102,6 +125,9 @@ class EpreuveIn(BaseModel):
     filieres: list[str] = Field(default_factory=list)
     contenu_markdown: str = Field(default="", max_length=2_000_000)
     corrige_markdown: Optional[str] = Field(default=None, max_length=2_000_000)
+    # Multi-sujets : si fourni (non nul), cette liste fait autorité et les
+    # champs plats ci-dessus sont ignorés (rétrocompatibilité).
+    sujets: Optional[list[SujetIn]] = None
 
 
 class EpreuveUpdate(BaseModel):
@@ -118,6 +144,9 @@ class EpreuveUpdate(BaseModel):
     filieres: Optional[list[str]] = None
     contenu_markdown: Optional[str] = Field(default=None, max_length=2_000_000)
     corrige_markdown: Optional[str] = Field(default=None, max_length=2_000_000)
+    # Multi-sujets : si fourni (non nul), remplace TOUTE la collection de
+    # documents (les sujets absents du tableau sont supprimés).
+    sujets: Optional[list[SujetIn]] = None
 
 
 # ---------- Subscriptions ----------

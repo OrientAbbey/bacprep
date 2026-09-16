@@ -79,16 +79,37 @@ def _ensure_users_role_column() -> None:
             conn.execute(sa_text("ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'"))
 
 
+def _ensure_epreuve_files_sujet_index() -> None:
+    """Migration minimale et idempotente pour le multi-sujets : ajoute la
+    colonne `epreuve_files.sujet_index` (INTEGER NOT NULL DEFAULT 0). Les
+    bases existantes (créées avant ce chantier) posent cette colonne à 0 —
+    chaque document hérite ainsi de l'index du sujet principal, aucun
+    renommage de fichier n'est nécessaire (la clé de l'index 0 conserve le
+    nom historique `sujet.md`/`corrige.md`)."""
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+
+    try:
+        colonnes = {c["name"] for c in sa_inspect(engine).get_columns("epreuve_files")}
+    except Exception:
+        return
+    if "sujet_index" not in colonnes:
+        with engine.begin() as conn:
+            conn.execute(sa_text("ALTER TABLE epreuve_files ADD COLUMN sujet_index INTEGER NOT NULL DEFAULT 0"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Crée les tables au démarrage (pas de migrations dans ce prototype —
-    `Base.metadata.create_all` suffit), applique la micro-migration de la
-    colonne `users.role`, et importe le contenu de seed si la table
-    `epreuves` est vide. Le seed n'est PAS bloquant : un échec de stockage
-    (bucket manquant, réseau…) est journalisé et le serveur démarre quand
-    même — l'import reste possible ensuite via l'admin."""
+    `Base.metadata.create_all` suffit), applique les micro-migrations des
+    colonnes `users.role` et `epreuve_files.sujet_index`, et importe le
+    contenu de seed si la table `epreuves` est vide. Le seed n'est PAS
+    bloquant : un échec de stockage (bucket manquant, réseau…) est
+    journalisé et le serveur démarre quand même — l'import reste possible
+    ensuite via l'admin."""
     Base.metadata.create_all(bind=engine)
     _ensure_users_role_column()
+    _ensure_epreuve_files_sujet_index()
     db = SessionLocal()
     try:
         from .core.referentiel_options import seed_referentiel_options

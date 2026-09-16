@@ -28,10 +28,21 @@ export interface EpreuveFile {
   mime_type: string;
 }
 
+/** Un sujet d'une épreuve : son contenu et son corrigé (optionnel). */
+export interface SujetContent {
+  index: number;
+  contenu_markdown: string;
+  corrige_markdown: string;
+  corrige_disponible: boolean;
+}
+
 export interface EpreuveDetail extends EpreuveListItem {
   contenu_markdown: string;
   corrige_markdown: string;
   assets: EpreuveFile[];
+  /** Tous les sujets de l'épreuve (chacun avec son corrigé optionnel). */
+  sujets: SujetContent[];
+  nb_sujets: number;
 }
 
 export interface Filtres {

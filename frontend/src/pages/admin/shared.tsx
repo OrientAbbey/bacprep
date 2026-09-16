@@ -19,6 +19,13 @@ export interface Asset {
   doublon_de?: string | null;
 }
 
+/** Contenu éditable d'un sujet d'épreuve (sujet + corrigé optionnel). */
+export interface SujetFormData {
+  index: number;
+  contenu_markdown: string;
+  corrige_markdown: string;
+}
+
 export interface EpreuveForm {
   id?: string;
   niveau: string;
@@ -31,8 +38,8 @@ export interface EpreuveForm {
   coefficient: string;
   gratuit: boolean;
   filieres: string[];
-  contenu_markdown: string;
-  corrige_markdown: string;
+  /** Les sujets de l'épreuve — au moins un (index 0 = sujet principal). */
+  sujets: SujetFormData[];
   assets: Asset[];
   /** Documents Markdown (sujet.md / corrige.md) — séparés des images pour
    * ne plus apparaître comme des « images rattachées » dans la galerie. */
@@ -60,8 +67,7 @@ export const EMPTY_FORM: EpreuveForm = {
   coefficient: "",
   gratuit: false,
   filieres: [],
-  contenu_markdown: "",
-  corrige_markdown: "",
+  sujets: [{ index: 0, contenu_markdown: "", corrige_markdown: "" }],
   assets: [],
   documents: [],
 };

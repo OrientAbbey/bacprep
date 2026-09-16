@@ -18,8 +18,13 @@ const FORM = {
   gratuit: true,
   statut: "brouillon",
   filieres: ["C", "D"],
-  contenu_markdown: "# Sujet",
-  corrige_markdown: "# Corrigé",
+  // Multi-sujets : le sujet principal est l'index 0 — saisi à plat par
+  // l'assistant (`contenu_markdown`/`corrige_markdown`), sans information
+  // sur les sujets supplémentaires.
+  sujets: [
+    { index: 0, contenu_markdown: "# Sujet", corrige_markdown: "# Corrigé" },
+    { index: 1, contenu_markdown: "# Sujet 2", corrige_markdown: "" },
+  ],
 };
 
 describe("buildAdminAskPayload", () => {
@@ -28,7 +33,7 @@ describe("buildAdminAskPayload", () => {
     expect("conversation_id" in payload).toBe(false);
   });
 
-  it("embarque l'instantané complet du formulaire", () => {
+  it("embarque l'instantané complet du formulaire (sujet principal à plat + sujets)", () => {
     const payload = buildAdminAskPayload(FORM, [], "Q");
     expect(payload.epreuve).toEqual({
       niveau: "SECONDAIRE",
@@ -44,7 +49,14 @@ describe("buildAdminAskPayload", () => {
       filieres: ["C", "D"],
       contenu_markdown: "# Sujet",
       corrige_markdown: "# Corrigé",
+      sujets: FORM.sujets,
     });
+  });
+
+  it("expose le sujet principal à plat même quand l'index 0 est absent", () => {
+    const payload = buildAdminAskPayload({ ...FORM, sujets: [FORM.sujets[1]] }, [], "Q");
+    expect(payload.epreuve.contenu_markdown).toBe("# Sujet 2");
+    expect(payload.epreuve.corrige_markdown).toBe("");
   });
 
   it("reporte la question de l'admin", () => {

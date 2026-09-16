@@ -26,7 +26,7 @@ from ..db_models import (
     SignalementORM,
     SubscriptionORM,
 )
-from ..models import EpreuveIn, EpreuveUpdate
+from ..models import EpreuveIn, EpreuveUpdate, SujetIn
 from .deps import get_epreuve_or_404, log_admin_event, require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin-epreuves"])
@@ -74,6 +74,22 @@ def _auto_ajout_referentiel(db: Session, matiere: str, session: str, filieres: l
         referentiel_options.ensure_option(db, "serie", f)
 
 
+def _has_any_sujet(db: Session, epreuve_id: str) -> bool:
+    """Vrai si au moins UN document sujet (n'importe quel index) existe —
+    la présence d'une ligne `epreuve_files` équivaut à un contenu non vide
+    (l'écriture vide supprime la ligne, voir `write_document`)."""
+    return (
+        db.query(EpreuveFileORM)
+        .filter(
+            EpreuveFileORM.epreuve_id == epreuve_id,
+            EpreuveFileORM.cible == "sujet",
+            EpreuveFileORM.format == epreuve_files.DOCUMENT_FORMAT,
+        )
+        .count()
+        > 0
+    )
+
+
 @router.get("/epreuves")
 def admin_list_epreuves(
     q: Optional[str] = None,
@@ -105,6 +121,7 @@ def admin_list_epreuves(
             "statut": e.statut,
             "gratuit": e.gratuit,
             "corrige_disponible": e.corrige_disponible,
+            "nb_sujets": e.nb_sujets,
         }
         for e in epreuves
     ]
@@ -137,8 +154,30 @@ def admin_get_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=Depen
     Markdown chargé du stockage + fichiers), quel que soit son statut.
     Les IMAGES (`assets`, galerie) sont séparées des DOCUMENTS Markdown
     (`documents`, liste texte) : renvoyer les .md dans la galerie faisait
-    apparaître « sujet.md » comme une image rattachée au sujet/corrigé."""
+    apparaître « sujet.md » comme une image rattachée au sujet/corrigé.
+
+    Le tableau `sujets` contient l'ensemble des sujets (chacun avec son
+    corrigé optionnel). `contenu_markdown`/`corrige_markdown` continuent
+    d'être renseignés pour rétrocompatibilité (index 0)."""
     e = get_epreuve_or_404(db, epreuve_id)
+
+    # Constitution du tableau `sujets` : un par index ayant au moins un
+    # document (sujet ou corrigé). S'assure qu'au moins l'index 0 est
+    # présent pour les épreuves créées avant ce chantier.
+    indices = sorted({f.sujet_index for f in e.files_rel if f.format == "md"})
+    if not indices:
+        indices = [0]
+    sujets = [
+        {
+            "index": idx,
+            "contenu_markdown": epreuve_files.read_document_content(db, e.id, "sujet", idx),
+            "corrige_markdown": epreuve_files.read_document_content(db, e.id, "corrige", idx),
+            "corrige_disponible": epreuve_files.get_document(db, e.id, "corrige", idx) is not None,
+        }
+        for idx in indices
+    ]
+    sujet0 = sujets[0] if sujets else {}
+
     return {
         "id": e.id,
         "niveau": e.niveau,
@@ -152,8 +191,10 @@ def admin_get_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=Depen
         "gratuit": e.gratuit,
         "statut": e.statut,
         "filieres": e.filieres,
-        "contenu_markdown": epreuve_files.read_document_content(db, e.id, "sujet"),
-        "corrige_markdown": epreuve_files.read_document_content(db, e.id, "corrige"),
+        "contenu_markdown": sujet0.get("contenu_markdown", ""),
+        "corrige_markdown": sujet0.get("corrige_markdown", ""),
+        "sujets": sujets,
+        "nb_sujets": e.nb_sujets,
         "assets": [
             {
                 "id": f.id,
@@ -187,7 +228,11 @@ def admin_get_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=Depen
 def admin_create_epreuve(payload: EpreuveIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
     """Crée une épreuve en brouillon (jamais publiée directement — voir
     `admin_publish`). L'id est un identifiant court unique utilisé dans les
-    storage_key ; le contenu Markdown fourni est écrit dans le stockage."""
+    storage_key ; le contenu Markdown fourni est écrit dans le stockage.
+
+    Le champ optionnel `sujets` (tableau de SujetIn) prend le dessus sur
+    les champs plats `contenu_markdown`/`corrige_markdown` quand il est
+    fourni, permettant la création directe d'une épreuve multi-sujets."""
     e = EpreuveORM(
         niveau=referentiel.normalize_niveau(payload.niveau),
         classe=referentiel.normalize_classe(payload.classe) or "terminale",
@@ -204,9 +249,16 @@ def admin_create_epreuve(payload: EpreuveIn, db: Session = Depends(get_db), lock
     db.flush()
 
     filieres = _normalize_filieres(payload.filieres)
-    epreuve_files.write_document(db, e, "sujet", payload.contenu_markdown or "")
-    if payload.corrige_markdown:
-        epreuve_files.write_document(db, e, "corrige", payload.corrige_markdown)
+
+    if payload.sujets is not None:
+        for s in payload.sujets:
+            epreuve_files.write_document(db, e, "sujet", s.contenu_markdown or "", s.index)
+            if s.corrige_markdown:
+                epreuve_files.write_document(db, e, "corrige", s.corrige_markdown, s.index)
+    else:
+        epreuve_files.write_document(db, e, "sujet", payload.contenu_markdown or "")
+        if payload.corrige_markdown:
+            epreuve_files.write_document(db, e, "corrige", payload.corrige_markdown)
     _replace_filieres(db, e.id, filieres)
 
     db.commit()
@@ -238,6 +290,7 @@ def admin_update_epreuve(
     filieres = data.pop("filieres", None)
     contenu = data.pop("contenu_markdown", None)
     corrige = data.pop("corrige_markdown", None)
+    sujets_payload = data.pop("sujets", None)
 
     # Audit « QUOI a été modifié » : capture des valeurs avant application
     # pour ne tracer que les champs réellement changés.
@@ -249,6 +302,8 @@ def admin_update_epreuve(
         champs_modifies.append("contenu_markdown")
     if corrige is not None:
         champs_modifies.append("corrige_markdown")
+    if sujets_payload is not None:
+        champs_modifies.append("sujets")
 
     if "statut" in data and data["statut"] not in STATUTS_VALIDES:
         raise HTTPException(400, "statut invalide")
@@ -271,10 +326,13 @@ def admin_update_epreuve(
     # Réécrit les documents fournis (sujet/corrigé) — la clé de stockage est
     # recalculée après d'éventuelles modifications de niveau/classe/année.
     db.flush()
-    if contenu is not None:
-        epreuve_files.write_document(db, e, "sujet", contenu)
-    if corrige is not None:
-        epreuve_files.write_document(db, e, "corrige", corrige)
+    if sujets_payload is not None:
+        _replace_sujets(db, e, sujets_payload)
+    else:
+        if contenu is not None:
+            epreuve_files.write_document(db, e, "sujet", contenu)
+        if corrige is not None:
+            epreuve_files.write_document(db, e, "corrige", corrige)
 
     if relocations:
         _relocate_files(db, e)
@@ -291,13 +349,29 @@ def admin_update_epreuve(
     return {"ok": True}
 
 
+def _replace_sujets(db: Session, e: EpreuveORM, sujets: list[SujetIn]) -> None:
+    """Remplace L'ENSEMBLE des documents Markdown d'une épreuve (sujets +
+    corrigés) par ceux du tableau fourni : les documents absents du tableau
+    sont supprimés (objets du stockage compris), les présents sont réécrits
+    à leur index exact. C'est la base du multi-sujets : l'admin sauvegarde
+    la collection complète et le serveur aligne la base sur ce qu'elle
+    contient."""
+    for f in list(e.files_rel):
+        if f.format == epreuve_files.DOCUMENT_FORMAT:
+            epreuve_files.delete_file(db, f)
+    for s in sujets:
+        epreuve_files.write_document(db, e, "sujet", s.contenu_markdown or "", s.index)
+        if s.corrige_markdown:
+            epreuve_files.write_document(db, e, "corrige", s.corrige_markdown, s.index)
+
+
 def _relocate_files(db: Session, e: EpreuveORM) -> None:
     """Après un changement de niveau/classe/année, copie chaque fichier vers
     sa nouvelle clé canonique puis supprime l'ancien objet."""
     storage = epreuve_files.get_storage()
     for f in e.files_rel:
         if f.format == epreuve_files.DOCUMENT_FORMAT:
-            new_key = epreuve_files.document_key(e, f.cible)
+            new_key = epreuve_files.document_key(e, f.cible, f.sujet_index)
         else:
             # Relocalisation d'une image : retirer les préfixes `{cible}-`
             # répétés des clés héritées (corrigé 2026-09 — l'ancienne
@@ -328,10 +402,11 @@ def _relocate_files(db: Session, e: EpreuveORM) -> None:
 
 @router.post("/epreuves/{epreuve_id}/publish")
 def admin_publish(epreuve_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
-    """Publie une épreuve — exige un document sujet présent (fichier .md)
-    et au moins une série ; le corrigé n'est JAMAIS requis pour publier."""
+    """Publie une épreuve — exige au moins un document sujet (n'importe
+    quel index) et au moins une série ; le corrigé n'est JAMAIS requis
+    pour publier."""
     e = get_epreuve_or_404(db, epreuve_id)
-    if not epreuve_files.get_document(db, epreuve_id, "sujet"):
+    if not _has_any_sujet(db, epreuve_id):
         raise HTTPException(400, "Un sujet (document Markdown) est obligatoire pour publier")
     if not e.filieres:
         raise HTTPException(400, "Au moins une série est requise pour publier")

@@ -1,5 +1,5 @@
 import { ChevronRight, ClipboardCheck, FileText, Flag, Lock } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { EpreuveDetail } from "../api/types";
@@ -75,6 +75,10 @@ export function ViewerPage() {
   const [necessiteConnexion, setNecessiteConnexion] = useState(false);
   const [erreurChargement, setErreurChargement] = useState(false);
   const [onglet, setOnglet] = useState<Onglet>("sujet");
+  // Sujet affiché : la rangée d'onglets (Sujet 1, Sujet 2…) passe de l'un à
+  // l'autre — l'index 0 est le sujet principal. `epreuve.sujets` est la
+  // source de vérité (les champs à plat restent rétrocompatibles).
+  const [sujetActif, setSujetActif] = useState(0);
   const [selection, setSelection] = useState<{ x: number; y: number; markdown: string } | null>(
     null
   );
@@ -90,6 +94,25 @@ export function ViewerPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mobile = useIsMobile();
 
+  // Sujet en cours d'affichage : procure les bonnes zones sujet/corrigé.
+  // Repli sur l'index 0 à plat pour les épreuves antérieures au chantier
+  // multi-sujets (pas de tableau `sujets` renvoyé par l'API). Mémoïsé pour
+  // une identité stable entre rendus (dépendances des callbacks ci-dessous).
+  const sujetActifData = useMemo(
+    () =>
+      epreuve
+        ? epreuve.sujets && epreuve.sujets.length > 0
+          ? (epreuve.sujets.find((s) => s.index === sujetActif) ?? epreuve.sujets[0])
+          : {
+              index: 0,
+              contenu_markdown: epreuve.contenu_markdown ?? "",
+              corrige_markdown: epreuve.corrige_markdown ?? "",
+              corrige_disponible: epreuve.corrige_disponible,
+            }
+        : null,
+    [epreuve, sujetActif]
+  );
+
   useEffect(() => {
     if (!id) return;
     // Reset complet au changement d'épreuve : sans lui, l'épreuve
@@ -101,6 +124,7 @@ export function ViewerPage() {
     setNecessiteConnexion(false);
     setErreurChargement(false);
     setOnglet("sujet");
+    setSujetActif(0);
     const ac = new AbortController();
     api
       .get<EpreuveDetail>(`/api/epreuves/${id}`, undefined, ac.signal)
@@ -159,12 +183,13 @@ export function ViewerPage() {
     // On retrouve le Markdown BRUT (formules, tableaux, images compris)
     // correspondant à la sélection, plutôt que le texte affiché nettoyé —
     // c'est ce contenu brut qui est envoyé à l'assistant / à la note.
-    const contenuActif = onglet === "sujet" ? epreuve.contenu_markdown : epreuve.corrige_markdown;
+    const contenuActif =
+      onglet === "sujet" ? sujetActifData?.contenu_markdown ?? "" : sujetActifData?.corrige_markdown ?? "";
     const markdown = extractSourceMarkdownForSelection(sel, contenuActif || "") ?? text;
 
     const rect = sel.getRangeAt(0).getBoundingClientRect();
     setSelection({ x: rect.left, y: rect.top - 48, markdown });
-  }, [epreuve, onglet]);
+  }, [epreuve, onglet, sujetActifData]);
 
   // Sélection au TOUCHER (mobile) : `mouseup` ne se déclenche pas sur la
   // sélection par long-appui — on écoute le `selectionchange` global et on
@@ -238,8 +263,8 @@ export function ViewerPage() {
       if (el?.closest('[role="dialog"], [role="button"]')) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      if (k === "s" && epreuve.contenu_markdown) setOnglet("sujet");
-      else if (k === "c" && epreuve.corrige_disponible) setOnglet("corrige");
+      if (k === "s" && sujetActifData?.contenu_markdown) setOnglet("sujet");
+      else if (k === "c" && sujetActifData?.corrige_disponible) setOnglet("corrige");
       else if (k === "n" && user && user.consent_notes !== false) {
         e.preventDefault();
         setNoteOuverte({ contexte: "" });
@@ -247,7 +272,7 @@ export function ViewerPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [epreuve, user]);
+  }, [epreuve, user, sujetActifData]);
 
   function onTabsKeyDown(e: React.KeyboardEvent, current: Onglet) {
     const order: Onglet[] = ["sujet", "corrige"];
@@ -263,6 +288,28 @@ export function ViewerPage() {
     (e.currentTarget as HTMLElement)
       .closest('[role="tablist"]')
       ?.querySelector<HTMLElement>(`#tab-${next}`)
+      ?.focus();
+  }
+
+  /** Navigation clavier dans la rangée d'onglets des sujets (Sujet 1, Sujet
+   * 2…) — ← / →, Home / End, focus déplacé avec la sélection. */
+  function onSujetsKeyDown(e: React.KeyboardEvent, index: number) {
+    const sujets = epreuve?.sujets ?? [];
+    if (sujets.length === 0) return;
+    const positions = sujets.map((s) => s.index);
+    const pos = positions.indexOf(index);
+    let next: number | null = null;
+    if (e.key === "ArrowRight") next = positions[(pos + 1) % positions.length];
+    else if (e.key === "ArrowLeft") next = positions[(pos - 1 + positions.length) % positions.length];
+    else if (e.key === "Home") next = positions[0];
+    else if (e.key === "End") next = positions[positions.length - 1];
+    if (next === null) return;
+    e.preventDefault();
+    setSujetActif(next);
+    setOnglet("sujet");
+    (e.currentTarget as HTMLElement)
+      .closest('[role="tablist"]')
+      ?.querySelector<HTMLElement>(`#sujet-tab-${next}`)
       ?.focus();
   }
 
@@ -290,7 +337,11 @@ export function ViewerPage() {
 
   if (!epreuve) return <ViewerSkeleton />;
 
-  const contenuActif = onglet === "sujet" ? epreuve.contenu_markdown : epreuve.corrige_markdown;
+  // Nombre de sujets de l'épreuve (1 par défaut — épreuves antérieures au
+  // chantier multi-sujets sans tableau `sujets`).
+  const nbSujets = epreuve.sujets && epreuve.sujets.length > 0 ? epreuve.sujets.length : 1;
+  const contenuActif =
+    onglet === "sujet" ? sujetActifData?.contenu_markdown ?? "" : sujetActifData?.corrige_markdown ?? "";
 
   // Props identiques pour les deux rendus (bureau/mobile) — seule la
   // variante `mobile` diffère.
@@ -326,7 +377,7 @@ export function ViewerPage() {
               <Flag size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
           </div>
-          {epreuve.corrige_disponible && (
+          {sujetActifData?.corrige_disponible && (
             <div role="tablist" aria-label="Contenu de l'épreuve" className="flex shrink-0 rounded-full border border-ink-soft/20 p-1">
               {([
                 ["sujet", "Sujet", FileText],
@@ -353,6 +404,43 @@ export function ViewerPage() {
             </div>
           )}
         </div>
+
+        {/* Sujets multiples : rangée d'onglets pour choisir quel sujet
+            afficher — le bascule revient toujours sur le sujet de l'onglet
+            (jamais directement sur son corrigé). */}
+        {nbSujets > 1 && (
+          <div
+            role="tablist"
+            aria-label="Sujets de l'épreuve"
+            className="mb-3 flex flex-wrap items-center gap-1.5"
+          >
+            {(epreuve.sujets ?? []).map((s, i) => {
+              const actif = s.index === sujetActifData?.index;
+              return (
+                <button
+                  key={s.index}
+                  type="button"
+                  role="tab"
+                  id={`sujet-tab-${s.index}`}
+                  aria-selected={actif}
+                  aria-controls="panel-epreuve"
+                  tabIndex={actif ? 0 : -1}
+                  onClick={() => {
+                    setSujetActif(s.index);
+                    setOnglet("sujet");
+                  }}
+                  onKeyDown={(e) => onSujetsKeyDown(e, s.index)}
+                  title={`Afficher le sujet ${i + 1}`}
+                  className={`flex min-h-[44px] items-center rounded-full px-4 py-1.5 text-sm transition-colors ${
+                    actif ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/40"
+                  }`}
+                >
+                  Sujet {i + 1}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* MOBILE : la méta + le bandeau visiteur se replient dans une ligne
             fine (élément <details>, replié par défaut) — zéro hauteur

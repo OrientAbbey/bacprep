@@ -36,9 +36,14 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def document_key(epreuve: EpreuveORM, cible: str) -> str:
+def document_key(epreuve: EpreuveORM, cible: str, sujet_index: int = 0) -> str:
     """Clé du document Markdown d'une épreuve :
-    ``epreuves/{niveau}/{annee}/{epreuve_id}/{cible}.md``."""
+    ``epreuves/{niveau}/{annee}/{epreuve_id}/{cible}.md`` pour l'index 0
+    (nom historique conservé), et
+    ``epreuves/{niveau}/{annee}/{epreuve_id}/{cible}_{index}.md`` pour les
+    indices supérieurs (sujets/corrigés supplémentaires)."""
+    if sujet_index > 0:
+        return f"epreuves/{epreuve.niveau}/{epreuve.annee}/{epreuve.id}/{cible}_{sujet_index}.md"
     return f"epreuves/{epreuve.niveau}/{epreuve.annee}/{epreuve.id}/{cible}.md"
 
 
@@ -47,43 +52,48 @@ def image_key(epreuve: EpreuveORM, cible: str, filename: str) -> str:
     return f"epreuves/{epreuve.niveau}/{epreuve.annee}/{epreuve.id}/{cible}-{filename}"
 
 
-def get_document(db: Session, epreuve_id: str, cible: str) -> Optional[EpreuveFileORM]:
-    """Ligne du document Markdown (sujet ou corrigé) d'une épreuve, ou None."""
+def get_document(db: Session, epreuve_id: str, cible: str, sujet_index: int = 0) -> Optional[EpreuveFileORM]:
+    """Ligne du document Markdown (sujet ou corrigé) d'une épreuve et d'un
+    sujet donné (index 0 par défaut), ou None."""
     return (
         db.query(EpreuveFileORM)
         .filter(
             EpreuveFileORM.epreuve_id == epreuve_id,
             EpreuveFileORM.cible == cible,
             EpreuveFileORM.format == DOCUMENT_FORMAT,
+            EpreuveFileORM.sujet_index == sujet_index,
         )
         .one_or_none()
     )
 
 
-def read_document_content(db: Session, epreuve_id: str, cible: str) -> str:
+def read_document_content(db: Session, epreuve_id: str, cible: str, sujet_index: int = 0) -> str:
     """Contenu Markdown d'un document chargé depuis le stockage ('' si absent)."""
-    doc = get_document(db, epreuve_id, cible)
+    doc = get_document(db, epreuve_id, cible, sujet_index)
     if not doc:
         return ""
     try:
         return get_storage().get_bytes(doc.storage_key).decode("utf-8")
     except Exception as exc:
-        log.error("Lecture impossible du document %s (%s): %s", epreuve_id, cible, exc)
+        log.error("Lecture impossible du document %s (%s/%s): %s", epreuve_id, cible, sujet_index, exc)
         return ""
 
 
 def write_document(
-    db: Session, epreuve: EpreuveORM, cible: str, content: str
+    db: Session, epreuve: EpreuveORM, cible: str, content: str, sujet_index: int = 0
 ) -> Optional[EpreuveFileORM]:
-    """Écrit (ou remplace) le document Markdown d'une cible dans le stockage.
+    """Écrit (ou remplace) le document Markdown d'une cible et d'un sujet
+    dans le stockage.
 
     Un contenu vide supprime le document (la présence de la ligne ⇔ contenu
     non vide, ce qui rend ``corrige_disponible`` fiable sans lire l'objet).
     """
     if cible not in ("sujet", "corrige"):
         raise ValueError(f"cible invalide: {cible}")
+    if sujet_index < 0:
+        raise ValueError("sujet_index invalide (>= 0 attendu)")
 
-    existing = get_document(db, epreuve.id, cible)
+    existing = get_document(db, epreuve.id, cible, sujet_index)
     stripped = (content or "").strip()
     if not stripped:
         if existing:
@@ -91,18 +101,20 @@ def write_document(
         return None
 
     data = stripped.encode("utf-8")
-    key = document_key(epreuve, cible)
+    key = document_key(epreuve, cible, sujet_index)
     get_storage().put_bytes(key, data, "text/markdown; charset=utf-8")
 
-    # Extrait de présentation : régénéré à chaque écriture du SUJET (le
-    # corrigé ne porte pas l'extrait) — alimente les cartes du catalogue.
-    if cible == "sujet":
+    # Extrait de présentation : régénéré à chaque écriture du SUJET
+    # PRINCIPAL (index 0) — le corrigé et les sujets supplémentaires ne
+    # portent pas l'extrait — alimente les cartes du catalogue.
+    if cible == "sujet" and sujet_index == 0:
         epreuve.extrait = extraits.build_extrait(stripped)
         db.add(epreuve)
 
+    filename = f"{cible}.md" if sujet_index == 0 else f"{cible}_{sujet_index}.md"
     if existing:
         old_key = existing.storage_key
-        existing.filename = f"{cible}.md"
+        existing.filename = filename
         existing.storage_key = key
         existing.mime_type = "text/markdown; charset=utf-8"
         existing.size_bytes = len(data)
@@ -122,7 +134,8 @@ def write_document(
         epreuve_id=epreuve.id,
         cible=cible,
         format=DOCUMENT_FORMAT,
-        filename=f"{cible}.md",
+        sujet_index=sujet_index,
+        filename=filename,
         storage_key=key,
         mime_type="text/markdown; charset=utf-8",
         size_bytes=len(data),

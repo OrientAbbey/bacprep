@@ -28,6 +28,7 @@ from ..models import (
     NoteIn,
     NoteOut,
     SignalementIn,
+    SujetOut,
 )
 from .auth import optional_user, require_user
 from .deps import get_public_epreuve_or_404
@@ -326,14 +327,33 @@ def get_epreuve(
             raise HTTPException(403, "Accès non autorisé — un abonnement est requis")
         store.record_consultation(db, user.id, epreuve_id)
 
+    # Tableau des sujets : un par index ayant au moins un document (sujet
+    # ou corrigé) — chaque sujet porte son corrigé optionnel. L'index 0 est
+    # aussi exposé à plat (rétrocompatibilité).
+    indices = sorted({f.sujet_index for f in e.files_rel if f.format == "md"})
+    if not indices:
+        indices = [0]
+    sujets = [
+        SujetOut(
+            index=idx,
+            contenu_markdown=epreuve_files.sign_image_urls(
+                epreuve_files.read_document_content(db, e.id, "sujet", idx), e,
+            ),
+            corrige_markdown=epreuve_files.sign_image_urls(
+                epreuve_files.read_document_content(db, e.id, "corrige", idx), e,
+            ),
+            corrige_disponible=epreuve_files.get_document(db, e.id, "corrige", idx) is not None,
+        )
+        for idx in indices
+    ]
+    sujet0 = sujets[0] if sujets else None
+
     return EpreuveDetail(
         **_to_list_item(e, {e.id} if user and store.has_access(db, user.id, e) else None).model_dump(),
-        contenu_markdown=epreuve_files.sign_image_urls(
-            epreuve_files.read_document_content(db, e.id, "sujet"), e,
-        ),
-        corrige_markdown=epreuve_files.sign_image_urls(
-            epreuve_files.read_document_content(db, e.id, "corrige"), e,
-        ),
+        contenu_markdown=sujet0.contenu_markdown if sujet0 else "",
+        corrige_markdown=sujet0.corrige_markdown if sujet0 else "",
+        sujets=sujets,
+        nb_sujets=e.nb_sujets,
         assets=[
             EpreuveFileOut(
                 id=f.id,

@@ -161,10 +161,18 @@ class EpreuveORM(Base):
 
     @property
     def corrige_disponible(self) -> bool:
-        """Vrai si un corrigé existe — la présence de la ligne `epreuve_files`
-        du document équivaut à un contenu non vide (un enregistrement avec
-        contenu vide est supprimé à l'écriture, voir `write_document`)."""
+        """Vrai si un corrigé existe (au moins un sujet en possède un) — la
+        présence de la ligne `epreuve_files` du document équivaut à un
+        contenu non vide (un enregistrement avec contenu vide est supprimé
+        à l'écriture, voir `write_document`)."""
         return any(f.cible == "corrige" and f.format == "md" for f in self.files_rel)
+
+    @property
+    def nb_sujets(self) -> int:
+        """Nombre de sujets distincts (documents `sujet` Markdown), jamais
+        inférieur à 1 — une épreuve possède toujours au moins un sujet."""
+        indices = {f.sujet_index for f in self.files_rel if f.cible == "sujet" and f.format == "md"}
+        return max(len(indices), 1)
 
 
 class EpreuveFiliereORM(Base):
@@ -181,8 +189,13 @@ class EpreuveFileORM(Base):
     """Fichier attaché à une épreuve dans le stockage objet :
 
     - `format='md'` : le document d'une cible (sujet ou corrigé) — au plus
-      UN par cible (remplacé au ré-enregistrement) ;
+      UN par (`cible`, `sujet_index`) (remplacé au ré-enregistrement) ;
     - `format='image'` : une image d'illustration insérée dans le Markdown.
+
+    `sujet_index` distingue les multiples sujets d'une même épreuve : 0
+    pour la version historique (fichier `sujet.md`/`corrige.md`), puis 1,
+    2… pour les sujets supplémentaires (`sujet_1.md`…). Les images ne
+    portent pas d'index (elles restent rattachées à leur cible).
 
     La base ne conserve que les métadonnées + `storage_key` ; le checksum
     SHA-256 sert à la détection de doublons lors de l'import massif."""
@@ -193,6 +206,9 @@ class EpreuveFileORM(Base):
     epreuve_id = Column(String, ForeignKey("epreuves.id"), nullable=False, index=True)
     cible = Column(String, nullable=False)  # sujet|corrige
     format = Column(String, nullable=False)  # md|image
+    # Index du sujet pour les documents Markdown (0 = historique / sujet
+    # principal). Pour les images, reste à 0 (valeur par défaut).
+    sujet_index = Column(Integer, nullable=False, default=0)
     filename = Column(String, nullable=False)
     storage_key = Column(String, nullable=False, unique=True, index=True)
     mime_type = Column(String, nullable=False, default="")

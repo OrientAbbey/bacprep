@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
-import { Bot, Check, Search } from "lucide-react";
+import { Bot, Check, Plus, Search, X } from "lucide-react";
 import { api, ApiError, ensureReferentielOption } from "../../api/client";
-import { AdminEpreuveCounts, ReferentielOptions } from "../../api/types";
+import { AdminEpreuveCounts, EpreuveDetail, ReferentielOptions } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
-import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, Field } from "./shared";
+import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, Field, SujetFormData } from "./shared";
 
 interface AdminEpreuveSummary {
   id: string;
@@ -60,8 +60,12 @@ export function EpreuvesPanel({
   const [counts, setCounts] = useState<AdminEpreuveCounts | null>(null);
   const [form, setForm] = useState<EpreuveForm>(EMPTY_FORM);
   const [nouvelleSerie, setNouvelleSerie] = useState("");
-  const [sujetPreview, setSujetPreview] = useState(false);
-  const [corrigePreview, setCorrigePreview] = useState(false);
+  // Sujet en cours d'édition : la rangée d'onglets (Sujet 1, Sujet 2…)
+  // passe de l'un à l'autre. Chaque sujet garde son propre état d'aperçu
+  // (texte/rendu) pour le sujet et pour le corrigé.
+  const [sujetActif, setSujetActif] = useState(0);
+  const [previewSujet, setPreviewSujet] = useState<Record<number, boolean>>({});
+  const [previewCorrige, setPreviewCorrige] = useState<Record<number, boolean>>({});
   const [listeChargement, setListeChargement] = useState(true);
   const [listeErreur, setListeErreur] = useState(false);
   // Confirmation en attente pour les actions irréversibles (suppression
@@ -152,7 +156,7 @@ export function EpreuvesPanel({
    * depuis le stockage + fichiers) dans le formulaire d'édition. */
   async function fetchDetail(id: string) {
     try {
-      const detail = await api.get<Partial<EpreuveForm> & { id: string }>(
+      const detail = await api.get<EpreuveDetail>(
         `/api/admin/epreuves/${id}`,
         authHeaders(token)
       );
@@ -168,12 +172,24 @@ export function EpreuvesPanel({
         coefficient: detail.coefficient || "",
         gratuit: Boolean(detail.gratuit),
         filieres: detail.filieres || [],
-        contenu_markdown: detail.contenu_markdown || "",
-        corrige_markdown: detail.corrige_markdown || "",
+        // Les sujets de l'épreuve (chacun avec son corrigé optionnel) —
+        // repli sur l'index 0 à plat pour les épreuves précédant ce
+        // chantier.
+        sujets:
+          detail.sujets && detail.sujets.length > 0
+            ? detail.sujets
+            : [
+                {
+                  index: 0,
+                  contenu_markdown: detail.contenu_markdown || "",
+                  corrige_markdown: detail.corrige_markdown || "",
+                },
+              ],
         assets: detail.assets || [],
         documents: (detail as unknown as { documents?: DocumentFile[] }).documents || [],
       });
-      setStatutForm((detail as unknown as { statut?: string }).statut || "brouillon");
+      setSujetActif(0);
+      setStatutForm(detail.statut || "brouillon");
     } catch (err) {
       if (!handle401(err)) {
         showToast("Le détail de l'épreuve n'a pas pu être chargé.", "error");
@@ -219,8 +235,13 @@ export function EpreuvesPanel({
       coefficient: form.coefficient || null,
       gratuit: form.gratuit,
       filieres: form.filieres,
-      contenu_markdown: form.contenu_markdown,
-      corrige_markdown: form.corrige_markdown,
+      // L'ensemble des sujets (chacun avec son corrigé optionnel) — le
+      // serveur remplace la collection complète.
+      sujets: form.sujets.map((s) => ({
+        index: s.index,
+        contenu_markdown: s.contenu_markdown,
+        corrige_markdown: s.corrige_markdown,
+      })),
     };
     try {
       if (form.id) {
@@ -310,8 +331,15 @@ export function EpreuvesPanel({
       setForm((f) => ({
         ...f,
         assets: [...f.assets, asset],
-        contenu_markdown: cible === "sujet" ? f.contenu_markdown + "\n" + tag : f.contenu_markdown,
-        corrige_markdown: cible === "corrige" ? f.corrige_markdown + "\n" + tag : f.corrige_markdown,
+        // La balise rejoint le SUJET EN COURS d'édition (les images restent
+        // rattachées à leur cible sujet/corrigé, pas à un index précis).
+        sujets: f.sujets.map((s) =>
+          s.index === sujetActif
+            ? cible === "sujet"
+              ? { ...s, contenu_markdown: s.contenu_markdown + "\n" + tag }
+              : { ...s, corrige_markdown: s.corrige_markdown + "\n" + tag }
+            : s
+        ),
       }));
       showToast("Image téléversée et insérée.", "success");
     } catch {
@@ -332,10 +360,16 @@ export function EpreuvesPanel({
           setForm((f) => ({
             ...f,
             assets: f.assets.filter((a) => a.id !== asset.id),
-            contenu_markdown:
-              asset.cible === "sujet" ? removeImageTag(f.contenu_markdown, asset.url) : f.contenu_markdown,
-            corrige_markdown:
-              asset.cible === "corrige" ? removeImageTag(f.corrige_markdown, asset.url) : f.corrige_markdown,
+            // La balise de l'image est retirée de TOUS les sujets dont elle
+            // apparaît dans le texte de la cible correspondante (une image
+            // peut avoir été insérée dans plusieurs sujets).
+            sujets: f.sujets.map((s) => ({
+              ...s,
+              contenu_markdown:
+                asset.cible === "sujet" ? removeImageTag(s.contenu_markdown, asset.url) : s.contenu_markdown,
+              corrige_markdown:
+                asset.cible === "corrige" ? removeImageTag(s.corrige_markdown, asset.url) : s.corrige_markdown,
+            })),
           }));
           showToast("Image retirée.", "success");
         } catch {
@@ -374,10 +408,61 @@ export function EpreuvesPanel({
     const tag = `![légende](${asset.url}${taille})`;
     setForm((f) => ({
       ...f,
-      contenu_markdown: asset.cible === "sujet" ? f.contenu_markdown + "\n" + tag : f.contenu_markdown,
-      corrige_markdown: asset.cible === "corrige" ? f.corrige_markdown + "\n" + tag : f.corrige_markdown,
+      // Insérée dans le SUJET EN COURS d'édition — la cible (sujet/corrigé)
+      // de l'image détermine la zone touchée.
+      sujets: f.sujets.map((s) =>
+        s.index === sujetActif
+          ? asset.cible === "sujet"
+            ? { ...s, contenu_markdown: s.contenu_markdown + "\n" + tag }
+            : { ...s, corrige_markdown: s.corrige_markdown + "\n" + tag }
+          : s
+      ),
     }));
     showToast("Balise image insérée dans le texte.", "success");
+  }
+
+  /** Met à jour un champ (sujet ou corrigé) d'un sujet précis. */
+  function updateSujet(index: number, champ: "contenu_markdown" | "corrige_markdown", valeur: string) {
+    setForm((f) => ({
+      ...f,
+      sujets: f.sujets.map((s) => (s.index === index ? { ...s, [champ]: valeur } : s)),
+    }));
+  }
+
+  /** Bouton « + » de la rangée d'onglets : ajoute un nouveau sujet à
+   * l'épreuve (index suivant, texte vide) et bascule dessus. */
+  function addSujet() {
+    const maxIndex = form.sujets.reduce((m, s) => Math.max(m, s.index), -1);
+    const nouvelIndex = maxIndex + 1;
+    setForm((f) => ({
+      ...f,
+      sujets: [...f.sujets, { index: nouvelIndex, contenu_markdown: "", corrige_markdown: "" }],
+    }));
+    setSujetActif(nouvelIndex);
+  }
+
+  /** Bouton « x » d'un onglet : retire un sujet (et son corrigé éventuel)
+   * de l'édition — le contenu marqué pour suppression n'est réellement
+   * effacé que lorsque l'admin confirme. On ne supprime jamais le dernier
+   * sujet (une épreuve garde au moins un sujet). */
+  function removeSujet(index: number) {
+    if (form.sujets.length <= 1) {
+      showToast("Une épreuve garde au moins un sujet.", "info");
+      return;
+    }
+    const rang = form.sujets.findIndex((s) => s.index === index) + 1;
+    setConfirmation({
+      titre: "Supprimer ce sujet ?",
+      message: `Le sujet n°${rang} — et son corrigé éventuel — sera retiré de cette épreuve.`,
+      action: async () => {
+        const restants = form.sujets.filter((s) => s.index !== index);
+        setForm((f) => ({ ...f, sujets: restants }));
+        if (sujetActif === index) {
+          setSujetActif(restants[0]?.index ?? 0);
+        }
+        showToast("Sujet retiré.", "info");
+      },
+    });
   }
 
   /** Import d'un fichier `.md` fourni par un collègue : le contenu est
@@ -385,13 +470,20 @@ export function EpreuvesPanel({
    * rien n'est envoyé au serveur à part le Markdown déjà enregistré avec
    * l'épreuve). Écrasement confirmé si la zone n'est pas vide. */
   function importMarkdown(text: string, cible: "sujet" | "corrige") {
-    const current = cible === "sujet" ? form.contenu_markdown : form.corrige_markdown;
+    const sujet = form.sujets.find((s) => s.index === sujetActif);
+    const current = cible === "sujet" ? sujet?.contenu_markdown || "" : sujet?.corrige_markdown || "";
     const appliquer = () => {
       const clean = text.replace(/^\uFEFF/, "");
       setForm((f) => ({
         ...f,
-        contenu_markdown: cible === "sujet" ? clean : f.contenu_markdown,
-        corrige_markdown: cible === "corrige" ? clean : f.corrige_markdown,
+        // Import dans le SUJET EN COURS d'édition.
+        sujets: f.sujets.map((s) =>
+          s.index === sujetActif
+            ? cible === "sujet"
+              ? { ...s, contenu_markdown: clean }
+              : { ...s, corrige_markdown: clean }
+            : s
+        ),
       }));
       showToast("Fichier importé dans la zone de texte.", "success");
     };
@@ -413,12 +505,26 @@ export function EpreuvesPanel({
    * « Enregistrer ». */
   function appliquerModifications(modifications: { sujet?: string; corrige?: string }) {
     const { sujet, corrige } = modifications;
-    if (sujet) setForm((f) => ({ ...f, contenu_markdown: sujet }));
-    if (corrige) setForm((f) => ({ ...f, corrige_markdown: corrige }));
-    if (sujet || corrige) {
-      showToast("Modification de l'assistant appliquée au formulaire.", "success");
-    }
+    if (!sujet && !corrige) return;
+    // Applique les modifications au sujet EN COURS d'édition (onglet actif).
+    setForm((f) => ({
+      ...f,
+      sujets: f.sujets.map((s) =>
+        s.index === sujetActif
+          ? {
+              ...s,
+              contenu_markdown: sujet ? sujet : s.contenu_markdown,
+              corrige_markdown: corrige ? corrige : s.corrige_markdown,
+            }
+          : s
+      ),
+    }));
+    showToast("Modification de l'assistant appliquée au formulaire.", "success");
   }
+
+  // Sujet actuellement affiché dans les zones d'édition (onglet actif).
+  const sujetActifData = form.sujets.find((s) => s.index === sujetActif) ?? form.sujets[0];
+  const rangSujetActif = form.sujets.findIndex((s) => s.index === sujetActifData.index) + 1;
 
   return (
     <>
@@ -665,37 +771,106 @@ export function EpreuvesPanel({
             Contenu gratuit de découverte
           </label>
 
-          <ContentBlock
-            title="Sujet"
-            required
-            markdown={form.contenu_markdown}
-            preview={sujetPreview}
-            onTogglePreview={() => setSujetPreview((p) => !p)}
-            onChange={(v) => setForm((f) => ({ ...f, contenu_markdown: v }))}
-            onUpload={(file) => uploadImage(file, "sujet")}
-            onImportMarkdown={(text) => importMarkdown(text, "sujet")}
-            assets={form.assets.filter((a) => a.cible === "sujet")}
-            documents={form.documents.filter((d) => d.cible === "sujet")}
-            onDeleteImage={deleteImage}
-            onInsertImage={insertImageTag}
-            onDeleteDocument={deleteDocument}
-          />
+          {/* Rangée d'onglets des sujets : un onglet par sujet (Sujet 1,
+              Sujet 2…) + bouton « + » pour en ajouter. Le sujet affiché
+              ci-dessous suit l'onglet actif — chaque sujet garde son
+              corrigé optionnel. */}
+          <div role="tablist" aria-label="Sujets de l'épreuve" className="flex flex-wrap items-center gap-1.5">
+            {form.sujets.map((s, i) => {
+              const actif = s.index === sujetActifData.index;
+              const label = `Sujet ${i + 1}`;
+              return (
+                <div
+                  key={s.index}
+                  className={`flex items-center rounded-full border transition-colors ${
+                    actif ? "border-ink bg-ink text-paper" : "border-ink-soft/20 text-ink-soft"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    id={`sujet-tab-${s.index}`}
+                    aria-selected={actif}
+                    aria-controls="panel-sujets"
+                    tabIndex={actif ? 0 : -1}
+                    onClick={() => setSujetActif(s.index)}
+                    onKeyDown={(e) => {
+                      // Navigation clavier ←/→ entre les sujets.
+                      const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+                      if (!dir || form.sujets.length <= 1) return;
+                      e.preventDefault();
+                      const suivant = (i + dir + form.sujets.length) % form.sujets.length;
+                      setSujetActif(form.sujets[suivant].index);
+                    }}
+                    className="min-h-[44px] rounded-full px-4 py-1.5 text-sm"
+                  >
+                    {label}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeSujet(s.index);
+                    }}
+                    aria-label={`Supprimer ${label.toLowerCase()}`}
+                    title={`Supprimer ${label.toLowerCase()}`}
+                    data-no-activate="true"
+                    className={`min-h-[44px] self-stretch px-2 text-paper/60 hover:text-correction ${
+                      actif ? "" : "text-ink-soft/60 hover:text-correction"
+                    }`}
+                  >
+                    <X size={12} strokeWidth={2.5} aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={addSujet}
+              title="Ajouter un sujet à cette épreuve"
+              aria-label="Ajouter un sujet"
+              className="flex min-h-[44px] items-center gap-1 rounded-full border border-ink-soft/20 px-3 text-sm text-ink-soft transition-colors hover:border-highlight/50"
+            >
+              <Plus size={13} strokeWidth={2.5} aria-hidden="true" />
+              Sujet
+            </button>
+          </div>
 
-          <ContentBlock
-            title="Corrigé (optionnel)"
-            required={false}
-            markdown={form.corrige_markdown}
-            preview={corrigePreview}
-            onTogglePreview={() => setCorrigePreview((p) => !p)}
-            onChange={(v) => setForm((f) => ({ ...f, corrige_markdown: v }))}
-            onUpload={(file) => uploadImage(file, "corrige")}
-            onImportMarkdown={(text) => importMarkdown(text, "corrige")}
-            assets={form.assets.filter((a) => a.cible === "corrige")}
-            documents={form.documents.filter((d) => d.cible === "corrige")}
-            onDeleteImage={deleteImage}
-            onInsertImage={insertImageTag}
-            onDeleteDocument={deleteDocument}
-          />
+          <div role="tabpanel" id="panel-sujets" aria-labelledby={`sujet-tab-${sujetActifData.index}`} className="space-y-4">
+            <ContentBlock
+              title={rangSujetActif === 1 ? "Sujet" : `Sujet n°${rangSujetActif}`}
+              required={sujetActifData.index === 0}
+              markdown={sujetActifData.contenu_markdown}
+              preview={Boolean(previewSujet[sujetActifData.index])}
+              onTogglePreview={() => setPreviewSujet((p) => ({ ...p, [sujetActifData.index]: !p[sujetActifData.index] }))}
+              onChange={(v) => updateSujet(sujetActifData.index, "contenu_markdown", v)}
+              onUpload={(file) => uploadImage(file, "sujet")}
+              onImportMarkdown={(text) => importMarkdown(text, "sujet")}
+              assets={form.assets.filter((a) => a.cible === "sujet")}
+              documents={form.documents.filter((d) => d.cible === "sujet")}
+              onDeleteImage={deleteImage}
+              onInsertImage={insertImageTag}
+              onDeleteDocument={deleteDocument}
+            />
+
+            <ContentBlock
+              title={rangSujetActif === 1 ? "Corrigé (optionnel)" : `Corrigé n°${rangSujetActif} (optionnel)`}
+              required={false}
+              markdown={sujetActifData.corrige_markdown}
+              preview={Boolean(previewCorrige[sujetActifData.index])}
+              onTogglePreview={() =>
+                setPreviewCorrige((p) => ({ ...p, [sujetActifData.index]: !p[sujetActifData.index] }))
+              }
+              onChange={(v) => updateSujet(sujetActifData.index, "corrige_markdown", v)}
+              onUpload={(file) => uploadImage(file, "corrige")}
+              onImportMarkdown={(text) => importMarkdown(text, "corrige")}
+              assets={form.assets.filter((a) => a.cible === "corrige")}
+              documents={form.documents.filter((d) => d.cible === "corrige")}
+              onDeleteImage={deleteImage}
+              onInsertImage={insertImageTag}
+              onDeleteDocument={deleteDocument}
+            />
+          </div>
 
           <div className="flex flex-wrap gap-2 border-t border-ink-soft/10 pt-4">
             <button type="submit" className="min-h-[44px] rounded-full bg-ink px-5 text-sm text-paper">

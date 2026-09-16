@@ -3,7 +3,15 @@ import type { AdminAskPayload } from "./streaming";
 /** Instantané du formulaire d'édition envoyé à l'assistant admin
  * (`AdminAskPayload.epreuve`) : le sous-ensemble des champs pertinents du
  * formulaire d'édition, sans `assets`/`documents`. `statut` est dérivé
- * dans EpreuvesPanel (brouillon/a_reviser/publie). */
+ * dans EpreuvesPanel (brouillon/a_reviser/publie). Le sujet principal est
+ * l'index 0 ; les sujets supplémentaires suivent (chacun avec son corrigé
+ * optionnel). */
+export interface AdminSujetContenu {
+  index: number;
+  contenu_markdown: string;
+  corrige_markdown: string;
+}
+
 export interface AdminEpreuveSnapshot {
   niveau: string;
   classe: string;
@@ -16,8 +24,14 @@ export interface AdminEpreuveSnapshot {
   gratuit: boolean;
   statut: string;
   filieres: string[];
-  contenu_markdown: string;
-  corrige_markdown: string;
+  /** Tous les sujets de l'épreuve (au moins un). */
+  sujets: AdminSujetContenu[];
+}
+
+/** Sujet principal (index 0) de l'épreuve — ce que le prompt de l'assistant
+ * connaît comme « sujet » / « corrigé » plats. */
+function sujetPrincipal(form: AdminEpreuveSnapshot): AdminSujetContenu | undefined {
+  return form.sujets.find((s) => s.index === 0) ?? form.sujets[0];
 }
 
 /** Messages de l'historique renvoyé avec chaque question : une réponse
@@ -39,6 +53,7 @@ export function buildAdminAskPayload(
   historique: { role: string; content: string }[],
   question: string
 ): AdminAskPayload {
+  const principal = sujetPrincipal(form);
   return {
     question,
     historique: nettoyerHistorique(historique),
@@ -54,8 +69,12 @@ export function buildAdminAskPayload(
       gratuit: form.gratuit,
       statut: form.statut,
       filieres: form.filieres,
-      contenu_markdown: form.contenu_markdown,
-      corrige_markdown: form.corrige_markdown,
+      // Le prompt backend lit `contenu_markdown`/`corrige_markdown` à plat
+      // (sujet principal) — les sujets supplémentaires ne sont pas (encore)
+      // exposés à l'assistant.
+      contenu_markdown: principal?.contenu_markdown ?? "",
+      corrige_markdown: principal?.corrige_markdown ?? "",
+      sujets: form.sujets,
     },
   };
 }
