@@ -497,14 +497,35 @@ export function AssistantPanel({
       if (!ephemere) {
         // Réconciliation : ramène les messages serveur à `base` (le résidu
         // éventuel d'une tentative interrompue ne doit pas être dupliqué).
+        // Une panne transitoire ICI ne doit PAS enterrer la boucle de
+        // reconnexion (le panneau admin, qui ne réconcilie pas, surmonte
+        // les mêmes pannes grâce au retry) — seul un 4xx est définitif.
         try {
           const actuels = await api.get<Conversation>(url);
           if (JSON.stringify(actuels.messages) !== JSON.stringify(base)) {
             await api.put<Conversation>(url, { messages: base });
           }
-        } catch {
-          erreurFinale = "Connexion au serveur interrompue.";
-          break;
+        } catch (err) {
+          const status = (err as Error & { status?: number })?.status;
+          if (typeof status === "number" && status >= 400 && status < 500) {
+            // Erreur client (ex. 404 : discussion supprimée ailleurs,
+            // 401 : session expirée) : définitif, pas de relance aveugle.
+            erreurFinale =
+              status === 404
+                ? "Cette discussion n'existe plus (elle a peut-être été fermée)."
+                : err instanceof Error
+                  ? err.message
+                  : "Requête refusée.";
+            break;
+          }
+          // Transitoire (réseau, 5xx) : on le note mais on laisse la
+          // boucle de reconnexion tenter à nouveau avant d'abandonner.
+          erreurFinale =
+            err instanceof TypeError
+              ? "Connexion au serveur interrompue."
+              : err instanceof Error
+                ? err.message
+                : "Impossible de synchroniser la discussion.";
         }
       }
 
