@@ -96,3 +96,28 @@ def test_import_zip_chemin_absolu_job_en_erreur(admin):
         files={"file": ("evil.zip", buf.getvalue(), "application/zip")},
     )
     assert r.status_code == 400
+
+
+def test_epreuve_brouillon_sans_matiere_ni_annee(admin):
+    """Matière et année sont optionnelles à la création : un brouillon
+    peut être enregistré sans ces champs, l'admin les complète ensuite."""
+    r = admin.post(
+        "/api/admin/epreuves",
+        json={"contenu_markdown": "# Sujet minimal", "filieres": []},
+    )
+    assert r.status_code == 200, r.text
+    eid = r.json()["id"]
+    detail = admin.get(f"/api/admin/epreuves/{eid}").json()
+    assert detail["matiere"] == ""
+    assert detail["annee"] == ""
+    # Nettoyage.
+    admin.delete(f"/api/admin/epreuves/{eid}")
+
+
+def test_epreuve_update_annee_vide(admin, epreuve_gratuite):
+    """Mettre l'année d'une épreuve à vide ne doit pas planter (clé de
+    stockage utilisée : convention '0000')."""
+    r = admin.put(f"/api/admin/epreuves/{epreuve_gratuite}", json={"annee": ""})
+    assert r.status_code == 200, r.text
+    detail = admin.get(f"/api/admin/epreuves/{epreuve_gratuite}").json()
+    assert detail["annee"] == ""

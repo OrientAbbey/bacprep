@@ -24,6 +24,14 @@ interface AdminEpreuveSummary {
 
 const SIDEBAR_LIMIT = 30;
 
+/** Années proposées dans la liste déroulante du champ « Année » : de
+ * l'année courante jusqu'à 15 ans en arrière (bornes d'une session
+ * d'examen raisonnable) — la saisie libre reste possible (EditableSelect). */
+function anneesProposees(): string[] {
+  const courante = new Date().getFullYear();
+  return Array.from({ length: 16 }, (_, i) => String(courante - i));
+}
+
 /** Retire la première occurrence d'une balise `![...](url)` référençant
  * cette URL précise, quel que soit le texte de légende (l'admin a pu le
  * modifier depuis l'insertion automatique) et un éventuel fragment de
@@ -710,11 +718,12 @@ export function EpreuvesPanel({
               onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
               options={scopeOptions("evaluation")}
             />
-            <Field
+            <EditableSelect
               label="Année"
               value={form.annee}
               onChange={(v) => setForm((f) => ({ ...f, annee: v }))}
               placeholder="ex. 2024"
+              options={anneesProposees().map((a) => ({ value: a, label: a }))}
             />
             {/* Matière / Session : saisie libre (champ + datalist), valeurs
                 déjà connues du référentiel proposées — toute valeur hors

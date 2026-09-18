@@ -36,20 +36,27 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _annee_key(epreuve: EpreuveORM) -> str:
+    """Segment d'année d'une storage_key : "0000" (= à compléter, même
+    convention que l'import) tant que l'année n'est pas renseignée."""
+    return epreuve.annee or "0000"
+
+
 def document_key(epreuve: EpreuveORM, cible: str, sujet_index: int = 0) -> str:
     """Clé du document Markdown d'une épreuve :
     ``epreuves/{niveau}/{annee}/{epreuve_id}/{cible}.md`` pour l'index 0
     (nom historique conservé), et
     ``epreuves/{niveau}/{annee}/{epreuve_id}/{cible}_{index}.md`` pour les
     indices supérieurs (sujets/corrigés supplémentaires)."""
+    annee = _annee_key(epreuve)
     if sujet_index > 0:
-        return f"epreuves/{epreuve.niveau}/{epreuve.annee}/{epreuve.id}/{cible}_{sujet_index}.md"
-    return f"epreuves/{epreuve.niveau}/{epreuve.annee}/{epreuve.id}/{cible}.md"
+        return f"epreuves/{epreuve.niveau}/{annee}/{epreuve.id}/{cible}_{sujet_index}.md"
+    return f"epreuves/{epreuve.niveau}/{annee}/{epreuve.id}/{cible}.md"
 
 
 def image_key(epreuve: EpreuveORM, cible: str, filename: str) -> str:
     """Clé d'une image d'illustration : ``epreuves/{niveau}/{annee}/{epreuve_id}/{cible}-{filename}``."""
-    return f"epreuves/{epreuve.niveau}/{epreuve.annee}/{epreuve.id}/{cible}-{filename}"
+    return f"epreuves/{epreuve.niveau}/{_annee_key(epreuve)}/{epreuve.id}/{cible}-{filename}"
 
 
 def get_document(db: Session, epreuve_id: str, cible: str, sujet_index: int = 0) -> Optional[EpreuveFileORM]:

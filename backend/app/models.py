@@ -115,8 +115,8 @@ class EpreuveIn(BaseModel):
     niveau: str = "SECONDAIRE"
     classe: str = "terminale"
     evaluation: str = "BAC"
-    matiere: str = Field(min_length=1, max_length=120)
-    annee: str = Field(min_length=4, max_length=4, pattern=r"^\d{4}$")
+    matiere: str = Field(default="", max_length=120)
+    annee: str = Field(default="", max_length=4, pattern=r"^\d{0,4}$")
     session: str = ""
     duree: Optional[str] = None
     coefficient: Optional[str] = None
@@ -134,8 +134,8 @@ class EpreuveUpdate(BaseModel):
     niveau: Optional[str] = None
     classe: Optional[str] = None
     evaluation: Optional[str] = None
-    matiere: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    annee: Optional[str] = Field(default=None, min_length=4, max_length=4, pattern=r"^\d{4}$")
+    matiere: Optional[str] = Field(default=None, max_length=120)
+    annee: Optional[str] = Field(default=None, max_length=4, pattern=r"^\d{0,4}$")
     session: Optional[str] = None
     duree: Optional[str] = None
     coefficient: Optional[str] = None
