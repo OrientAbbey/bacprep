@@ -1,7 +1,7 @@
 """Onglet « Paramètres » du back-office : gestion des listes énumératives
 du référentiel (table ``referentiel_options``). L'admin peut consulter,
 ajouter, renommer et supprimer des options par scope (niveau, classe,
-évaluation, matière, session, série). Les formulaires d'épreuve consomment
+évaluation, matière, série). Les formulaires d'épreuve consomment
 les mêmes données et peuvent auto-ajouter une valeur hors liste
 (`ensure_option` dans core/referentiel_options).
 """
@@ -52,7 +52,7 @@ def _usage_counts(db: Session) -> dict[str, dict[str, int]]:
             .group_by(getattr(EpreuveORM, column))
             .all()
         ):
-            if code:  # colonnes non nulles hormis session
+            if code:  # colonnes non nulles
                 counts[scope][(code or "").strip()] = n
     for code, n in (
         db.query(EpreuveFiliereORM.filiere, func.count(EpreuveFiliereORM.id))

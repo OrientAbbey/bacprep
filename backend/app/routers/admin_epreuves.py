@@ -65,13 +65,12 @@ def _replace_filieres(db: Session, epreuve_id: str, filieres: list[str]) -> None
         db.add(EpreuveFiliereORM(epreuve_id=epreuve_id, filiere=f))
 
 
-def _auto_ajout_referentiel(db: Session, matiere: str, session: str, filieres: list[str]) -> None:
+def _auto_ajout_referentiel(db: Session, matiere: str, filieres: list[str]) -> None:
     """Après une sauvegarde, mémorise toute valeur saisie hors référentiel
-    (matière, session, séries) dans `referentiel_options` — best-effort et
-    sans jamais bloquer l'enregistrement : la liste s'alimente à l'usage,
-    les formulaires d'épreuve proposeront ces valeurs la fois suivante."""
+    (matière, séries) dans `referentiel_options` — best-effort et sans jamais
+    bloquer l'enregistrement : la liste s'alimente à l'usage, les formulaires
+    d'épreuve proposeront ces valeurs la fois suivante."""
     referentiel_options.ensure_option(db, "matiere", matiere)
-    referentiel_options.ensure_option(db, "session", session)
     for f in filieres:
         referentiel_options.ensure_option(db, "serie", f)
 
@@ -196,7 +195,6 @@ def admin_get_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=Depen
         "evaluation": e.evaluation,
         "matiere": e.matiere,
         "annee": e.annee,
-        "session": e.session,
         "duree": e.duree,
         "coefficient": e.coefficient,
         "gratuit": e.gratuit,
@@ -250,7 +248,6 @@ def admin_create_epreuve(payload: EpreuveIn, db: Session = Depends(get_db), lock
         evaluation=referentiel.normalize_evaluation(payload.evaluation),
         matiere=payload.matiere.strip(),
         annee=payload.annee.strip(),
-        session=payload.session,
         duree=payload.duree,
         coefficient=payload.coefficient,
         gratuit=payload.gratuit,
@@ -273,7 +270,7 @@ def admin_create_epreuve(payload: EpreuveIn, db: Session = Depends(get_db), lock
     _replace_filieres(db, e.id, filieres)
 
     db.commit()
-    _auto_ajout_referentiel(db, e.matiere, e.session or "", filieres or [])
+    _auto_ajout_referentiel(db, e.matiere, filieres or [])
     log_admin_event(
         db, e.id, "created", email=lock.email,
         details={"matiere": e.matiere, "classe": e.classe, "annee": e.annee},
@@ -342,7 +339,12 @@ def admin_update_epreuve(
     db.flush()
     stale_documents = []
     if sujets_payload is not None:
-        stale_documents = _replace_sujets(db, e, sujets_payload)
+        # `model_dump()` resérialise les SujetIn (déjà validés par FastAPI)
+        # en dicts bruts ; _replace_sujets attend des attributs (.index,
+        # .contenu_markdown) → sans re-validation, AttributeError → 500
+        # « échec de l'enregistrement » à chaque sauvegarde du formulaire
+        # (correction revue 2026-09-18, publication admin).
+        stale_documents = _replace_sujets(db, e, [SujetIn(**s) for s in sujets_payload])
     else:
         if contenu is not None:
             epreuve_files.write_document(db, e, "sujet", contenu)
@@ -371,7 +373,7 @@ def admin_update_epreuve(
         except Exception as exc:
             log.warning("Suppression document retiré %s impossible: %s", f.storage_key, exc)
     _auto_ajout_referentiel(
-        db, e.matiere, e.session or "", _normalize_filieres(filieres) if filieres is not None else []
+        db, e.matiere, _normalize_filieres(filieres) if filieres is not None else []
     )
     log_admin_event(db, epreuve_id, "updated", email=lock.email, details={"champs": champs_modifies})
     return {"ok": True}

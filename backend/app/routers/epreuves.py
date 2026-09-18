@@ -54,7 +54,6 @@ def _to_list_item(e: EpreuveORM, covered_ids: set[str] | None = None) -> Epreuve
         evaluation=e.evaluation,
         matiere=e.matiere,
         annee=e.annee,
-        session=e.session,
         duree=e.duree,
         coefficient=e.coefficient,
         extrait=e.extrait or "",

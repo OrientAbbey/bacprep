@@ -75,7 +75,6 @@ def seed_database_if_empty(db: Session) -> int:
             evaluation=evaluation,
             matiere=meta.get("matiere", ""),
             annee=meta.get("annee", ""),
-            session=meta.get("session", ""),
             duree=meta.get("duree"),
             coefficient=meta.get("coefficient"),
             statut="publie",

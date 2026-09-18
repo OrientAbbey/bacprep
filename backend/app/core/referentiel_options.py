@@ -3,7 +3,7 @@
 Seed au démarrage depuis ``core/referentiel.py`` (voir ``main.py``) et
 helpers de lecture/auto-ajout utilisés par le routeur admin (onglet
 « Paramètres ») et par les formulaires d'épreuve (auto-ajout d'une valeur
-saisie hors liste : matière, session, série...).
+saisie hors liste : matière, série...).
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from ..db_models import ReferentielOptionORM
 from . import referentiel
 
 # Scopes administrés : chacun nomme une liste énumérative du back-office.
-SCOPES = ("niveau", "classe", "evaluation", "matiere", "session", "serie")
+SCOPES = ("niveau", "classe", "evaluation", "matiere", "serie")
 
 # Affiliation d'un scope à la colonne d'épreuve portant la valeur — servira
 # au compteur « en usage » de l'interface Paramètres.
@@ -24,15 +24,14 @@ SCOPE_EPREUVE_COLONNE = {
     "classe": "classe",
     "evaluation": "evaluation",
     "matiere": "matiere",
-    "session": "session",
 }
 
 
 def _seed_entries() -> list[dict]:
     """Entrées de seed (scope, code, label) extraites du référentiel —
     l'ajout d'une constante là-bas se reflète ici à la première création.
-    `matiere` et `session` NE sont pas seedées : elles démarrent vides et
-    s'alimentent à l'usage (auto-ajout des saisies d'épreuves)."""
+    `matiere` n'est PAS seedée : elle démarre vide et s'alimente à l'usage
+    (auto-ajout des saisies d'épreuves)."""
     out: list[dict] = []
     for entry in referentiel.NIVEAUX:
         out.append({"scope": "niveau", "code": entry["code"], "label": entry.get("label", entry["code"])})
@@ -83,8 +82,8 @@ def get_option(db: Session, scope: str, code: str) -> Optional[ReferentielOption
 def ensure_option(db: Session, scope: str, code: str, label: Optional[str] = None) -> bool:
     """Ajoute une option (scope, code) si elle n'existe pas — créé=True.
     Sert d'auto-ajout quand un formulaire d'épreuve saisit une valeur hors
-    liste (matière, session, série) ; l'échec éventuel est silencieux pour
-    ne jamais bloquer l'enregistrement d'une épreuve."""
+    liste (matière, série) ; l'échec éventuel est silencieux pour ne jamais
+    bloquer l'enregistrement d'une épreuve."""
     if scope not in SCOPES:
         return False
     code = (code or "").strip()

@@ -5,7 +5,6 @@ export interface EpreuveListItem {
   evaluation: string; // ex. "BAC", "BEPC", "SEQUENCE 1"
   matiere: string;
   annee: string;
-  session: string;
   duree: string | null;
   coefficient: string | null;
   extrait: string;
@@ -189,7 +188,7 @@ export interface ActiviteItem {
 
 /** Liste énumérative du référentiel (table `referentiel_options`,
  * onglet « Paramètres » du back-office). */
-export type ReferentielScope = "niveau" | "classe" | "evaluation" | "matiere" | "session" | "serie";
+export type ReferentielScope = "niveau" | "classe" | "evaluation" | "matiere" | "serie";
 
 /** Option d'une liste du référentiel. `label` est le libellé affiché
  * (repli sur `code` côté serveur) ; `en_usage` compte les épreuves qui

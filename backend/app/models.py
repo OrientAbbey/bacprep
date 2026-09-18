@@ -55,7 +55,6 @@ class EpreuveListItem(BaseModel):
     evaluation: str  # ex. "BAC", "BEPC", "SEQUENCE 1"
     matiere: str
     annee: str
-    session: str
     duree: Optional[str] = None
     coefficient: Optional[str] = None
     extrait: str = ""
@@ -117,7 +116,6 @@ class EpreuveIn(BaseModel):
     evaluation: str = "BAC"
     matiere: str = Field(default="", max_length=120)
     annee: str = Field(default="", max_length=4, pattern=r"^\d{0,4}$")
-    session: str = ""
     duree: Optional[str] = None
     coefficient: Optional[str] = None
     gratuit: bool = False
@@ -136,7 +134,6 @@ class EpreuveUpdate(BaseModel):
     evaluation: Optional[str] = None
     matiere: Optional[str] = Field(default=None, max_length=120)
     annee: Optional[str] = Field(default=None, max_length=4, pattern=r"^\d{0,4}$")
-    session: Optional[str] = None
     duree: Optional[str] = None
     coefficient: Optional[str] = None
     gratuit: Optional[bool] = None

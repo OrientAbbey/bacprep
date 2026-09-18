@@ -63,7 +63,6 @@ def test_build_admin_prompt_contient_meta_et_contenu():
             "classe": "terminale",
             "evaluation": "BAC",
             "annee": "2024",
-            "session": "Principale",
             "filieres": ["C", "D"],
             "statut": "publie",
             "gratuit": True,

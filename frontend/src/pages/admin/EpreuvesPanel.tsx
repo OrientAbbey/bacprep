@@ -25,8 +25,8 @@ interface AdminEpreuveSummary {
 const SIDEBAR_LIMIT = 30;
 
 /** Années proposées dans la liste déroulante du champ « Année » : de
- * l'année courante jusqu'à 15 ans en arrière (bornes d'une session
- * d'examen raisonnable) — la saisie libre reste possible (EditableSelect). */
+ * l'année courante jusqu'à 15 ans en arrière (bornes raisonnables d'une
+ * épreuve d'examen) — la saisie libre reste possible (EditableSelect). */
 function anneesProposees(): string[] {
   const courante = new Date().getFullYear();
   return Array.from({ length: 16 }, (_, i) => String(courante - i));
@@ -96,9 +96,9 @@ export function EpreuvesPanel({
   // État du tiroir droit de l'assistant admin.
   const [assistantOuvert, setAssistantOuvert] = useState(false);
 
-  /** Recharge les listes du référentiel — aussi après une sauvegarde (le
-   * serveur auto-ajoute matières/sessions/séries saisies hors liste). Échec
-   * silencieux : le formulaire retombe sur les constantes. */
+/** Recharge les listes du référentiel — aussi après une sauvegarde (le
+ * serveur auto-ajoute matières/séries saisies hors liste). Échec
+ * silencieux : le formulaire retombe sur les constantes. */
   function refreshReferentiel() {
     api
       .get<ReferentielOptions>("/api/admin/referentiel-options", authHeaders(token))

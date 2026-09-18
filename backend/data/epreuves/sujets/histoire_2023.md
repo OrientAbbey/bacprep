@@ -5,7 +5,6 @@ evaluation: BAC
 filieres: [D]
 matiere: Histoire
 annee: 2023
-session: Session normale
 duree: 4h
 coefficient: 4
 ---

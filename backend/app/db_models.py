@@ -126,7 +126,6 @@ class EpreuveORM(Base):
     evaluation = Column(String, nullable=False, default="BAC", index=True)
     matiere = Column(String, nullable=False, index=True)
     annee = Column(String, nullable=False, index=True)
-    session = Column(String, default="")
     duree = Column(String, nullable=True)
     coefficient = Column(String, nullable=True)
     extrait = Column(String, nullable=False, default="")

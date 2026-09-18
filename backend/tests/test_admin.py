@@ -24,6 +24,54 @@ def test_update_statut_invalide_refuse(admin, epreuve_gratuite):
     assert r.status_code == 400
 
 
+def test_publication_depuis_formulaire_persiste_puis_publie(admin):
+    """Reproduit le flux du bouton « Publier » du back-office : le frontend
+    ENREGISTRE d'abord le formulaire (persister → POST puis PUT avec le
+    tableau `sujets` et les `filieres` choisies), puis appelle /publish.
+    Pavé la régression « publication refusée alors que sujets/séries
+    affichés dans le formulaire » (revue 2026-09-18)."""
+    payload = {
+        "niveau": "SECONDAIRE",
+        "classe": "terminale",
+        "evaluation": "BAC",
+        "matiere": "Mathématiques",
+        "annee": "2026",
+        "duree": "3h",
+        "coefficient": "5",
+        "gratuit": False,
+        "filieres": ["C", "TI"],
+        "sujets": [
+            {"index": 0, "contenu_markdown": "# Sujet\n\n$f(x)=x^2$.", "corrige_markdown": "# Corrigé\n\n$x=0$."}
+        ],
+    }
+    r = admin.post("/api/admin/epreuves", json=payload)
+    assert r.status_code == 200, r.text
+    eid = r.json()["id"]
+
+    detail = admin.get(f"/api/admin/epreuves/{eid}").json()
+    assert detail["filieres"] == ["C", "TI"]
+    assert detail["sujets"][0]["contenu_markdown"].startswith("# Sujet")
+
+    # Re-édition (PUT, même forme que `persister`) puis publication.
+    r = admin.put(f"/api/admin/epreuves/{eid}", json=payload)
+    assert r.status_code == 200, r.text
+    r = admin.post(f"/api/admin/epreuves/{eid}/publish")
+    assert r.status_code == 200, r.text
+
+    detail = admin.get(f"/api/admin/epreuves/{eid}").json()
+    assert detail["statut"] == "publie"
+    assert detail["filieres"] == ["C", "TI"]
+    assert _has_any_sujet_admin(admin, eid)
+
+    r = admin.delete(f"/api/admin/epreuves/{eid}")
+    assert r.status_code == 200
+
+
+def _has_any_sujet_admin(admin, epreuve_id: str) -> bool:
+    detail = admin.get(f"/api/admin/epreuves/{epreuve_id}").json()
+    return any(s["contenu_markdown"].strip() for s in detail["sujets"])
+
+
 def test_upload_image_type_refuse(admin, epreuve_gratuite):
     r = admin.post(
         f"/api/admin/epreuves/{epreuve_gratuite}/images",

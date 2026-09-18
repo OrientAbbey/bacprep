@@ -29,7 +29,7 @@ def build_admin_prompt(
     et la question de l'admin.
 
     `epreuve` est l'instantané du formulaire (voir AdminAssistantPanel) :
-    niveau, classe, evaluation, matiere, annee, session, duree, coefficient,
+    niveau, classe, evaluation, matiere, annee, duree, coefficient,
     gratuit, statut, filieres, contenu_markdown, corrige_markdown — les clés
     absentes sont tolérées (repli sur « ? »).
 
@@ -41,7 +41,6 @@ def build_admin_prompt(
     classe = meta.get("classe") or "?"
     evaluation = meta.get("evaluation") or "?"
     annee = meta.get("annee") or "?"
-    session = meta.get("session")
     filieres = meta.get("filieres") or []
     statut = meta.get("statut") or "?"
     gratuit = meta.get("gratuit")
@@ -70,7 +69,7 @@ def build_admin_prompt(
         "Par défaut, tu préserves le style et la terminologie camerounais (GPC, théorème, "
         "barème en points…). Si le contenu de départ est incomplet ou manifestement faux, "
         "signale-le plutôt que de tout réécrire sans prévenir.",
-        f"Épreuve en cours d'édition — {matiere} · {evaluation} {annee}" + (f" · {session}" if session else "")
+        f"Épreuve en cours d'édition — {matiere} · {evaluation} {annee}"
         + f" · classe {classe} · séries {', '.join(filieres) if filieres else '?'}",
         f"Statut : {statut}" + (". Épreuve gratuite (consultation sans abonnement)." if gratuit else ". Épreuve payante."),
         "Réponds STRICTEMENT en Markdown : utilise des formules LaTeX pour les expressions "
@@ -94,11 +93,11 @@ def build_admin_prompt(
         "résumé des changements. Un seul bloc par cible ; garde une explication concise "
         "avant le bloc et n'écris aucune autre version du contenu en dehors de lui.",
         "MODIFICATIONS DU FORMULAIRE : si l'admin te demande de corriger les métadonnées ou "
-        "les réglages de l'épreuve (matière, niveau, classe, évaluation, année, session, durée, "
+        "les réglages de l'épreuve (matière, niveau, classe, évaluation, année, durée, "
         "coefficient, séries, statut ou gratuité), fournis le nouvel ensemble complet dans un "
         "bloc de code fencé ```modification-form``` contenant un objet JSON. Inclus TOUTES les "
         "clés que tu modifies — valeur doit être du bon type : `niveau` et `classe` en clair, "
-        "`evaluation` une évaluation valide, `annee` en `'AAAA'`, `session` une session valide, "
+        "`evaluation` une évaluation valide, `annee` en `'AAAA'`, "
         "`duree` en minutes (nombre), `coefficient` en nombre, `filieres` un tableau de codes "
         "de séries, `gratuit` un booléen, `statut` parmi `brouillon`, `a_reviser`, `publie`. "
         "Un seul bloc par réponse ; n'écris aucun autre contenu relevant du formulaire en "

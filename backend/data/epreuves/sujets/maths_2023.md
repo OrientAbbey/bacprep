@@ -5,7 +5,6 @@ evaluation: BAC
 filieres: [D, C, E]
 matiere: Mathématiques
 annee: 2023
-session: Session normale
 duree: 4h
 coefficient: 5
 ---

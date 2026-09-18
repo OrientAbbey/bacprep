@@ -25,7 +25,6 @@ SEEDS = [
         "evaluation": "BAC",
         "matiere": "Mathématiques",
         "annee": "2022",
-        "session": "",
         "duree": "3h",
         "coefficient": "5",
         "filieres": ["C", "D"],
@@ -54,7 +53,6 @@ SEEDS = [
         "evaluation": "PROBATOIRE",
         "matiere": "Physique-Chimie",
         "annee": "2023",
-        "session": "",
         "duree": "3h",
         "coefficient": "4",
         "filieres": ["C", "D"],
@@ -104,7 +102,6 @@ def main() -> None:
                 evaluation=seed["evaluation"],
                 matiere=seed["matiere"],
                 annee=seed["annee"],
-                session=seed["session"],
                 duree=seed["duree"],
                 coefficient=seed["coefficient"],
                 gratuit=False,  # PAYANTES : servent à éprouver le paywall

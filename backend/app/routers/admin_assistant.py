@@ -48,7 +48,7 @@ class AdminAskIn(BaseModel):
     """Question de l'admin + instantané du formulaire épreuve en cours.
 
     `epreuve` suit la forme du formulaire d'édition (AdminForm) :
-    niveau, classe, evaluation, matiere, annee, session, duree, coefficient,
+    niveau, classe, evaluation, matiere, annee, duree, coefficient,
     gratuit, statut, filieres, contenu_markdown, corrige_markdown — les clés
     absentes sont tolérées (`build_admin_prompt` retombe sur « ? »).
 

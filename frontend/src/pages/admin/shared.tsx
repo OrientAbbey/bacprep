@@ -242,15 +242,16 @@ export function Select({
       <label htmlFor={id} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
         {label}
       </label>
-      {/* Chevron dessiné (le natif est masqué par `appearance-none`) :
-          toujours visible, même sans interaction, pour signaler la liste
-          déroulante (revue 2026-09-18). */}
+      {/* Chevron dessiné (le natif est masqué par la classe `select-custom`,
+          préfixes -webkit/-moz compris — sans double chevron, revue
+          2026-09-18) : toujours visible, même sans interaction, pour
+          signaler la liste déroulante. */}
       <div className="relative">
         <select
           id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="min-h-[44px] w-full appearance-none rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-9 text-sm"
+          className="min-h-[44px] w-full select-custom rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-9 text-sm"
         >
           {options.map((o) => (
             <option key={o.value} value={o.value}>
@@ -270,10 +271,18 @@ export function Select({
 }
 
 /** Liste déroulante MODIFIABLE : un champ de saisie libre enrichi d'une
- * `<datalist>` de suggestions (niveau, classe, évaluation, matière,
- * session). L'admin peut choisir une valeur connue OU taper la sienne —
- * le serveur normalise au besoin (niveau/classe/évaluation passent par le
- * référentiel à l'enregistrement) et mémorise les valeurs hors liste. */
+ * `<datalist>` de suggestions (niveau, classe, évaluation, matière).
+ * L'admin peut choisir une valeur connue OU taper la sienne — le serveur
+ * normalise au besoin (niveau/classe/évaluation passent par le référentiel
+ * à l'enregistrement) et mémorise les valeurs hors liste. */
+/** Assainit l'id produit par `useId` (React 19 → caractères hors
+ * [a-zA-Z0-9_-], type «R0») pour que l'association `list` ↔ <datalist>
+ * fonctionne sur toutes les WebViews (les suggestions ne disparaissaient
+ * plus sur certaines) — revue 2026-09-18. */
+export function idDatalistAssaini(rawId: string): string {
+  return `suggest-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+}
+
 export function EditableSelect({
   label,
   value,
@@ -288,7 +297,7 @@ export function EditableSelect({
   placeholder?: string;
 }) {
   const id = useId();
-  const listId = `suggest-${id}`;
+  const listId = idDatalistAssaini(id);
   // Affiche le libellé lisible quand la valeur courante est un code connu
   // (ex. "terminale" → "Terminale") ; sinon la saisie libre brute.
   const affiche = options.find((o) => o.value === value)?.label ?? value;

@@ -94,7 +94,7 @@ export function resolveMediaUrl(url: string): string {
 
 /**
  * Ajoute (ou vérifie) une option du référentiel — BEST-EFFORT : sert aux
- * auto-ajouts des formulaires (série/matière/session saisies hors liste).
+ * auto-ajouts des formulaires (série/matière saisies hors liste).
  * L'échec (option déjà présente, réseau, 401) est SILENCIEUX pour ne
  * jamais bloquer une sauvegarde d'épreuve. `headers` doit porter
  * l'authentification admin (voir authHeaders) pour les voies admin.

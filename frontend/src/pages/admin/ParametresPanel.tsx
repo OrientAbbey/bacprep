@@ -17,7 +17,6 @@ const SCOPES: { scope: ReferentielScope; titre: string; description: string; cod
   { scope: "classe", titre: "Classes", description: "Classes du secondaire", codePh: "ex. terminale", labelPh: "ex. Terminale" },
   { scope: "evaluation", titre: "Évaluations", description: "Types d'évaluation (examens, sequences…)", codePh: "ex. BAC", labelPh: "ex. Baccalauréat" },
   { scope: "matiere", titre: "Matières", description: "Disciplines — s'alimente à l'usage", codePh: "ex. Mathématiques", labelPh: "" },
-  { scope: "session", titre: "Sessions", description: "Sessions d'examen — s'alimente à l'usage", codePh: "ex. Session normale", labelPh: "" },
   { scope: "serie", titre: "Séries / filières", description: "Séries du BAC, filières", codePh: "ex. TI", labelPh: "" },
 ];
 

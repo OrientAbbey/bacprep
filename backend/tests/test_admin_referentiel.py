@@ -19,14 +19,14 @@ def _trouve(options, code: str) -> dict | None:
 
 # ---------- Seed ----------
 
-def test_seed_alimente_les_6_scopes(client, admin):
+def test_seed_alimente_les_5_scopes(client, admin):
     """Au démarrage, les listes (niveau, classe, evaluation, serie) sont
     peuplées depuis core/referentiel.py ; classe porte un libellé affiché.
-    matiere/session démarrent vides mais se remplissent à l'usage (voir
-    test_auto_ajout) — dans la suite complète, les autres tests ont déjà
-    créé des épreuves : on ne vérifie donc ici que la structure du scope."""
+    matiere démarre vide mais se remplit à l'usage (voir test_auto_ajout) —
+    dans la suite complète, les autres tests ont déjà créé des épreuves :
+    on ne vérifie donc ici que la structure du scope."""
     grouped = admin.get("/api/admin/referentiel-options").json()
-    assert set(grouped.keys()) == {"niveau", "classe", "evaluation", "matiere", "session", "serie"}
+    assert set(grouped.keys()) == {"niveau", "classe", "evaluation", "matiere", "serie"}
     assert _trouve(grouped["niveau"], "SECONDAIRE")
     # Classe : libellé affiché ≠ code (contrairement à un raw code).
     terminale = _trouve(grouped["classe"], "terminale")
@@ -34,7 +34,7 @@ def test_seed_alimente_les_6_scopes(client, admin):
     assert terminale["label"] != terminale["code"]
     assert _trouve(grouped["evaluation"], "BAC")
     assert _trouve(grouped["serie"], "A")
-    for scope in ("matiere", "session"):
+    for scope in ("matiere",):
         assert all("id" in o and "en_usage" in o and "code" in o for o in grouped[scope])
 
 
@@ -167,14 +167,13 @@ def test_suppression_option_et_en_usage(admin):
 
 # ---------- Auto-ajout à la sauvegarde ----------
 
-def test_auto_ajout_matiere_session_serie(admin, epreuve_gratuite):
-    """Sauvegarder une épreuve avec une matière/session/série hors liste les
+def test_auto_ajout_matiere_serie(admin, epreuve_gratuite):
+    """Sauvegarder une épreuve avec une matière/série hors liste les
     mémorise dans le référentiel (best-effort, ne bloque jamais)."""
     r = admin.post(
         "/api/admin/epreuves",
         json={
             "matiere": "Science Nouv",
-            "session": "Session spéciale",
             "classe": "terminale",
             "evaluation": "BAC",
             "annee": "2024",
@@ -184,14 +183,13 @@ def test_auto_ajout_matiere_session_serie(admin, epreuve_gratuite):
     )
     assert r.status_code == 200, r.text
     assert _trouve(_options(admin, "matiere"), "Science Nouv") is not None
-    assert _trouve(_options(admin, "session"), "Session spéciale") is not None
     assert _trouve(_options(admin, "serie"), "XX") is not None
 
     # Idempotence : re-sauvegarde (PUT) sans erreur de doublon.
     eid = r.json()["id"]
     r = admin.put(
         f"/api/admin/epreuves/{eid}",
-        json={"matiere": "Science Nouv", "session": "Session spéciale", "filieres": ["XX"]},
+        json={"matiere": "Science Nouv", "filieres": ["XX"]},
     )
     assert r.status_code == 200, r.text
     assert len([o for o in _options(admin, "serie")]) >= 1  # liste saine
@@ -205,7 +203,7 @@ def test_auto_ajout_matiere_session_serie(admin, epreuve_gratuite):
 def test_journal_audit_referentiel(admin):
     """Chaque mutation (ajout, renommage, suppression) est tracée dans le
     journal d'audit avec le scope et la valeur concernés."""
-    r = admin.post("/api/admin/referentiel-options", json={"scope": "session", "code": "AUDIT-TEST"})
+    r = admin.post("/api/admin/referentiel-options", json={"scope": "serie", "code": "AUDIT-TEST"})
     assert r.status_code == 200
     opt_id = r.json()["id"]
     admin.patch(f"/api/admin/referentiel-options/{opt_id}", json={"code": "AUDIT-TEST-2"})

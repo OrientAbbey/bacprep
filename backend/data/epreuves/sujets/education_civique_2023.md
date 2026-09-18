@@ -5,7 +5,6 @@ evaluation: BAC
 filieres: [A, TI]
 matiere: Éducation Civique
 annee: 2023
-session: Session normale
 duree: 2h
 coefficient: 2
 ---
