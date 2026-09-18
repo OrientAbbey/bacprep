@@ -338,7 +338,14 @@ export function AdminPage() {
       </div>
 
       <div role="tabpanel" id="admin-panel" aria-labelledby={`admin-tab-${tab}`}>
-        {tab === "epreuves" ? (
+        {/* EpreuvesPanel reste MONTÉ et simplement masqué quand on quitte
+            l'onglet : son état (formulaire en cours, brouillon, assistant
+            admin ouvert) survit à la navigation. La version précédente le
+            démontait et perdait TOUTE modification non sauvegardée au
+            changement d'onglet (revue 2026-09, REVUE_FRONTEND.md F2).
+            `display:none` masque aussi le bouton flottant fixe de
+            l'assistant, qui n'apparaît que sur l'onglet Épreuves. */}
+        <div hidden={tab !== "epreuves"}>
           <EpreuvesPanel
             token={token}
             onSessionExpiree={onSessionExpiree}
@@ -346,7 +353,8 @@ export function AdminPage() {
             onDetailOuvert={() => setDetailAOpenir(null)}
             onEpreuvesChange={() => loadStats(token)}
           />
-        ) : tab === "import" ? (
+        </div>
+        {tab === "import" ? (
           <ImportPanel token={token} />
         ) : tab === "utilisateurs" ? (
           <UtilisateursPanel token={token} />

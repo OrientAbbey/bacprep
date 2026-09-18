@@ -45,7 +45,14 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
       return;
     }
     stopCount();
-    setRestant(Math.round(m * 60));
+    // Démarrage à NEUF (restant === null) : partir de la durée saisie.
+    // REPRISE après pause : garder le `restant` courant — la version
+    // précédente réinitialisait toujours le compte depuis le début, le
+    // bouton « Reprendre » repartant à la durée initiale (revue 2026-09,
+    // REVUE_FRONTEND.md F8).
+    if (restant === null) {
+      setRestant(Math.round(m * 60));
+    }
     setTourne(true);
     setExpire(false);
     intervalRef.current = window.setInterval(() => {

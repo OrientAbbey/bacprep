@@ -10,11 +10,21 @@ export function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** URL de base d'une image (/api/files/{id}) SANS jeton signé ni fragment :
+ * la balise du Markdown porte un jeton (parfois l'ancien, celui de l'upload)
+ * alors que assets[].url est fraîchement re-signé à chaque GET — le matching
+ * ne doit JAMAIS dépendre du jeton, sinon resize/suppression échouent après
+ * un rechargement (revue 2026-09, REVUE_FRONTEND.md F1). */
+function urlSansJeton(url: string): string {
+  return url.split("?")[0].split("#")[0];
+}
+
 /** Balise image Markdown d'une image donnée dans un bloc de texte :
  * extrait la largeur d'affichage `#w=NNN` éventuelle pour synchroniser
  * le sélecteur « Taille d'affichage » et détecter une double insertion. */
 export function extraireBaliseImage(markdown: string, url: string): { presente: boolean; largeur: number } {
-  const re = new RegExp(`!\\[[^\\]]*\\]\\(${escapeRegExp(url)}(?:#w=(\\d+))?\\)`);
+  const base = escapeRegExp(urlSansJeton(url));
+  const re = new RegExp(`!\\[[^\\]]*\\]\\(${base}(?:\\?[^#)]*)?(?:#w=(\\d+))?\\)`);
   const match = re.exec(markdown);
   if (!match) return { presente: false, largeur: 0 };
   return { presente: true, largeur: match[1] ? Number(match[1]) : 0 };
@@ -23,11 +33,16 @@ export function extraireBaliseImage(markdown: string, url: string): { presente: 
 /** Réécrit la largeur d'affichage (`#w=NNN`) d'une balise image
  * existante — l'ajoute si la balise est présente sans largeur, la
  * retire si `width` vaut 0 (« Pleine »). Si la balise est absente la
- * chaîne n'est pas modifiée. */
+ * chaîne n'est pas modifiée. Le jeton éventuel de la balise (indépendant
+ * de celui de `assets[].url`) est ignoré par le matching.
+ * Le fragment est réinséré AVANT la parenthèse fermante `)` (un ajout
+ * après provoquait `#w=640` hors balise — couvert par shared.test.ts). */
 export function remplacerLargeur(markdown: string, url: string, width: number): string {
-  const re = new RegExp(`(!\\[[^\\]]*\\]\\(${escapeRegExp(url)}(?:#w=\\d+)?\\))`);
+  const base = escapeRegExp(urlSansJeton(url));
+  // {1} préfixe (jusqu'au premier `#` ou `)`) {2} largeur éventuelle {3} `)`.
+  const re = new RegExp(`(!\\[[^\\]]*\\]\\(${base}[^)#]*)(?:#w=\\d+)?(\\))`);
   const frag = width && width > 0 ? `#w=${width}` : "";
-  return markdown.replace(re, (_all, balise: string) => balise.replace(/#w=\d+$/, "") + frag);
+  return markdown.replace(re, (_all, prefix: string, closing: string) => `${prefix}${frag}${closing}`);
 }
 
 /** Image rattachée au sujet ou au corrigé d'une épreuve. */

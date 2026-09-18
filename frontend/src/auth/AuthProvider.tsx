@@ -81,6 +81,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     socket.onclose = () => {
       if (intentionalClose.current) return;
+      // Ce socket n'est plus le socket ACTIF (un plus récent a été ouvert,
+      // ex. reconnexion au login via completeLogin → closeSocket(false) puis
+      // openSocket()) : ignorer sa fermeture. Sans ce garde-fou, la
+      // reconnexion planifiée par l'ancien onclose ouvrait un socket
+      // PARASITE en plus (revue 2026-09, REVUE_FRONTEND.md F5).
+      if (wsRef.current !== socket) return;
       const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt.current, RECONNECT_DELAYS.length - 1)];
       reconnectAttempt.current += 1;
       reconnectTimer.current = setTimeout(openSocket, delay);

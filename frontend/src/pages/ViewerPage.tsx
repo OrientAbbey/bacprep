@@ -130,7 +130,13 @@ export function ViewerPage() {
     api
       .get<EpreuveDetail>(`/api/epreuves/${id}`, undefined, ac.signal)
       .then((data) => {
-        if (!ac.signal.aborted) setEpreuve(data);
+        if (ac.signal.aborted) return;
+        setEpreuve(data);
+        // Deep-link ?conv= (lien « Reprendre la conversation » du profil) :
+        // le panneau assistant s'ouvre — `ouvrirConversationId` cible la
+        // discussion désignée. Sans cette ouverture, le lien ne faisait
+        // qu'afficher l'épreuve (revue 2026-09, REVUE_FRONTEND.md F7).
+        if (convOuverte) setAssistantOpen(true);
       })
       .catch((err) => {
         if (ac.signal.aborted) return;
@@ -139,7 +145,11 @@ export function ViewerPage() {
         else setErreurChargement(true);
       });
     return () => ac.abort();
-  }, [id]);
+    // `user` dans les dépendances : déconnexion / ban / kick-out (user →
+    // null) ou reconnexion pendant la lecture relancent le contrôle
+    // d'accès — une épreuve payante redevient une carte paywall au lieu
+    // de rester affichée à l'écran (revue 2026-09, REVUE_FRONTEND.md F6).
+  }, [id, user, convOuverte]);
 
   // Garde-fou défensif : dès que le panneau se ferme (quelle que soit la
   // façon dont il a été fermé), on oublie tout contexte de sélection et

@@ -38,7 +38,11 @@ function anneesProposees(): string[] {
  * taille d'affichage (`#w=NNN`) — utilisé quand une image est supprimée,
  * pour garder le Markdown cohérent avec les fichiers restants. */
 function removeImageTag(markdown: string, url: string): string {
-  const re = new RegExp(`!\\[[^\\]]*\\]\\(${escapeRegExp(url)}(?:#w=\\d+)?\\)\\n?`, "g");
+  // Matching sur l'URL SANS jeton : la balise du texte peut porter un jeton
+  // différent de `assets[].url` (re-signé à chaque GET) — sans cela la
+  // balise resterait après la suppression du fichier (lien mort).
+  const base = escapeRegExp(url.split("?")[0].split("#")[0]);
+  const re = new RegExp(`!\\[[^\\]]*\\]\\(${base}(?:\\?[^#)]*)?(?:#w=\\d+)?\\)\\n?`, "g");
   return markdown.replace(re, "");
 }
 
@@ -249,13 +253,25 @@ export function EpreuvesPanel({
       })),
     };
     try {
-      if (form.id) {
-        await api.put(`/api/admin/epreuves/${form.id}`, payload, authHeaders(token));
+      let id = form.id;
+      if (id) {
+        await api.put(`/api/admin/epreuves/${id}`, payload, authHeaders(token));
         showToast("Épreuve mise à jour.", "success");
       } else {
         const res = await api.post<{ id: string }>("/api/admin/epreuves", payload, authHeaders(token));
+        id = res.id;
         setForm((f) => ({ ...f, id: res.id }));
         showToast("Épreuve créée (brouillon).", "success");
+      }
+      // Recharger le détail APRÈS l'enregistrement : la liste `documents`
+      // et les URLs signées (`assets[].url`) doivent refléter l'état
+      // serveur — sans ce refetch, la liste affiche d'anciens ids (la
+      // collection n'a pas été recréée mais elle a pu changer) et la
+      // suppression d'un document part en 404 (revue 2026-09, F3/F4).
+      if (id) {
+        const indexAvant = sujetActif;
+        await fetchDetail(id);
+        setSujetActif(indexAvant);
       }
       loadAll(token, search, statutFiltre);
       onEpreuvesChange?.();
