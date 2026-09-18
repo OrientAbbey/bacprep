@@ -121,3 +121,110 @@ def test_epreuve_update_annee_vide(admin, epreuve_gratuite):
     assert r.status_code == 200, r.text
     detail = admin.get(f"/api/admin/epreuves/{epreuve_gratuite}").json()
     assert detail["annee"] == ""
+
+
+def test_suppression_epreuve_en_retenue_ne_largit_jamais_l_acces(admin, eleve, epreuve_payante):
+    """Régression 2026-09 : la suppression d'une épreuve ayant un
+    abonnement PAYÉ actif doit (a) RÉUSSIR malgré la clé étrangère
+    (subscriptions.epreuve_id), (b) garantir que l'abonnement devient
+    « annulee » — jamais « active » avec un epreuve_id NULL, ce qui en
+    ferait un pass large (classe/évaluation) payé pour une seule épreuve
+    (voir `covered_epreuves_condition`), et (c) ne jamais ouvrir l'accès à
+    une autre épreuve payante."""
+    # Épreuve de contrôle : le PAIEMENT ciblé ne doit jamais la couvrir.
+    r = admin.post(
+        "/api/admin/epreuves",
+        json={
+            "niveau": "SECONDAIRE",
+            "classe": "terminale",
+            "evaluation": "BAC",
+            "matiere": "Controle Immuable",
+            "annee": "2023",
+            "gratuit": False,
+            "filieres": ["D"],
+            "contenu_markdown": "# Sujet contrôle",
+        },
+    )
+    assert r.status_code == 200, r.text
+    autre = r.json()["id"]
+    assert admin.post(f"/api/admin/epreuves/{autre}/publish").status_code == 200
+
+    # L'élève achète l'accès à la première épreuve payante (webhook simulé).
+    r = eleve.post(
+        "/api/subscriptions/checkout",
+        json={"scope": "epreuve", "epreuve_id": epreuve_payante, "provider": "orange"},
+    )
+    assert r.status_code == 200, r.text
+    ref = r.json()["reference_agregateur"]
+    sub_id = r.json()["subscription_id"]
+    assert (
+        eleve.post("/api/payments/simulate-webhook", json={"reference_agregateur": ref}).status_code
+        == 200
+    )
+    assert eleve.get(f"/api/epreuves/{epreuve_payante}").status_code == 200
+
+    # Suppression admin : doit RÉUSSIR malgré l'abonnement actif qui pointe
+    # sur l'épreuve (avait : 500 `IntegrityError`).
+    assert admin.delete(f"/api/admin/epreuves/{epreuve_payante}").status_code == 200, "suppression épreuve"
+
+    # L'abonnement est ANNULÉ et détaché de l'épreuve supprimée : il ne peut
+    # plus servir de pass large ni référencer un enregistrement disparu.
+    from app.db import SessionLocal
+    from app.db_models import SubscriptionORM
+
+    with SessionLocal() as db:
+        sub = db.query(SubscriptionORM).filter(SubscriptionORM.id == sub_id).one()
+        assert sub.statut == "annulee"
+        assert sub.epreuve_id is None
+
+    # L'épreuve supprimée répond 404, et l'autre épreuve payante RESTE
+    # verrouillée pour cet élève (aucun élargissement d'accès).
+    assert eleve.get(f"/api/epreuves/{epreuve_payante}").status_code == 404
+    assert eleve.get(f"/api/epreuves/{autre}").status_code == 403
+
+
+def test_admin_detail_resigne_les_urls_images(admin, epreuve_gratuite):
+    """Régression 2026-09 (REVUE_BACKEND.md §1) : le détail admin re-signe
+    les balises images du Markdown renvoyé — un jeton périmé stocké (lié à
+    un statut/fichier antérieur) donne un lien mort et casse le matching
+    frontend de la balise (REVUE_FRONTEND.md F1)."""
+    import io
+    import re
+
+    from PIL import Image
+
+    from app.core import signing
+
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), (200, 30, 40)).save(buf, format="PNG")
+    r = admin.post(
+        f"/api/admin/epreuves/{epreuve_gratuite}/images",
+        files={"file": ("fig.png", buf.getvalue(), "image/png")},
+        data={"cible": "sujet"},
+    )
+    assert r.status_code == 200, r.text
+    img = r.json()
+
+    # Markdown stocké avec un jeton volontairement périmé (simulation d'un
+    # upload sous un ancien statut/chef de clé).
+    stale = "jeton-perime-de-test"
+    md = f"# Titre\n\n![figure](/api/files/{img['id']}?token={stale}#w=300)"
+    assert (
+        admin.put(
+            f"/api/admin/epreuves/{epreuve_gratuite}",
+            json={"contenu_markdown": md},
+        ).status_code
+        == 200
+    )
+
+    detail = admin.get(f"/api/admin/epreuves/{epreuve_gratuite}").json()
+    cas = detail["sujets"][0]["contenu_markdown"]
+    assert stale not in cas
+    m = re.search(
+        rf"!\[figure\]\(/api/files/([0-9a-z]+)\?token=([^)#]+)#w=300\)",
+        cas,
+    )
+    assert m, cas
+    fid, token = m.group(1), m.group(2)
+    assert fid == img["id"]
+    assert signing.verify_file_token(fid, epreuve_gratuite, "publie", token)

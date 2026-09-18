@@ -64,6 +64,23 @@ def _usage_counts(db: Session) -> dict[str, dict[str, int]]:
     return counts
 
 
+def _en_usage(db: Session, scope: str, code: str) -> int:
+    """Nombre d'épreuves utilisant cette option (colonne d'épreuve, ou
+    souscription de série pour le scope "serie") — sert de garde-fou au
+    renommage (le code est le classement, le libellé la vitrine)."""
+    key = (code or "").strip()
+    column = ref_store.SCOPE_EPREUVE_COLONNE.get(scope)
+    if column is not None:
+        return int(
+            db.query(func.count(EpreuveORM.id)).filter(getattr(EpreuveORM, column) == key).scalar() or 0
+        )
+    if scope == "serie":
+        return int(
+            db.query(func.count(EpreuveFiliereORM.id)).filter(EpreuveFiliereORM.filiere == key).scalar() or 0
+        )
+    return 0
+
+
 @router.get("/referentiel-options")
 def admin_list_referentiel_options(
     db: Session = Depends(get_db),
@@ -135,8 +152,19 @@ def admin_update_referentiel_option(
         code = payload.code.strip()
         if not code:
             raise HTTPException(422, "code vide")
-        if code != row.code and ref_store.get_option(db, row.scope, code) is not None:
-            raise HTTPException(409, "Cette valeur existe déjà pour ce scope")
+        if code != row.code:
+            if ref_store.get_option(db, row.scope, code) is not None:
+                raise HTTPException(409, "Cette valeur existe déjà pour ce scope")
+            if _en_usage(db, row.scope, row.code):
+                # Renommer réécrirait la liste sans toucher aux épreuves déjà
+                # saisies : elles afficheraient une valeur « hors liste » et
+                # le compteur en_usage perdrait son sens (revue 2026-09,
+                # REVUE_BACKEND.md §5). Le libellé (label) reste modifiable.
+                raise HTTPException(
+                    409,
+                    "Cette valeur est utilisée par des épreuves — modifiez le libellé (label) "
+                    "plutôt que le code, ou supprimez puis recréez l'option.",
+                )
         row.code = code
     if payload.label is not None:
         row.label = payload.label.strip() or None

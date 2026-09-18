@@ -16,7 +16,7 @@ from ..db import get_db, utc_now
 from ..db_models import AIConversationORM
 from ..models import AskIn, ConversationOut
 from .auth import require_user
-from .deps import get_epreuve_or_404, get_public_epreuve_or_404
+from .deps import get_public_epreuve_or_404
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 log = get_logger("assistant_router")
@@ -32,18 +32,24 @@ _ask_limiter = SlidingWindowLimiter(
 )
 
 
-def _load_conversation_and_epreuve(db: Session, user_id: str, conversation_id: str):
+def _load_conversation_and_epreuve(db: Session, user, conversation_id: str):
     """Charge la discussion (appartenant à cet utilisateur) et son épreuve,
-    ou lève 404 — factorisé entre l'endpoint non-streaming et streaming."""
+    ou lève 404 — factorisé entre l'endpoint non-streaming et streaming.
+
+    Le contrôle d'accès est le MÊME que pour une question éphémère :
+    `get_public_epreuve_or_404` (statut == "publie" + `has_access`). Sans
+    cela, une conversation persistée restait utilisable après expiration de
+    l'abonnement ou dépublication de l'épreuve (paywall bypass, revue
+    2026-09 — REVUE_BACKEND.md §1)."""
     conv = (
         db.query(AIConversationORM)
-        .filter(AIConversationORM.id == conversation_id, AIConversationORM.user_id == user_id)
+        .filter(AIConversationORM.id == conversation_id, AIConversationORM.user_id == user.id)
         .one_or_none()
     )
     if not conv:
         raise HTTPException(404, "Discussion introuvable")
 
-    epreuve = get_epreuve_or_404(db, conv.epreuve_id)
+    epreuve = get_public_epreuve_or_404(db, conv.epreuve_id, user)
     return conv, epreuve
 
 
@@ -66,7 +72,7 @@ async def ask(payload: AskIn, db: Session = Depends(get_db), user=Depends(requir
     par `/ask/stream`)."""
     if user.consent_ia is False:
         raise HTTPException(403, "Tu as refusé le stockage de tes conversations IA — modifie ton choix dans ton profil.")
-    conv, epreuve = _load_conversation_and_epreuve(db, user.id, payload.conversation_id)
+    conv, epreuve = _load_conversation_and_epreuve(db, user, payload.conversation_id)
     _ask_limiter.check(user.id)
 
     messages = json.loads(conv.messages_json or "[]")
@@ -123,7 +129,7 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
             raise HTTPException(
                 403, "Tu as refusé le stockage de tes conversations IA — modifie ton choix dans ton profil pour retrouver tes discussions."
             )
-        conv, epreuve = _load_conversation_and_epreuve(db, user.id, payload.conversation_id)
+        conv, epreuve = _load_conversation_and_epreuve(db, user, payload.conversation_id)
         _ask_limiter.check(user.id)
 
         messages = json.loads(conv.messages_json or "[]")

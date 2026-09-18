@@ -52,16 +52,29 @@ def get_or_create_user(db: Session, email: str, nom: str) -> UserORM:
     mis à jour si fourni et différent). Le consentement n'est PAS posé à la
     création : il est recueilli explicitement à la connexion via la modale
     dédiée (`PUT /api/me/consentement`) — consent_ia/consent_notes restent
-    NULL (« pas encore demandé ») tant que l'élève n'a pas choisi."""
+    NULL (« pas encore demandé ») tant que l'élève n'a pas choisi.
+
+    Deux logins simultanés sur un nouvel email : le second INSERT se heurte
+    à la PK (IntegrityError) — l'utilisateur est relu au lieu de renvoyer
+    un 500 (revue 2026-09, REVUE_BACKEND.md §4)."""
     user = db.query(UserORM).filter(UserORM.email == email).one_or_none()
     if user:
         if nom and user.nom != nom:
             user.nom = nom
             db.commit()
         return user
+    from sqlalchemy.exc import IntegrityError
+
     user = UserORM(email=email, nom=nom)
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        log.info("Course de login sur %s — utilisateur relu", email)
+        user = db.query(UserORM).filter(UserORM.email == email).one_or_none()
+        if user is None:
+            raise
     db.refresh(user)
     log.info("Nouvel utilisateur créé: %s", email)
     return user

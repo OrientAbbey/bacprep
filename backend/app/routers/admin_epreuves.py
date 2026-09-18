@@ -172,8 +172,17 @@ def admin_get_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=Depen
     sujets = [
         {
             "index": idx,
-            "contenu_markdown": epreuve_files.read_document_content(db, e.id, "sujet", idx),
-            "corrige_markdown": epreuve_files.read_document_content(db, e.id, "corrige", idx),
+            # Les URLs des balises images du Markdown sont RE-SIGNÉES à la
+            # lecture (comme le détail public) : les jetons écrits à l'upload
+            # ont pu expirer ou appartenir à un statut antérieur — sans cela,
+            # l'admin voit des liens morts et le matching frontend (balise vs
+            # assets[].url) échoue (revue 2026-09, REVUE_FRONTEND.md F1).
+            "contenu_markdown": epreuve_files.sign_image_urls(
+                epreuve_files.read_document_content(db, e.id, "sujet", idx), e
+            ),
+            "corrige_markdown": epreuve_files.sign_image_urls(
+                epreuve_files.read_document_content(db, e.id, "corrige", idx), e
+            ),
             "corrige_disponible": epreuve_files.get_document(db, e.id, "corrige", idx) is not None,
         }
         for idx in indices
@@ -325,11 +334,15 @@ def admin_update_epreuve(
     for key, value in data.items():
         setattr(e, key, value)
 
+    # Clés de stockage à purger APRÈS commit (deux phases, voir plus bas).
+    stale_keys: list[str] = []
+
     # Réécrit les documents fournis (sujet/corrigé) — la clé de stockage est
     # recalculée après d'éventuelles modifications de niveau/classe/année.
     db.flush()
+    stale_documents = []
     if sujets_payload is not None:
-        _replace_sujets(db, e, sujets_payload)
+        stale_documents = _replace_sujets(db, e, sujets_payload)
     else:
         if contenu is not None:
             epreuve_files.write_document(db, e, "sujet", contenu)
@@ -337,13 +350,26 @@ def admin_update_epreuve(
             epreuve_files.write_document(db, e, "corrige", corrige)
 
     if relocations:
-        _relocate_files(db, e)
+        stale_keys.extend(_relocate_files(db, e))
 
     if filieres is not None:
         _replace_filieres(db, epreuve_id, _normalize_filieres(filieres))
 
     e.updated_at = utc_now()
     db.commit()
+    # Phase 2 (après commit) : les objets du stockage devenus orphelins ne
+    # sont effacés QU'UNE FOIS la transaction validée — un échec
+    # intermédiaire ne casse plus le contenu (REVUE_BACKEND.md §3).
+    for key in stale_keys:
+        try:
+            epreuve_files.get_storage().delete(key)
+        except Exception as exc:
+            log.warning("Suppression objet relocalisé %s impossible: %s", key, exc)
+    for f in stale_documents:
+        try:
+            epreuve_files.get_storage().delete(f.storage_key)
+        except Exception as exc:
+            log.warning("Suppression document retiré %s impossible: %s", f.storage_key, exc)
     _auto_ajout_referentiel(
         db, e.matiere, e.session or "", _normalize_filieres(filieres) if filieres is not None else []
     )
@@ -351,26 +377,44 @@ def admin_update_epreuve(
     return {"ok": True}
 
 
-def _replace_sujets(db: Session, e: EpreuveORM, sujets: list[SujetIn]) -> None:
+def _replace_sujets(db: Session, e: EpreuveORM, sujets: list[SujetIn]) -> list[EpreuveFileORM]:
     """Remplace L'ENSEMBLE des documents Markdown d'une épreuve (sujets +
     corrigés) par ceux du tableau fourni : les documents absents du tableau
-    sont supprimés (objets du stockage compris), les présents sont réécrits
-    à leur index exact. C'est la base du multi-sujets : l'admin sauvegarde
-    la collection complète et le serveur aligne la base sur ce qu'elle
-    contient."""
-    for f in list(e.files_rel):
-        if f.format == epreuve_files.DOCUMENT_FORMAT:
-            epreuve_files.delete_file(db, f)
+    sont supprimés (lignes en base), les présents sont réécrits à leur index
+    exact — `write_document` fait un UPSERT qui PRÉSERVE leur id de fichier
+    (correction 2026-09 : la version précédente supprimait puis recréait tout
+    le stockage à chaque save, cassant la liste des documents de l'UI et les
+    références d'URL).
+
+    Retourne les lignes retirées : l'appelant purge leurs objets du
+    stockage APRÈS le commit (deux phases, REVUE_BACKEND.md §3 — un échec
+    intermédiaire ne détruit plus un document encore référencé)."""
+    wanted: set[tuple[str, int]] = set()
     for s in sujets:
+        wanted.add(("sujet", s.index))
         epreuve_files.write_document(db, e, "sujet", s.contenu_markdown or "", s.index)
         if s.corrige_markdown:
+            wanted.add(("corrige", s.index))
             epreuve_files.write_document(db, e, "corrige", s.corrige_markdown, s.index)
 
+    stale = [
+        f
+        for f in list(e.files_rel)
+        if f.format == epreuve_files.DOCUMENT_FORMAT and (f.cible, f.sujet_index) not in wanted
+    ]
+    for f in stale:
+        db.delete(f)
+    return stale
 
-def _relocate_files(db: Session, e: EpreuveORM) -> None:
+
+def _relocate_files(db: Session, e: EpreuveORM) -> list[str]:
     """Après un changement de niveau/classe/année, copie chaque fichier vers
-    sa nouvelle clé canonique puis supprime l'ancien objet."""
+    sa nouvelle clé canonique puis retourne les ANCIENNES clés à purger —
+    la suppression effective n'a lieu qu'APRÈS le commit (deux phases :
+    un rollback ne laisse plus d'objet supprimé encore référencé en base,
+    tout au plus un objet orphelin dans le bucket, sans perte de contenu)."""
     storage = epreuve_files.get_storage()
+    stale_keys: list[str] = []
     for f in e.files_rel:
         if f.format == epreuve_files.DOCUMENT_FORMAT:
             new_key = epreuve_files.document_key(e, f.cible, f.sujet_index)
@@ -393,13 +437,10 @@ def _relocate_files(db: Session, e: EpreuveORM) -> None:
             log.warning("Relocalisation impossible (%s): %s", f.storage_key, exc)
             continue
         storage.put_bytes(new_key, data, f.mime_type)
-        old_key = f.storage_key
+        stale_keys.append(f.storage_key)
         f.storage_key = new_key
         db.add(f)
-        try:
-            storage.delete(old_key)
-        except Exception as exc:
-            log.warning("Suppression ancien objet %s impossible: %s", old_key, exc)
+    return stale_keys
 
 
 @router.post("/epreuves/{epreuve_id}/publish")
@@ -453,8 +494,16 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
     # avant la suppression, sinon la contrainte de clé étrangère la fait
     # échouer (liste exhaustive : subscriptions, ai_conversations, consultations,
     # notes, signalements ; filières et fichiers partent en cascade ORM) :
-    # - les abonnements « épreuve précise » perdent leur cible (le paiement,
-    #   lui, reste dans l'historique) ;
+    # - les abonnements « épreuve précise » sont ANNULÉS et DÉTACHÉS de
+    #   l'épreuve supprimée (epreuve_id → NULL) : garder le lien briserait
+    #   la suppression (clé étrangère, IntegrityError en 500), et les
+    #   rendre « actifs » avec epreuve_id=NULL en ferait un pass large
+    #   (classe/évaluation) de la même série — un élargissement payé pour
+    #   une seule épreuve. `covered_epreuves_condition` n'accorde quoi que
+    #   ce soit qu'aux abonnements `statut == "active"` : la combinaison
+    #   « annulee + epreuve_id NULL » n'ouvre jamais accès (régressions
+    #   couvertes par test_suppression_epreuve_en_retenue_ne_largit_jamais_l_acces) ;
+    #   le paiement, lui, reste dans l'historique ;
     # - l'historique de consultation et les discussions IA (élève ET
     #   back-office) de cette épreuve sont supprimés (plus de sens sans leur
     #   épreuve) ;
@@ -462,7 +511,7 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
     #   NOT NULL) : tout essai de suppression échouait sinon en 500 à la
     #   validation SQL, et leur contenu n'aurait plus de support.
     db.query(SubscriptionORM).filter(SubscriptionORM.epreuve_id == epreuve_id).update(
-        {SubscriptionORM.epreuve_id: None}
+        {SubscriptionORM.statut: "annulee", SubscriptionORM.epreuve_id: None}
     )
     db.query(AIConversationORM).filter(AIConversationORM.epreuve_id == epreuve_id).delete()
     db.query(AdminAIConversationORM).filter(AdminAIConversationORM.epreuve_id == epreuve_id).delete()
@@ -475,10 +524,16 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
     db.query(NotificationORM).filter(NotificationORM.epreuve_id == epreuve_id).update(
         {NotificationORM.epreuve_id: None}
     )
-    for f in list(e.files_rel):
-        epreuve_files.delete_file(db, f)
+    # Objets du stockage supprimés APRÈS le commit (deux phases) : le rollback
+    # d'un delete ne laisse plus d'objet supprimé encore référencé en base.
+    storage_keys = [f.storage_key for f in e.files_rel]
     db.delete(e)  # cascade ORM : filières et fichiers restants supprimés avec l'épreuve
     db.commit()
+    for key in storage_keys:
+        try:
+            epreuve_files.get_storage().delete(key)
+        except Exception as exc:
+            log.warning("Suppression objet %s impossible après suppression d'épreuve: %s", key, exc)
     log_admin_event(db, epreuve_id, "deleted", email=lock.email, details=meta)
     log.info("Épreuve supprimée: %s", epreuve_id)
     return {"ok": True}
