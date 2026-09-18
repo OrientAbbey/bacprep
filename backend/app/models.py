@@ -330,3 +330,35 @@ class SignalementIn(BaseModel):
 
 class BannirIn(BaseModel):
     motif: str = Field(default="", max_length=500)
+
+
+# ---------- Notifications ----------
+
+# Types de notification proposés dans le back-office (libellés affichés) —
+# singleton de référence pour le formulaire admin ET le contrat API.
+TYPES_NOTIFICATION = ("information", "nouvelle_epreuve", "modification", "maintenance")
+
+
+class NotificationIn(BaseModel):
+    """Création d'une notification administrateur. `epreuve_id` est OPTIONNEL :
+    renseigner une épreuve publie un lien « aller à l'épreuve » depuis la
+    cloche (cas publication de nouvelle épreuve) ; l'absence de lien laisse
+    la notification purement informative (modification, maintenance...)."""
+
+    titre: str = Field(min_length=1, max_length=200)
+    message: str = Field(default="", max_length=5000)
+    type: str = Field(default="information", max_length=32)
+    epreuve_id: Optional[str] = Field(default=None, max_length=40)
+    actif: bool = True
+
+
+class NotificationUpdate(BaseModel):
+    """Mise à jour partielle d'une notification (seuls les champs fournis
+    sont modifiés). `actif` pilote la visibilité : une notification désactivée
+    reste stockée mais disparaît des cloches."""
+
+    titre: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    message: Optional[str] = Field(default=None, max_length=5000)
+    type: Optional[str] = Field(default=None, max_length=32)
+    epreuve_id: Optional[str] = Field(default=None, max_length=40)
+    actif: Optional[bool] = None

@@ -30,6 +30,7 @@ from ..db_models import (
     EpreuveORM,
     KickoutNoticeORM,
     NoteORM,
+    NotificationReadORM,
     PaymentORM,
     SessionORM,
     SignalementORM,
@@ -562,6 +563,7 @@ def admin_supprimer_utilisateur(
     db.query(PaymentORM).filter(PaymentORM.user_id == u.id).delete()
     db.query(SubscriptionORM).filter(SubscriptionORM.user_id == u.id).delete()
     db.query(SignalementORM).filter(SignalementORM.user_id == u.id).delete()
+    db.query(NotificationReadORM).filter(NotificationReadORM.user_id == u.id).delete()
     db.delete(u)
     db.commit()
     log_admin_event(db, None, "utilisateur_supprime", email=lock.email, details=details)

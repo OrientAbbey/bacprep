@@ -34,12 +34,14 @@ from .routers import (
     admin_epreuves,
     admin_import,
     admin_misc,
+    admin_notifications,
     admin_referentiel,
     assistant,
     auth,
     epreuves,
     files,
     me,
+    notifications,
     subscriptions,
     ws,
 )
@@ -245,9 +247,11 @@ app.include_router(admin_misc.router)
 app.include_router(admin_epreuves.router)
 app.include_router(admin_import.router)
 app.include_router(admin_referentiel.router)
+app.include_router(admin_notifications.router)
 app.include_router(admin_assistant.router)
 app.include_router(assistant.router)
 app.include_router(me.router)
+app.include_router(notifications.router)
 app.include_router(ws.router)
 
 

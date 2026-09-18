@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
 import { getInitials } from "../lib/initials";
 import { Logo } from "./Logo";
+import { NotificationsBell } from "./NotificationsBell";
 
 export function Layout({ children }: { children?: React.ReactNode }) {
   const navigate = useNavigate();
@@ -106,14 +107,17 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               )}
 
               {user ? (
-                <Link
-                  to="/profil"
-                  aria-label={`Profil de ${user.nom}`}
-                  title={user.nom}
-className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper after:absolute after:-inset-1 after:rounded-full after:content-['']"
-                >
-                  {getInitials(user.nom)}
-                </Link>
+                <>
+                  <NotificationsBell />
+                  <Link
+                    to="/profil"
+                    aria-label={`Profil de ${user.nom}`}
+                    title={user.nom}
+                    className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper after:absolute after:-inset-1 after:rounded-full after:content-['']"
+                  >
+                    {getInitials(user.nom)}
+                  </Link>
+                </>
               ) : (
                 <Link
                   to="/connexion"
@@ -192,15 +196,21 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
 
             <div className="mt-4 border-t border-ink-soft/15 pt-4">
               {user ? (
-                <Link to="/profil" className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper">
-                    {getInitials(user.nom)}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{user.nom || user.email}</span>
-                    <span className="block font-mono-tag text-[10px] text-slate">Mon profil</span>
-                  </span>
-                </Link>
+                <>
+                  <div className="mb-3 flex items-center gap-2.5 px-3">
+                    <NotificationsBell />
+                    <span className="font-mono-tag text-[10px] text-slate">Notifications</span>
+                  </div>
+                  <Link to="/profil" className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper">
+                      {getInitials(user.nom)}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{user.nom || user.email}</span>
+                      <span className="block font-mono-tag text-[10px] text-slate">Mon profil</span>
+                    </span>
+                  </Link>
+                </>
               ) : (
                 <Link
                   to="/connexion"

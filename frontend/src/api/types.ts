@@ -270,3 +270,47 @@ export interface AdminStats {
   discussions_ia: number;
   signalements_ouverts: number;
 }
+
+// ---------- Notifications ----------
+
+/** Type d'une notification (choisissable dans le formulaire admin ; la
+ * pub d'épreuve génère automatiquement `nouvelle_epreuve`). */
+export type TypeNotification =
+  | "information"
+  | "nouvelle_epreuve"
+  | "modification"
+  | "maintenance";
+
+/** Notification telle qu'affichée dans la cloche d'un élève : uniquement
+ * les notifications ACTIVES, avec l'état « lu » propre à l'utilisateur. */
+export interface NotificationEleve {
+  id: string;
+  titre: string;
+  message: string;
+  type: TypeNotification;
+  /** Épreuve liée (publication) : la cloche propose d'y aller directement. */
+  epreuve_id: string | null;
+  lue: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Réponse de GET /api/notifications (cloche). */
+export interface NotificationsEleve {
+  non_lues: number;
+  items: NotificationEleve[];
+}
+
+/** Notification vue du back-office : toutes (actives et désactivées). */
+export interface NotificationAdmin extends Omit<NotificationEleve, "lue"> {
+  actif: boolean;
+}
+
+/** Création d'une notification (POST /api/admin/notifications). */
+export interface NotificationIn {
+  titre: string;
+  message?: string;
+  type?: TypeNotification;
+  epreuve_id?: string | null;
+  actif?: boolean;
+}

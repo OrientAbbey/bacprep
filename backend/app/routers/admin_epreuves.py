@@ -24,6 +24,7 @@ from ..db_models import (
     EpreuveFileORM,
     EpreuveORM,
     NoteORM,
+    NotificationORM,
     SignalementORM,
     SubscriptionORM,
 )
@@ -414,6 +415,18 @@ def admin_publish(epreuve_id: str, db: Session = Depends(get_db), lock=Depends(r
     e.statut = "publie"
     db.commit()
     log_admin_event(db, epreuve_id, "published", email=lock.email, details={"statut": "publie"})
+    db.add(
+        NotificationORM(
+            titre="Nouvelle épreuve disponible",
+            message=(
+                f"{e.matiere or 'Sujet'} — {e.evaluation or ''} {e.annee or ''} ({e.classe or ''})"
+            ).strip(),
+            type="nouvelle_epreuve",
+            epreuve_id=epreuve_id,
+            actif=True,
+        )
+    )
+    db.commit()
     return {"ok": True}
 
 
@@ -456,6 +469,12 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
     db.query(ConsultationORM).filter(ConsultationORM.epreuve_id == epreuve_id).delete()
     db.query(NoteORM).filter(NoteORM.epreuve_id == epreuve_id).delete()
     db.query(SignalementORM).filter(SignalementORM.epreuve_id == epreuve_id).delete()
+    # Les notifications liées perdent leur cible mais restent diffusées :
+    # une notification sur une épreuve supprimée devient purement
+    # informative (la cloche gère l'absence de lien en silence).
+    db.query(NotificationORM).filter(NotificationORM.epreuve_id == epreuve_id).update(
+        {NotificationORM.epreuve_id: None}
+    )
     for f in list(e.files_rel):
         epreuve_files.delete_file(db, f)
     db.delete(e)  # cascade ORM : filières et fichiers restants supprimés avec l'épreuve

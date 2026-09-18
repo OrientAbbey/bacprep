@@ -389,3 +389,42 @@ class ReferentielOptionORM(Base):
     label = Column(String, nullable=True)
     position = Column(Integer, nullable=False, default=0)
     created_at = Column(UTCDateTime, default=utc_now)
+
+
+class NotificationORM(Base):
+    """Notification diffusée à TOUS les utilisateurs (bandeau + cloche dans
+    le menu). Gérée depuis l'onglet Notifications du back-office : création,
+    modification, activation/désactivation (une notification inactive reste
+    stockée mais n'est plus exhibée), suppression. `epreuve_id` lie la
+    notification à une épreuve pour que la cloche puisse proposer
+    d'y aller directement (cas « publication d'une nouvelle épreuve »).
+
+    La lecture est suivie PAR UTILISATEUR dans `NotificationReadORM` — la
+    cloche affiche le nombre de notifications non lues. Les lignes de lecture
+    sont purgées à la suppression du compte (droit à l'effacement)."""
+
+    __tablename__ = "notifications"
+
+    id = Column(String, primary_key=True, default=_uid)
+    titre = Column(String, nullable=False)
+    message = Column(Text, nullable=False, default="")
+    type = Column(String(32), nullable=False, default="information")  # information|nouvelle_epreuve|modification|maintenance
+    epreuve_id = Column(String, ForeignKey("epreuves.id"), nullable=True, index=True)
+    actif = Column(Boolean, nullable=False, default=True)
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
+
+
+class NotificationReadORM(Base):
+    """Marqueur « lu par l'utilisateur » d'une notification : une ligne par
+    (notification, utilisateur). L'absence de ligne = non lue, la cloche
+    l'affiche en surbrillance jusqu'au passage « marquer comme lue »."""
+
+    __tablename__ = "notification_reads"
+    __table_args__ = (
+        UniqueConstraint("notification_id", "user_id", name="uq_notification_user"),
+    )
+
+    notification_id = Column(String, ForeignKey("notifications.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    read_at = Column(UTCDateTime, default=utc_now)

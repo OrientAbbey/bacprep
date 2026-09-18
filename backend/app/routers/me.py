@@ -13,6 +13,7 @@ from ..db_models import (
     EpreuveORM,
     KickoutNoticeORM,
     NoteORM,
+    NotificationReadORM,
     PaymentORM,
     SessionORM,
     SignalementORM,
@@ -311,6 +312,7 @@ def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) 
     db.query(PaymentORM).filter(PaymentORM.user_id == u_id).delete()
     db.query(SubscriptionORM).filter(SubscriptionORM.user_id == u_id).delete()
     db.query(SignalementORM).filter(SignalementORM.user_id == u_id).delete()
+    db.query(NotificationReadORM).filter(NotificationReadORM.user_id == u_id).delete()
     db.delete(user)
     db.commit()
     log.info("Compte supprimé (effacement strict) — user %s", u_id)
