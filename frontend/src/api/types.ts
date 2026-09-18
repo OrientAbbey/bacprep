@@ -273,13 +273,10 @@ export interface AdminStats {
 
 // ---------- Notifications ----------
 
-/** Type d'une notification (choisissable dans le formulaire admin ; la
- * pub d'épreuve génère automatiquement `nouvelle_epreuve`). */
-export type TypeNotification =
-  | "information"
-  | "nouvelle_epreuve"
-  | "modification"
-  | "maintenance";
+// Le `type` est une CHAÎNE LIBRE depuis la revue 2026-09-18 : l'admin peut
+// en saisir d'autres (information, nouvelle_epreuve, modification,
+// maintenance restent les valeurs usuelles — la pub d'épreuve génère
+// `nouvelle_epreuve`).
 
 /** Notification telle qu'affichée dans la cloche d'un élève : uniquement
  * les notifications ACTIVES, avec l'état « lu » propre à l'utilisateur. */
@@ -287,7 +284,7 @@ export interface NotificationEleve {
   id: string;
   titre: string;
   message: string;
-  type: TypeNotification;
+  type: string;
   /** Épreuve liée (publication) : la cloche propose d'y aller directement. */
   epreuve_id: string | null;
   lue: boolean;
@@ -310,7 +307,7 @@ export interface NotificationAdmin extends Omit<NotificationEleve, "lue"> {
 export interface NotificationIn {
   titre: string;
   message?: string;
-  type?: TypeNotification;
+  type?: string;
   epreuve_id?: string | null;
   actif?: boolean;
 }

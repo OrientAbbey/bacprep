@@ -181,7 +181,7 @@ def admin_stats(db: Session = Depends(get_db), lock=Depends(require_admin)) -> d
     revenus_par_mois, six_derniers = _admin_revenus_par_mois(paiements)
     stockage_par_format, nb_fichiers = _admin_stockage(db)
     return {
-        "utilisateurs": _admin_nb_eleves(db),
+        "utilisateurs": _admin_nb_utilisateurs(db),
         "abonnements_actifs": db.query(SubscriptionORM).filter(SubscriptionORM.statut == "active").count(),
         "revenu_total_fcfa": sum(p.montant for p in paiements),
         "epreuves_par_statut": _admin_epreuves_par_statut(db),
@@ -219,18 +219,11 @@ def _admin_epreuves_par_statut(db: Session) -> dict:
     }
 
 
-def _admin_nb_eleves(db: Session) -> int:
-    """La métrique « Utilisateurs » ne compte que les élèves : les comptes
-    admin (ROOT ∪ promus) sont exclus (un admin connecté en élève pour
-    tester ne doit pas gonfler le compteur)."""
-    admins = admin_session.allowed_emails(db)
-    return (
-        db.query(UserORM)
-        .filter(~func.lower(UserORM.email).in_(list(admins) or [""]))
-        .count()
-        if admins
-        else db.query(UserORM).count()
-    )
+def _admin_nb_utilisateurs(db: Session) -> int:
+    """La métrique « Utilisateurs » compte TOUS les comptes de la
+    plateforme, administrateurs compris — un admin est aussi un utilisateur
+    (revue 2026-09-18, demande admin)."""
+    return db.query(UserORM).count()
 
 
 def _admin_stockage(db: Session) -> tuple[dict, int]:
@@ -584,9 +577,9 @@ def admin_promouvoir_utilisateur(
     lock=Depends(require_admin),
 ) -> dict:
     """Promouvoir un utilisateur en administrateur délégué (colonne
-    `users.role="admin"`). Réservé au ROOT. Son compte quitte la métrique
-    « Utilisateurs » (les admins n'y sont pas comptés) mais reste visible
-    dans la table avec le badge Admin et l'action de révocation."""
+    `users.role="admin"`). Réservé au ROOT. Son compte reste visible dans
+    la table avec le badge Admin et l'action de révocation ; il est compté
+    dans la métrique « Utilisateurs » (un admin est aussi un utilisateur)."""
     _verrou_racine(lock)
     u = db.query(UserORM).filter(UserORM.id == user_id).one_or_none()
     if not u:

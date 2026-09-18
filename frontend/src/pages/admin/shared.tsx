@@ -1,5 +1,5 @@
 import { useId, useRef } from "react";
-import { FileText, FileUp, Plus, X } from "lucide-react";
+import { ChevronDown, FileText, FileUp, Plus, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatBytes } from "../../lib/format";
@@ -73,7 +73,6 @@ export interface EpreuveForm {
   evaluation: string;
   matiere: string;
   annee: string;
-  session: string;
   duree: string;
   coefficient: string;
   gratuit: boolean;
@@ -102,7 +101,6 @@ export const EMPTY_FORM: EpreuveForm = {
   evaluation: "BAC",
   matiere: "",
   annee: "",
-  session: "",
   duree: "",
   coefficient: "",
   gratuit: false,
@@ -133,6 +131,25 @@ export function purgerSessionExpiree(err: unknown): boolean {
   if (!(err instanceof ApiError && err.status === 401)) return false;
   window.dispatchEvent(new Event("admin:session-expiree"));
   return true;
+}
+
+/** Message d'erreur lisible depuis une exception API : le `detail` brut du
+ * serveur (chaîne FastAPI ou liste d'erreurs de validation 422) quand il est
+ * exploitable, sinon le libellé générique fourni par l'appelant. Evite les
+ * toasts trompeurs (« Échec de l'enregistrement ») quand le serveur sait
+ * dire exactement ce qui coince (revue 2026-09-18). */
+export function erreurDetail(err: unknown, defaut: string): string {
+  if (err instanceof ApiError) {
+    const d = err.detail;
+    if (typeof d === "string" && d.trim()) return d;
+    if (Array.isArray(d) && d.length > 0) {
+      const messages = d
+        .map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : ""))
+        .filter(Boolean);
+      if (messages.length > 0) return messages.join(" · ");
+    }
+  }
+  return defaut;
 }
 
 export function Field({
@@ -225,18 +242,29 @@ export function Select({
       <label htmlFor={id} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
         {label}
       </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      {/* Chevron dessiné (le natif est masqué par `appearance-none`) :
+          toujours visible, même sans interaction, pour signaler la liste
+          déroulante (revue 2026-09-18). */}
+      <div className="relative">
+        <select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="min-h-[44px] w-full appearance-none rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-9 text-sm"
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={14}
+          strokeWidth={1.75}
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-soft"
+        />
+      </div>
     </div>
   );
 }
@@ -269,17 +297,28 @@ export function EditableSelect({
       <label htmlFor={id} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
         {label}
       </label>
-      <input
-        id={id}
-        value={affiche}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        role="combobox"
-        aria-expanded={false}
-        aria-label={label}
-        list={listId}
-        className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
-      />
+      {/* Chevron dessiné : une `<datalist>` n'affiche aucun trait natif dans
+          la plupart des navigateurs — le chevron signale la liste de
+          suggestions tout en laissant la saisie libre intacte. */}
+      <div className="relative">
+        <input
+          id={id}
+          value={affiche}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          role="combobox"
+          aria-expanded={false}
+          aria-label={label}
+          list={listId}
+          className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-9 text-sm"
+        />
+        <ChevronDown
+          size={14}
+          strokeWidth={1.75}
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-soft"
+        />
+      </div>
       <datalist id={listId}>
         {options.map((o) => (
           <option key={o.value} value={o.label} />

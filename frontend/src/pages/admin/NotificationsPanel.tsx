@@ -1,31 +1,29 @@
 import { useEffect, useState } from "react";
 import { Bell, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../api/client";
-import { NotificationAdmin, TypeNotification } from "../../api/types";
+import { NotificationAdmin } from "../../api/types";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { formatRelativeTime } from "../../lib/time";
-import { authHeaders, Field, Select, purgerSessionExpiree } from "./shared";
+import { authHeaders, EditableSelect, Field, purgerSessionExpiree, Select } from "./shared";
 
 /** Types proposés pour une notification — libellés d'interface, codes
  * stockés côté serveur. `nouvelle_epreuve` est aussi posé automatiquement
- * à la publication d'épreuve. */
-const TYPES: { value: TypeNotification; label: string }[] = [
+ * à la publication d'épreuve. Le champ reste une SAISIE LIBRE (EditableSelect)
+ * : l'admin peut taper un type hors liste, qui sera mémorisé en base. */
+const TYPES: { value: string; label: string }[] = [
   { value: "information", label: "Information" },
   { value: "nouvelle_epreuve", label: "Nouvelle épreuve" },
   { value: "modification", label: "Modification" },
   { value: "maintenance", label: "Maintenance" },
 ];
 
-const TYPE_LABELS = Object.fromEntries(TYPES.map((t) => [t.value, t.label])) as Record<
-  TypeNotification,
-  string
->;
+const TYPE_LABELS = Object.fromEntries(TYPES.map((t) => [t.value, t.label])) as Record<string, string>;
 
 interface Formulaire {
   titre: string;
   message: string;
-  type: TypeNotification;
+  type: string;
   actif: boolean;
 }
 
@@ -140,6 +138,7 @@ export function NotificationsPanel({ token }: { token: string }) {
           form={edition.form}
           onFormChange={(form) => setEdition({ ...edition, form })}
           onSave={() => sauvegarder(edition.id, edition.form)}
+          optionTypes={typesProposables(notif)}
         />
       )}
 
@@ -213,15 +212,29 @@ export function NotificationsPanel({ token }: { token: string }) {
   );
 }
 
+/** Types proposés dans la liste déroulante : les usuels + ceux déjà
+ * utilisés par des notifications existantes (un type saisi librement
+ * précédemment reste proposé la fois suivante). */
+function typesProposables(notif: NotificationAdmin[] | null): { value: string; label: string }[] {
+  const vus = new Set<string>(TYPES.map((t) => t.value));
+  const extra = new Set<string>();
+  for (const n of notif ?? []) {
+    if (n.type && !vus.has(n.type)) extra.add(n.type);
+  }
+  return [...TYPES, ...[...extra].map((t) => ({ value: t, label: t }))];
+}
+
 /** Formulaire de création / modification d'une notification. */
 function FormulaireNotification({
   form,
   onFormChange,
   onSave,
+  optionTypes,
 }: {
   form: Formulaire;
   onFormChange: (f: Formulaire) => void;
   onSave: () => void;
+  optionTypes: { value: string; label: string }[];
 }) {
   return (
     <form
@@ -251,11 +264,11 @@ function FormulaireNotification({
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Select
+        <EditableSelect
           label="Type"
           value={form.type}
-          onChange={(type) => onFormChange({ ...form, type: type as TypeNotification })}
-          options={TYPES}
+          onChange={(type) => onFormChange({ ...form, type })}
+          options={optionTypes}
         />
         <Select
           label="État"

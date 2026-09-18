@@ -68,7 +68,10 @@ export function JournalPanel({
         <ScrollText size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
         <h2 className="font-serif-brand text-lg">Journal d'audit</h2>
       </div>
-      <ul className="divide-y divide-ink-soft/10 text-sm">
+      {/* 20 lignes visibles ; le reste défile dans le panneau — sans borne,
+          le journal (100 entrées chargées) enfonçait les statistiques et
+          obligeait à toute la page pour la première entrée. */}
+      <ul className="max-h-[720px] divide-y divide-ink-soft/10 overflow-y-auto pr-1 text-sm">
         {events.map((e) => {
           const details = detailsLisibles(e);
           return (

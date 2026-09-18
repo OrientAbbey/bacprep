@@ -8,7 +8,7 @@ import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
 import type { ModificationsEpreuve } from "../../lib/adminAssistant";
-import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur, SujetFormData } from "./shared";
+import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, erreurDetail, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur, SujetFormData } from "./shared";
 
 interface AdminEpreuveSummary {
   id: string;
@@ -176,7 +176,6 @@ export function EpreuvesPanel({
         evaluation: detail.evaluation || "BAC",
         matiere: detail.matiere || "",
         annee: detail.annee || "",
-        session: detail.session || "",
         duree: detail.duree || "",
         coefficient: detail.coefficient || "",
         gratuit: Boolean(detail.gratuit),
@@ -232,14 +231,19 @@ export function EpreuvesPanel({
     return [...ref, ...chute.filter((c) => !vus.has(c.value))];
   }
 
-  async function save() {
+  /** Persiste l'épreuve (création ou mise à jour) puis re-synchronise le
+   * formulaire sur l'état serveur (fichiers, URLs signées), la liste et le
+   * référentiel. Aucun toast : `save` et `publish` l'encadrent chacun avec
+   * leurs messages et leur traitement d'erreur propres. Retourne vrai si
+   * l'épreuve vient d'être CRÉÉE. */
+  async function persister(): Promise<boolean> {
+    const cree = !form.id;
     const payload = {
       niveau: form.niveau,
       classe: form.classe,
       evaluation: form.evaluation,
       matiere: form.matiere,
       annee: form.annee,
-      session: form.session,
       duree: form.duree || null,
       coefficient: form.coefficient || null,
       gratuit: form.gratuit,
@@ -252,32 +256,40 @@ export function EpreuvesPanel({
         corrige_markdown: s.corrige_markdown,
       })),
     };
+    let id: string;
+    if (cree) {
+      const res = await api.post<{ id: string }>("/api/admin/epreuves", payload, authHeaders(token));
+      id = res.id;
+      setForm((f) => ({ ...f, id: res.id }));
+    } else {
+      await api.put(`/api/admin/epreuves/${form.id}`, payload, authHeaders(token));
+      id = form.id!;
+    }
+    // Recharger le détail APRÈS l'enregistrement : la liste `documents`
+    // et les URLs signées (`assets[].url`) doivent refléter l'état
+    // serveur — sans ce refetch, la liste affiche d'anciens ids (la
+    // collection n'a pas été recréée mais elle a pu changer) et la
+    // suppression d'un document part en 404 (revue 2026-09, F3/F4).
+    const indexAvant = sujetActif;
+    await fetchDetail(id!);
+    setSujetActif(indexAvant);
+    loadAll(token, search, statutFiltre);
+    onEpreuvesChange?.();
+    refreshReferentiel();
+    return cree;
+  }
+
+  async function save() {
     try {
-      let id = form.id;
-      if (id) {
-        await api.put(`/api/admin/epreuves/${id}`, payload, authHeaders(token));
-        showToast("Épreuve mise à jour.", "success");
-      } else {
-        const res = await api.post<{ id: string }>("/api/admin/epreuves", payload, authHeaders(token));
-        id = res.id;
-        setForm((f) => ({ ...f, id: res.id }));
-        showToast("Épreuve créée (brouillon).", "success");
+      const cree = await persister();
+      showToast(cree ? "Épreuve créée (brouillon)." : "Épreuve mise à jour.", "success");
+    } catch (err) {
+      // Le serveur sait souvent dire exactement ce qui coince (validation,
+      // contenu manquant…) : on affiche son message au lieu du libellé
+      // générique, qui laissait croire à un échec « aléatoire ».
+      if (!handle401(err)) {
+        showToast(erreurDetail(err, "Échec de l'enregistrement — vérifie les champs."), "error");
       }
-      // Recharger le détail APRÈS l'enregistrement : la liste `documents`
-      // et les URLs signées (`assets[].url`) doivent refléter l'état
-      // serveur — sans ce refetch, la liste affiche d'anciens ids (la
-      // collection n'a pas été recréée mais elle a pu changer) et la
-      // suppression d'un document part en 404 (revue 2026-09, F3/F4).
-      if (id) {
-        const indexAvant = sujetActif;
-        await fetchDetail(id);
-        setSujetActif(indexAvant);
-      }
-      loadAll(token, search, statutFiltre);
-      onEpreuvesChange?.();
-      refreshReferentiel();
-    } catch {
-      showToast("Échec de l'enregistrement — vérifie les champs.", "error");
     }
   }
 
@@ -289,13 +301,22 @@ export function EpreuvesPanel({
   async function publish() {
     if (!form.id) return;
     try {
+      // La publication vérifie côté serveur un sujet ET des séries
+      // PERSISTÉS en base : on enregistre donc d'abord le formulaire en
+      // cours. Publier juste après avoir saisi/édité du contenu (sujet,
+      // puces de séries) sans cliquer « Enregistrer » se soldait par un
+      // refus « sujet et au moins une série sont requis » alors que le
+      // formulaire affichait tout (revue 2026-09-18).
+      await persister();
       await api.post(`/api/admin/epreuves/${form.id}/publish`, undefined, authHeaders(token));
       setStatutForm("publie");
       showToast("Épreuve publiée.", "success");
       loadAll(token, search, statutFiltre);
       onEpreuvesChange?.();
-    } catch {
-      showToast("Publication refusée — sujet et au moins une série sont requis.", "error");
+    } catch (err) {
+      if (!handle401(err)) {
+        showToast(erreurDetail(err, "Publication refusée — un sujet et au moins une série sont requis."), "error");
+      }
     }
   }
 
@@ -577,7 +598,6 @@ export function EpreuvesPanel({
             evaluation: modifForm.evaluation ?? f.evaluation,
             matiere: modifForm.matiere ?? f.matiere,
             annee: modifForm.annee ?? f.annee,
-            session: modifForm.session ?? f.session,
             duree: modifForm.duree !== undefined ? String(modifForm.duree) : f.duree,
             coefficient: modifForm.coefficient !== undefined ? String(modifForm.coefficient) : f.coefficient,
             gratuit: modifForm.gratuit ?? f.gratuit,
@@ -741,22 +761,15 @@ export function EpreuvesPanel({
               placeholder="ex. 2024"
               options={anneesProposees().map((a) => ({ value: a, label: a }))}
             />
-            {/* Matière / Session : saisie libre (champ + datalist), valeurs
-                déjà connues du référentiel proposées — toute valeur hors
-                liste est mémorisée par le serveur à l'enregistrement. */}
+            {/* Matière : saisie libre (champ + datalist), valeurs déjà
+                connues du référentiel proposées — toute valeur hors liste
+                est mémorisée par le serveur à l'enregistrement. */}
             <EditableSelect
               label="Matière"
               value={form.matiere}
               onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
               placeholder="ex. Mathématiques"
               options={(referentiel?.matiere ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
-            />
-            <EditableSelect
-              label="Session"
-              value={form.session}
-              onChange={(v) => setForm((f) => ({ ...f, session: v }))}
-              placeholder="ex. Session normale"
-              options={(referentiel?.session ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
             />
             <Field
               label="Durée"

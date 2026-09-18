@@ -364,7 +364,7 @@ export function AdminPage() {
           <NotificationsPanel token={token} />
         ) : tab === "signalements" ? (
           <SignalementsPanel token={token} />
-        ) : (
+        ) : tab === "journal" ? (
           <JournalPanel
             token={token}
             onOuvrirEpreuve={(id) => {
@@ -372,6 +372,10 @@ export function AdminPage() {
               setTab("epreuves");
             }}
           />
+        ) : (
+          // Onglet « épreuves » : contenu déjà rendu (et conservé monté)
+          // dans la div masquée ci-dessus — rien d'autre à afficher ici.
+          null
         )}
       </div>
     </div>

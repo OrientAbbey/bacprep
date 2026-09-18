@@ -2,7 +2,7 @@
 - épreuves gratuites consultables SANS session, payantes → 401 visiteur ;
 - aucune consultation enregistrée pour un visiteur ;
 - gardes serveur du consentement (notes / conversations IA) ;
-- métrique « utilisateurs » hors comptes admin + table utilisateurs ;
+- métrique « utilisateurs » comptant aussi les admins + table utilisateurs ;
 - bannissement (session tuée, login refusé) / débannissement / suppression ;
 - séparation assets (images) / documents (md) dans le détail admin ;
 - journal d'audit : champs modifiés tracés ;
@@ -98,23 +98,22 @@ def test_activite_enrichie_contexte(admin, epreuve_gratuite):
 
 # ---------- Gouvernance admin ----------
 
-def test_stats_utilisateurs_hors_admins(admin):
-    # Attendu : le total des comptes MOINS ceux dont l'email est dans la
-    # liste blanche admin (la base est partagée entre tests — on ne fige
-    # pas un nombre).
+def test_stats_comptent_les_admins(admin):
+    # La métrique « Utilisateurs » compte TOUS les comptes, administrateurs
+    # compris (revue 2026-09-18, demande admin) — la base étant partagée
+    # entre tests, on vérifie l'inclusion des admins sans figer un nombre.
     from app.core import admin_session
     from app.db import SessionLocal
     from app.db_models import UserORM
 
     with SessionLocal() as db:
+        admins = set(admin_session.allowed_emails(db))
         total = db.query(UserORM).count()
-        hors_admins = sum(
-            1 for (email,) in db.query(UserORM.email).all() if email.lower() not in admin_session.allowed_emails()
-        )
+        nb_admins = sum(1 for (email,) in db.query(UserORM.email).all() if email.lower() in admins)
     stats = admin.get("/api/admin/stats").json()
     assert total >= 1
-    assert stats["utilisateurs"] == hors_admins
-    assert stats["utilisateurs"] <= total
+    assert stats["utilisateurs"] == total
+    assert stats["utilisateurs"] >= nb_admins
 
 
 def test_table_utilisateurs_compteurs(admin, epreuve_gratuite):

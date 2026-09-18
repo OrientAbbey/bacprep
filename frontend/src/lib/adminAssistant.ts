@@ -18,7 +18,6 @@ export interface AdminEpreuveSnapshot {
   evaluation: string;
   matiere: string;
   annee: string;
-  session: string;
   duree: string;
   coefficient: string;
   gratuit: boolean;
@@ -69,7 +68,6 @@ export function buildAdminAskPayload(
       evaluation: form.evaluation,
       matiere: form.matiere,
       annee: form.annee,
-      session: form.session,
       duree: form.duree,
       coefficient: form.coefficient,
       gratuit: form.gratuit,
@@ -103,7 +101,6 @@ export interface ModificationFormulaire {
   evaluation?: string;
   matiere?: string;
   annee?: string;
-  session?: string;
   duree?: string;
   coefficient?: string;
   gratuit?: boolean;

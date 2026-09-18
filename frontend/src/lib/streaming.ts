@@ -130,7 +130,7 @@ export interface AdminConversation {
 /**
  * Charge utile de l'assistant ADMIN : la question de l'admin + un instantané
  * du formulaire d'épreuve en cours (`epreuve`, forme du formulaire
- * d'édition : niveau, classe, evaluation, matiere, annee, session, duree,
+ * d'édition : niveau, classe, evaluation, matiere, annee, duree,
  * coefficient, gratuit, statut, filieres, contenu_markdown,
  * corrige_markdown). Deux voies :
  * - persistée : `epreuve_id` (id de l'épreuve EN SAUVEGARDE) — l'échange est
