@@ -6,6 +6,7 @@ import { EpreuveDetail } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { AssistantLauncherButton } from "../components/AssistantLauncherButton";
 import { AssistantPanel, PasteSignal } from "../components/AssistantPanel";
+import { Chronometre } from "../components/Chronometre";
 import { MarkdownContent } from "../components/MarkdownContent";
 import { NoteEditor } from "../components/NoteEditor";
 import { SelectionBar } from "../components/SelectionBar";
@@ -377,31 +378,39 @@ export function ViewerPage() {
               <Flag size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
           </div>
-          {sujetActifData?.corrige_disponible && (
-            <div role="tablist" aria-label="Contenu de l'épreuve" className="flex shrink-0 rounded-full border border-ink-soft/20 p-1">
-              {([
-                ["sujet", "Sujet", FileText],
-                ["corrige", "Corrigé", ClipboardCheck],
-              ] as [Onglet, string, typeof FileText][]).map(([o, label, Icon]) => (
-                <button
-                  key={o}
-                  role="tab"
-                  id={`tab-${o}`}
-                  aria-selected={onglet === o}
-                  aria-controls="panel-epreuve"
-                  tabIndex={onglet === o ? 0 : -1}
-                  onClick={() => setOnglet(o)}
-                  onKeyDown={(e) => onTabsKeyDown(e, o)}
-                  title={`${label} (raccourci : ${o === "sujet" ? "S" : "C"})`}
-                  className={`flex min-h-[44px] items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
-                    onglet === o ? "bg-ink text-paper" : "text-ink-soft"
-                  }`}
-                >
-                  <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
-                  {label}
-                </button>
-              ))}
+          {/* Chronomètre + onglets sujet/corrigé : le chrono est proposé
+              dès le chargement (activable/désactivable par l'élève), les
+              onglets n'apparaissent que si un corrigé existe. */}
+          {sujetActifData?.corrige_disponible ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <Chronometre dureeEpreuve={epreuve.duree || null} />
+              <div role="tablist" aria-label="Contenu de l'épreuve" className="flex rounded-full border border-ink-soft/20 p-1">
+                {([
+                  ["sujet", "Sujet", FileText],
+                  ["corrige", "Corrigé", ClipboardCheck],
+                ] as [Onglet, string, typeof FileText][]).map(([o, label, Icon]) => (
+                  <button
+                    key={o}
+                    role="tab"
+                    id={`tab-${o}`}
+                    aria-selected={onglet === o}
+                    aria-controls="panel-epreuve"
+                    tabIndex={onglet === o ? 0 : -1}
+                    onClick={() => setOnglet(o)}
+                    onKeyDown={(e) => onTabsKeyDown(e, o)}
+                    title={`${label} (raccourci : ${o === "sujet" ? "S" : "C"})`}
+                    className={`flex min-h-[44px] items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
+                      onglet === o ? "bg-ink text-paper" : "text-ink-soft"
+                    }`}
+                  >
+                    <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
+          ) : (
+            <Chronometre dureeEpreuve={epreuve.duree || null} />
           )}
         </div>
 
