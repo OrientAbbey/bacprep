@@ -162,6 +162,26 @@ def test_epreuve_brouillon_sans_matiere_ni_annee(admin):
     admin.delete(f"/api/admin/epreuves/{eid}")
 
 
+def test_epreuve_creation_sans_pre_remplissage(admin):
+    """Régression 2026-09-18 : sauvegarder un brouillon dont les champs
+    obligatoires sont vides ne doit PAS les pré-remplir à la place (niveau
+    → « SECONDAIRE », classe → « terminale », évaluation → « AUTRE »).
+    Aucune valeur n'est inventée : les champs restent vides tels quels —
+    l'interface bloque l'enregistrement côté formulaire, le serveur
+    conserve fidèlement les valeurs fournies."""
+    r = admin.post(
+        "/api/admin/epreuves",
+        json={"contenu_markdown": "# Sujet", "filieres": []},
+    )
+    assert r.status_code == 200, r.text
+    eid = r.json()["id"]
+    detail = admin.get(f"/api/admin/epreuves/{eid}").json()
+    assert detail["niveau"] == ""
+    assert detail["classe"] == ""
+    assert detail["evaluation"] == ""
+    admin.delete(f"/api/admin/epreuves/{eid}")
+
+
 def test_epreuve_update_annee_vide(admin, epreuve_gratuite):
     """Mettre l'année d'une épreuve à vide ne doit pas planter (clé de
     stockage utilisée : convention '0000')."""

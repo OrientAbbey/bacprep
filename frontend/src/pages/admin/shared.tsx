@@ -161,17 +161,21 @@ export function Field({
   value,
   onChange,
   placeholder,
+  obligatoire,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  /** Champ requis — une étoile accompagne le libellé (blocage à
+   * l'enregistrement par l'appelant). */
+  obligatoire?: boolean;
 }) {
   const id = useId();
   return (
     <div>
       <label htmlFor={id} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
-        {label}
+        {label} {obligatoire && <span className="text-correction">*</span>}
       </label>
       <input
         id={id}
@@ -309,12 +313,15 @@ export function Select({
   onChange,
   options,
   placeholder = "—",
+  obligatoire,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: OptionChoix[];
   placeholder?: string;
+  /** Champ requis — une étoile accompagne le libellé. */
+  obligatoire?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
@@ -387,7 +394,9 @@ export function Select({
 
   return (
     <div ref={rootRef} className="relative">
-      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{label}</label>
+      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
+        {label} {obligatoire && <span className="text-correction">*</span>}
+      </label>
       <button
         ref={triggerRef}
         type="button"
@@ -432,12 +441,15 @@ export function EditableSelect({
   onChange,
   options,
   placeholder,
+  obligatoire,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: OptionChoix[];
   placeholder?: string;
+  /** Champ requis — une étoile accompagne le libellé. */
+  obligatoire?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
@@ -528,7 +540,9 @@ export function EditableSelect({
 
   return (
     <div ref={rootRef} className="relative">
-      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{label}</label>
+      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
+        {label} {obligatoire && <span className="text-correction">*</span>}
+      </label>
       <div className="relative">
         <input
           ref={inputRef}

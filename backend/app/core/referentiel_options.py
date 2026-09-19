@@ -7,12 +7,15 @@ saisie hors liste : matière, série...).
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from ..db_models import ReferentielOptionORM
 from . import referentiel
+
+log = logging.getLogger(__name__)
 
 # Scopes administrés : chacun nomme une liste énumérative du back-office.
 SCOPES = ("niveau", "classe", "evaluation", "matiere", "serie")
@@ -46,8 +49,12 @@ def _seed_entries() -> list[dict]:
 
 def seed_referentiel_options(db: Session) -> int:
     """Insère les options manquantes (idempotent — les options déjà
-    présentes, y compris renommées par l'admin, ne sont pas touchées).
-    Renvoie le nombre total d'options après seed."""
+    présentes, y compris renommées par l'admin, ne sont pas touchées) puis
+    purge les options appartenant à un scope AUJOURD'HUI retiré (ex. le
+    scope « session » supprimé le 2026-09-18 : des valeurs comme
+    « Session normale » auto-ajoutées avant la suppression restaient en
+    base et ressortaient dans les listes back-office). Renvoie le nombre
+    total d'options après seed."""
     for i, entry in enumerate(_seed_entries()):
         existing = (
             db.query(ReferentielOptionORM)
@@ -66,6 +73,11 @@ def seed_referentiel_options(db: Session) -> int:
                     position=i,
                 )
             )
+    purges = db.query(ReferentielOptionORM).filter(ReferentielOptionORM.scope.notin_(SCOPES)).delete(
+        synchronize_session=False
+    )
+    if purges:
+        log.info("Référentiel : %d option(s) de scope(s) retiré(s) purgée(s)", purges)
     db.commit()
     return db.query(ReferentielOptionORM).count()
 

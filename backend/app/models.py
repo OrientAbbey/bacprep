@@ -111,9 +111,13 @@ class EpreuveDetail(EpreuveListItem):
 
 
 class EpreuveIn(BaseModel):
-    niveau: str = "SECONDAIRE"
-    classe: str = "terminale"
-    evaluation: str = "BAC"
+    # Aucune valeur par défaut « inventée » : un brouillon enregistré sans
+    # ses champs obligatoires (niveau, classe, évaluation…) garde des
+    # valeurs VIDES — c'est l'interface qui bloque l'enregistrement tant
+    # qu'elles manquent (revue 2026-09-18).
+    niveau: str = ""
+    classe: str = ""
+    evaluation: str = ""
     matiere: str = Field(default="", max_length=120)
     annee: str = Field(default="", max_length=4, pattern=r"^\d{0,4}$")
     duree: Optional[str] = None

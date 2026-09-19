@@ -243,9 +243,13 @@ def admin_create_epreuve(payload: EpreuveIn, db: Session = Depends(get_db), lock
     les champs plats `contenu_markdown`/`corrige_markdown` quand il est
     fourni, permettant la création directe d'une épreuve multi-sujets."""
     e = EpreuveORM(
-        niveau=referentiel.normalize_niveau(payload.niveau),
-        classe=referentiel.normalize_classe(payload.classe) or "terminale",
-        evaluation=referentiel.normalize_evaluation(payload.evaluation),
+        niveau=referentiel.normalize_niveau(payload.niveau) if (payload.niveau or "").strip() else payload.niveau,
+        classe=referentiel.normalize_classe(payload.classe) or payload.classe,
+        evaluation=(
+            referentiel.normalize_evaluation(payload.evaluation)
+            if (payload.evaluation or "").strip()
+            else payload.evaluation
+        ),
         matiere=payload.matiere.strip(),
         annee=payload.annee.strip(),
         duree=payload.duree,

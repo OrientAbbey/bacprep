@@ -87,8 +87,15 @@ def admin_list_referentiel_options(
     lock=Depends(require_admin),
 ) -> dict:
     """Options regroupées par scope, ordonnées par `position` (puis code),
-    avec le nombre d'épreuves utilisant chaque valeur (`en_usage`)."""
-    rows = db.query(ReferentielOptionORM).order_by(ReferentielOptionORM.position, ReferentielOptionORM.code).all()
+    avec le nombre d'épreuves utilisant chaque valeur (`en_usage`). Les
+    scopes retirés du référentiel (ex. « session ») sont exclus, même si
+    d'anciennes lignes traînent en base (revue 2026-09-18)."""
+    rows = (
+        db.query(ReferentielOptionORM)
+        .filter(ReferentielOptionORM.scope.in_(ref_store.SCOPES))
+        .order_by(ReferentielOptionORM.position, ReferentielOptionORM.code)
+        .all()
+    )
     usage = _usage_counts(db)
     grouped: dict[str, list[dict]] = {scope: [] for scope in ref_store.SCOPES}
     for row in rows:

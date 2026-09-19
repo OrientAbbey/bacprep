@@ -55,6 +55,38 @@ def test_seed_idempotent(client, admin):
         assert len(_options(c, "niveau")) == nb_avant
 
 
+def test_scopes_retires_exclus_puis_purges(client, admin):
+    """D'anciennes lignes de scope(s) aujourd'hui retiré(s) (ex. « session »
+    supprimée le 2026-09-18, qui stockait des valeurs comme « Session
+    normale » auto-ajoutées à l'épreuve) ne doivent plus ressortir dans les
+    listes back-office : la route GET les exclut, et le seed (prochain
+    démarrage) PURGE les lignes résiduelles."""
+    from app.db import SessionLocal
+    from app.db_models import ReferentielOptionORM
+
+    with SessionLocal() as db:
+        db.add(ReferentielOptionORM(scope="session", code="Session normale", position=0))
+        db.add(ReferentielOptionORM(scope="session", code="Session speciale", position=1))
+        db.commit()
+
+    grouped = admin.get("/api/admin/referentiel-options").json()
+    assert "session" not in grouped
+    # Les valeurs retirées n'ont pas migré sous un autre scope.
+    assert _trouve(grouped.get("evaluation", []), "Session normale") is None
+    assert _trouve(grouped.get("evaluation", []), "SESSION NORMALE") is None
+
+    # Nouveau lifespan → seed → purge effective des lignes résiduelles.
+    import app.main as app_main
+    from fastapi.testclient import TestClient
+
+    with TestClient(app_main.app) as c:
+        from app.db import SessionLocal as SL
+
+        with SL() as db:
+            nb = db.query(ReferentielOptionORM).filter(ReferentielOptionORM.scope == "session").count()
+        assert nb == 0
+
+
 # ---------- Protection admin ----------
 
 def test_referentiel_requiert_session_admin(client):

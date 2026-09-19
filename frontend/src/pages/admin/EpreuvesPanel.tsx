@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, Check, Plus, Search, X } from "lucide-react";
+import { Bot, Check, Loader2, Plus, Search, X } from "lucide-react";
 import { api, ApiError, ensureReferentielOption } from "../../api/client";
 import { AdminEpreuveCounts, EpreuveDetail, ReferentielOptions } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -95,6 +95,11 @@ export function EpreuvesPanel({
   const [statutForm, setStatutForm] = useState("brouillon");
   // État du tiroir droit de l'assistant admin.
   const [assistantOuvert, setAssistantOuvert] = useState(false);
+  // Opération longue en cours : désactive les boutons d'action et affiche
+  // un indicateur sur celui concerné — « charge le détail d'une épreuve,
+  // enregistre, publie, dépublie » (les suppressions passent par la modale
+  // de confirmation, qui affiche déjà « En cours… »).
+  const [enCours, setEnCours] = useState<"detail" | "save" | "publish" | "unpublish" | null>(null);
 
 /** Recharge les listes du référentiel — aussi après une sauvegarde (le
  * serveur auto-ajoute matières/séries saisies hors liste). Échec
@@ -162,8 +167,15 @@ export function EpreuvesPanel({
   }, [detailAOpenir]);
 
   /** Charge le détail complet d'une épreuve (métadonnées + contenu chargé
-   * depuis le stockage + fichiers) dans le formulaire d'édition. */
-  async function fetchDetail(id: string) {
+   * depuis le stockage + fichiers) dans le formulaire d'édition. Les
+   * valeurs vides d'un épreuve restent AFFICHÉES vides — aucun champ n'est
+   * pré-rempli à la volée (le serveur normalise au besoin à
+   * l'enregistrement, jamais l'interface : revue 2026-09-18). `silencieux`
+   * désactive l'indicateur de chargement (rappel interne après avoir
+   * enregistré — l'indicateur du bouton couvre déjà cette attente et le
+   * remplacement du formulaire ferait clignoter la page). */
+  async function fetchDetail(id: string, silencieux = false) {
+    if (!silencieux) setEnCours("detail");
     try {
       const detail = await api.get<EpreuveDetail>(
         `/api/admin/epreuves/${id}`,
@@ -171,9 +183,9 @@ export function EpreuvesPanel({
       );
       setForm({
         id: detail.id,
-        niveau: detail.niveau || "SECONDAIRE",
-        classe: detail.classe || "terminale",
-        evaluation: detail.evaluation || "BAC",
+        niveau: detail.niveau,
+        classe: detail.classe,
+        evaluation: detail.evaluation,
         matiere: detail.matiere || "",
         annee: detail.annee || "",
         duree: detail.duree || "",
@@ -202,6 +214,8 @@ export function EpreuvesPanel({
       if (!handle401(err)) {
         showToast("Le détail de l'épreuve n'a pas pu être chargé.", "error");
       }
+    } finally {
+      if (!silencieux) setEnCours(null);
     }
   }
 
@@ -270,8 +284,11 @@ export function EpreuvesPanel({
     // serveur — sans ce refetch, la liste affiche d'anciens ids (la
     // collection n'a pas été recréée mais elle a pu changer) et la
     // suppression d'un document part en 404 (revue 2026-09, F3/F4).
+    // Rechargement SILENCIEUX : l'indicateur d'opération du bouton
+    // (enregistrement/publication) couvre déjà cette attente et le
+    // formulaire ne doit pas clignoter.
     const indexAvant = sujetActif;
-    await fetchDetail(id!);
+    await fetchDetail(id!, true);
     setSujetActif(indexAvant);
     loadAll(token, search, statutFiltre);
     onEpreuvesChange?.();
@@ -279,7 +296,31 @@ export function EpreuvesPanel({
     return cree;
   }
 
+  /** Champs obligatoires du formulaire (libellés en clair pour le message
+   * d'erreur) : niveau, classe, évaluation, matière, année et au moins une
+   * série/filière — le reste (durée, coefficient, gratuit) peut rester
+   * vide. Le serveur accepte une épreuve incomplète en brouillon direct
+   * via l'API, mais l'interface refuse ENREGISTRER tant qu'un champ requis
+   * est vide : aucune valeur n'est pré-remplie à la place (revue
+   * 2026-09-18). */
+  function obligatoiresManquants(): string[] {
+    const manquants: string[] = [];
+    if (!form.niveau.trim()) manquants.push("Niveau");
+    if (!form.classe.trim()) manquants.push("Classe");
+    if (!form.evaluation.trim()) manquants.push("Évaluation");
+    if (!form.matiere.trim()) manquants.push("Matière");
+    if (!form.annee.trim()) manquants.push("Année");
+    if (form.filieres.length === 0) manquants.push("Séries / filières");
+    return manquants;
+  }
+
   async function save() {
+    const manquants = obligatoiresManquants();
+    if (manquants.length > 0) {
+      showToast(`Champs obligatoires manquants : ${manquants.join(", ")}.`, "error");
+      return;
+    }
+    setEnCours("save");
     try {
       const cree = await persister();
       showToast(cree ? "Épreuve créée (brouillon)." : "Épreuve mise à jour.", "success");
@@ -290,6 +331,8 @@ export function EpreuvesPanel({
       if (!handle401(err)) {
         showToast(erreurDetail(err, "Échec de l'enregistrement — vérifie les champs."), "error");
       }
+    } finally {
+      setEnCours(null);
     }
   }
 
@@ -300,6 +343,12 @@ export function EpreuvesPanel({
 
   async function publish() {
     if (!form.id) return;
+    const manquants = obligatoiresManquants();
+    if (manquants.length > 0) {
+      showToast(`Champs obligatoires manquants : ${manquants.join(", ")}.`, "error");
+      return;
+    }
+    setEnCours("publish");
     try {
       // La publication vérifie côté serveur un sujet ET des séries
       // PERSISTÉS en base : on enregistre donc d'abord le formulaire en
@@ -317,11 +366,14 @@ export function EpreuvesPanel({
       if (!handle401(err)) {
         showToast(erreurDetail(err, "Publication refusée — un sujet et au moins une série sont requis."), "error");
       }
+    } finally {
+      setEnCours(null);
     }
   }
 
   async function unpublish() {
     if (!form.id) return;
+    setEnCours("unpublish");
     try {
       await api.post(`/api/admin/epreuves/${form.id}/unpublish`, undefined, authHeaders(token));
       setStatutForm("a_reviser");
@@ -332,6 +384,8 @@ export function EpreuvesPanel({
       if (!handle401(err)) {
         showToast("La dépublication a échoué — réessaie.", "error");
       }
+    } finally {
+      setEnCours(null);
     }
   }
 
@@ -631,7 +685,8 @@ export function EpreuvesPanel({
         <div className="space-y-2">
           <button
             onClick={() => { setForm(EMPTY_FORM); setStatutForm("brouillon"); }}
-            className="min-h-[44px] w-full rounded-full border border-ink-soft/25 text-sm"
+            disabled={enCours !== null}
+            className="min-h-[44px] w-full rounded-full border border-ink-soft/25 text-sm disabled:opacity-60"
           >
             + Nouvelle épreuve
           </button>
@@ -706,8 +761,9 @@ export function EpreuvesPanel({
                 <button
                   key={e.id}
                   onClick={() => fetchDetail(e.id)}
+                  disabled={enCours !== null}
                   aria-current={selected}
-                  className={`block w-full rounded-lg border p-3 text-left text-sm transition-colors ${
+                  className={`block w-full rounded-lg border p-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
                     selected
                       ? "border-highlight bg-highlight-soft"
                       : "border-ink-soft/15 bg-paper-raised hover:border-highlight/50 hover:bg-highlight-soft/40"
@@ -731,63 +787,78 @@ export function EpreuvesPanel({
           )}
         </div>
 
-        <form
-          onSubmit={onEditFormSubmit}
-          className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-5"
-        >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <EditableSelect
-              label="Niveau"
-              value={form.niveau}
-              onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
-              options={scopeOptions("niveau")}
-              placeholder="ex. Secondaire"
-            />
-            <EditableSelect
-              label="Classe"
-              value={form.classe}
-              onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
-              options={scopeOptions("classe")}
-              placeholder="ex. Terminale"
-            />
-            <EditableSelect
-              label="Évaluation"
-              value={form.evaluation}
-              onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
-              options={scopeOptions("evaluation")}
-              placeholder="ex. Baccalauréat"
-            />
-            <EditableSelect
-              label="Année"
-              value={form.annee}
-              onChange={(v) => setForm((f) => ({ ...f, annee: v }))}
-              placeholder="ex. 2024"
-              options={anneesProposees().map((a) => ({ value: a, label: a }))}
-            />
-            {/* Matière : saisie libre (champ + liste de suggestions),
-                valeurs déjà connues du référentiel proposées — toute
-                valeur hors liste est mémorisée par le serveur à
-                l'enregistrement. */}
-            <EditableSelect
-              label="Matière"
-              value={form.matiere}
-              onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
-              placeholder="ex. Mathématiques"
-              options={(referentiel?.matiere ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
-            />
-            <Field
-              label="Durée"
-              value={form.duree}
-              onChange={(v) => setForm((f) => ({ ...f, duree: v }))}
-              placeholder="ex. 4h"
-            />
-            <Field
-              label="Coefficient"
-              value={form.coefficient}
-              onChange={(v) => setForm((f) => ({ ...f, coefficient: v }))}
-              placeholder="ex. 5"
-            />
+        {enCours === "detail" ? (
+          <div
+            role="status"
+            aria-label="Chargement de l'épreuve en cours d'édition"
+            className="flex min-h-[280px] items-center justify-center gap-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-5 text-sm text-ink-soft"
+          >
+            <Loader2 size={16} strokeWidth={1.75} className="animate-spin" aria-hidden="true" />
+            Chargement de l'épreuve…
           </div>
+        ) : (
+          <form
+            onSubmit={onEditFormSubmit}
+            className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-5"
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <EditableSelect
+                label="Niveau"
+                obligatoire
+                value={form.niveau}
+                onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
+                options={scopeOptions("niveau")}
+                placeholder="ex. Secondaire"
+              />
+              <EditableSelect
+                label="Classe"
+                obligatoire
+                value={form.classe}
+                onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
+                options={scopeOptions("classe")}
+                placeholder="ex. Terminale"
+              />
+              <EditableSelect
+                label="Évaluation"
+                obligatoire
+                value={form.evaluation}
+                onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
+                options={scopeOptions("evaluation")}
+                placeholder="ex. Baccalauréat"
+              />
+              <EditableSelect
+                label="Année"
+                obligatoire
+                value={form.annee}
+                onChange={(v) => setForm((f) => ({ ...f, annee: v }))}
+                placeholder="ex. 2024"
+                options={anneesProposees().map((a) => ({ value: a, label: a }))}
+              />
+              {/* Matière : saisie libre (champ + liste de suggestions),
+                  valeurs déjà connues du référentiel proposées — toute
+                  valeur hors liste est mémorisée par le serveur à
+                  l'enregistrement. */}
+              <EditableSelect
+                label="Matière"
+                obligatoire
+                value={form.matiere}
+                onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
+                placeholder="ex. Mathématiques"
+                options={(referentiel?.matiere ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
+              />
+              <Field
+                label="Durée"
+                value={form.duree}
+                onChange={(v) => setForm((f) => ({ ...f, duree: v }))}
+                placeholder="ex. 4h"
+              />
+              <Field
+                label="Coefficient"
+                value={form.coefficient}
+                onChange={(v) => setForm((f) => ({ ...f, coefficient: v }))}
+                placeholder="ex. 5"
+              />
+            </div>
 
           {/* Séries : sélection multiple par puces (une épreuve peut couvrir
               PLUSIEURS séries) + champ libre pour une série hors référentiel.
@@ -795,7 +866,9 @@ export function EpreuvesPanel({
               Paramètres), et toute nouvelle série saisie y est mémorisée
               (best-effort). */}
           <div>
-            <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">Séries / filières</p>
+            <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">
+              Séries / filières <span className="text-correction">*</span>
+            </p>
             <div className="flex flex-wrap gap-1.5">
               {scopeOptions("serie").map(({ value: s, label }) => {
                 const active = form.filieres.includes(s);
@@ -972,36 +1045,53 @@ export function EpreuvesPanel({
           </div>
 
           <div className="flex flex-wrap gap-2 border-t border-ink-soft/10 pt-4">
-            <button type="submit" className="min-h-[44px] rounded-full bg-ink px-5 text-sm text-paper">
-              Enregistrer
+            <button
+              type="submit"
+              disabled={enCours !== null}
+              className="min-h-[44px] rounded-full bg-ink px-5 text-sm text-paper disabled:opacity-60"
+            >
+              {enCours === "save" && (
+                <Loader2 size={14} strokeWidth={2} className="mr-2 inline animate-spin" aria-hidden="true" />
+              )}
+              {enCours === "save" ? "Enregistrement…" : "Enregistrer"}
             </button>
             {form.id && (
               <>
                 <button
                   type="button"
                   onClick={publish}
-                  className="min-h-[44px] rounded-full bg-valide px-5 text-sm text-paper"
+                  disabled={enCours !== null}
+                  className="min-h-[44px] rounded-full bg-valide px-5 text-sm text-paper disabled:opacity-60"
                 >
-                  Publier
+                  {enCours === "publish" && (
+                    <Loader2 size={14} strokeWidth={2} className="mr-2 inline animate-spin" aria-hidden="true" />
+                  )}
+                  {enCours === "publish" ? "Publication…" : "Publier"}
                 </button>
                 <button
                   type="button"
                   onClick={unpublish}
-                  className="min-h-[44px] rounded-full border border-ink-soft/25 px-5 text-sm"
+                  disabled={enCours !== null}
+                  className="min-h-[44px] rounded-full border border-ink-soft/25 px-5 text-sm disabled:opacity-60"
                 >
-                  Dépublier
+                  {enCours === "unpublish" && (
+                    <Loader2 size={14} strokeWidth={2} className="mr-2 inline animate-spin" aria-hidden="true" />
+                  )}
+                  {enCours === "unpublish" ? "Dépublication…" : "Dépublier"}
                 </button>
                 <button
                   type="button"
                   onClick={() => remove(form.id!)}
-                  className="min-h-[44px] rounded-full border border-correction/40 px-5 text-sm text-correction"
+                  disabled={enCours !== null}
+                  className="min-h-[44px] rounded-full border border-correction/40 px-5 text-sm text-correction disabled:opacity-60"
                 >
                   Supprimer
                 </button>
               </>
             )}
           </div>
-        </form>
+          </form>
+        )}
       </div>
 
       {/* Bouton flottant de l'assistant admin : fixé en bas à droite, il
