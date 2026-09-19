@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extraireBaliseImage, idDatalistAssaini, remplacerLargeur } from "./shared";
+import { extraireBaliseImage, remplacerLargeur } from "./shared";
 
 describe("extraireBaliseImage (matching sans jeton)", () => {
   const urlAsset = "/api/files/img-abc123?token=signe-a-l-affichage";
@@ -26,18 +26,6 @@ describe("extraireBaliseImage (matching sans jeton)", () => {
   it("ne matche pas une autre image", () => {
     const md = "![figure](/api/files/autre-img#w=200)";
     expect(extraireBaliseImage(md, urlAsset).presente).toBe(false);
-  });
-});
-
-describe("idDatalistAssaini (liaison list ↔ datalist fiable)", () => {
-  it("assainit l'id de useId de React 19 (type «R0»)", () => {
-    expect(idDatalistAssaini("«r0»")).toBe("suggest-r0");
-    expect(idDatalistAssaini(":r5:")).toBe("suggest-r5");
-  });
-
-  it("laisse un id déjà sûr intact (préfixe conservé)", () => {
-    expect(idDatalistAssaini("vite-1")).toBe("suggest-vite-1");
-    expect(idDatalistAssaini("champ-matiere")).toBe("suggest-champ-matiere");
   });
 });
 

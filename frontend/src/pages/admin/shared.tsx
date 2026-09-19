@@ -1,8 +1,9 @@
-import { useId, useRef } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, FileUp, Plus, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatBytes } from "../../lib/format";
+import { foldText } from "../../lib/text";
 import { formatRelativeTime } from "../../lib/time";
 
 /** Échappe un texte pour l'insérer dans une regex (caractères spéciaux). */
@@ -95,10 +96,13 @@ export interface DocumentFile {
   uploaded_at?: string | null;
 }
 
+/** Formulaire d'épreuve à VIDE : la création ne préremplit AUCUN champ
+ * (revue 2026-09-18) — les libellés « ex. … » accompagnent l'admin, le
+ * serveur normalise au besoin à l'enregistrement. */
 export const EMPTY_FORM: EpreuveForm = {
-  niveau: "SECONDAIRE",
-  classe: "terminale",
-  evaluation: "BAC",
+  niveau: "",
+  classe: "",
+  evaluation: "",
   matiere: "",
   annee: "",
   duree: "",
@@ -157,14 +161,11 @@ export function Field({
   value,
   onChange,
   placeholder,
-  list,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  /** id d'une `<datalist>` de suggestions (champ libre enrichi). */
-  list?: string;
 }) {
   const id = useId();
   return (
@@ -177,7 +178,6 @@ export function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        list={list}
         className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
       />
     </div>
@@ -225,64 +225,207 @@ export function FormatAttendu() {
   );
 }
 
+/** Élément d'une liste déroulante du back-office (code stocké + libellé
+ * affiché). */
+export interface OptionChoix {
+  value: string;
+  label: string;
+}
+
+/** Ferme le panneau quand un clic survient hors de `rootRef` — l'écouteur
+ * document n'est posé QUE tant que le panneau est ouvert (aucune routine
+ * dormante au niveau global, même convention que le Combobox du catalogue). */
+function useClickOutside(
+  rootRef: React.RefObject<HTMLDivElement | null>,
+  onOutside: () => void,
+  active: boolean
+) {
+  useEffect(() => {
+    if (!active) return;
+    function onClick(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        onOutside();
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [rootRef, onOutside, active]);
+}
+
+/** Panneau de liste COMMUN aux deux déclencheurs du back-office (`Select`
+ * non modifiable et `EditableSelect` modifiable) : même design que le
+ * Combobox du catalogue — option surlignée au survol/navigation, option
+ * courante en gras, Échap pour fermer. Les valeurs d'une liste restent
+ * ISOLÉES dans ce panneau : plus de `<datalist>` native dont les
+ * suggestions se mélangeaient entre champs, ni de chevron système qui se
+ * superposait au chevron dessiné (double chevron dès le survol — revue
+ * 2026-09-18). */
+function ListeOptions({
+  value,
+  options,
+  highlighted,
+  onHighlight,
+  onSelect,
+}: {
+  value: string;
+  options: OptionChoix[];
+  highlighted: number;
+  onHighlight: (i: number) => void;
+  onSelect: (v: string) => void;
+}) {
+  if (options.length === 0) {
+    return <p className="px-3 py-3 text-sm text-slate">Aucun résultat</p>;
+  }
+  return (
+    <ul role="listbox" className="max-h-64 overflow-y-auto py-1">
+      {options.map((o, i) => (
+        <li key={o.value}>
+          <button
+            id={`option-liste-${i}`}
+            data-option={i}
+            type="button"
+            role="option"
+            aria-selected={value === o.value}
+            onMouseEnter={() => onHighlight(i)}
+            onClick={() => onSelect(o.value)}
+            className={`min-h-[44px] w-full px-3 py-2 text-left text-sm ${
+              highlighted === i ? "bg-highlight-soft" : ""
+            } ${value === o.value ? "font-medium text-ink" : "text-ink-soft"}`}
+          >
+            {o.label}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Liste déroulante NON modifiable du back-office : remplacer une valeur
+ * connue par une autre. Entièrement customisée (bouton + panneau, comme le
+ * Combobox du catalogue) : un SEUL chevron dessiné, aucune flèche système. */
 export function Select({
   label,
   value,
   onChange,
   options,
+  placeholder = "—",
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: OptionChoix[];
+  placeholder?: string;
 }) {
-  const id = useId();
+  const [open, setOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selected = options.find((o) => o.value === value);
+
+  useClickOutside(rootRef, () => setOpen(false), open);
+
+  // À l'ouverture, surligne la valeur courante (sinon la première option).
+  useEffect(() => {
+    if (!open) return;
+    const i = options.findIndex((o) => o.value === value);
+    setHighlighted(i >= 0 ? i : 0);
+  }, [open, options, value]);
+
+  // Garde l'option surlignée visible pendant la navigation au clavier.
+  useEffect(() => {
+    if (!open) return;
+    rootRef.current?.querySelector<HTMLElement>(`[data-option="${highlighted}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [highlighted, open]);
+
+  function choisir(v: string) {
+    onChange(v);
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
+
+  function onTriggerKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setOpen(true);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  function onPanelKeyDown(e: React.KeyboardEvent) {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlighted((i) => Math.min(i + 1, options.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlighted((i) => Math.max(i - 1, 0));
+        break;
+      case "Home":
+        e.preventDefault();
+        setHighlighted(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setHighlighted(options.length - 1);
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (options[highlighted]) choisir(options[highlighted].value);
+        break;
+      case "Escape":
+        e.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+        break;
+      case "Tab":
+        setOpen(false);
+        break;
+    }
+  }
+
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
-        {label}
-      </label>
-      {/* Chevron dessiné (le natif est masqué par la classe `select-custom`,
-          préfixes -webkit/-moz compris — sans double chevron, revue
-          2026-09-18) : toujours visible, même sans interaction, pour
-          signaler la liste déroulante. */}
-      <div className="relative">
-        <select
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="min-h-[44px] w-full select-custom rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-9 text-sm"
+    <div ref={rootRef} className="relative">
+      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{label}</label>
+      <button
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={onTriggerKeyDown}
+        className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 py-2 text-left text-sm text-ink transition-colors hover:border-highlight/50"
+      >
+        <span className="truncate">{selected ? selected.label : placeholder}</span>
+        <ChevronDown size={16} strokeWidth={1.75} className="shrink-0 text-ink-soft" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="absolute z-20 mt-1 w-full min-w-[220px] rounded-[2px] border border-ink-soft/20 bg-paper-raised shadow-lg"
+          aria-activedescendant={`option-liste-${highlighted}`}
+          onKeyDown={onPanelKeyDown}
         >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          size={14}
-          strokeWidth={1.75}
-          aria-hidden="true"
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-soft"
-        />
-      </div>
+          <ListeOptions
+            value={value}
+            options={options}
+            highlighted={highlighted}
+            onHighlight={setHighlighted}
+            onSelect={choisir}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-/** Liste déroulante MODIFIABLE : un champ de saisie libre enrichi d'une
- * `<datalist>` de suggestions (niveau, classe, évaluation, matière).
- * L'admin peut choisir une valeur connue OU taper la sienne — le serveur
- * normalise au besoin (niveau/classe/évaluation passent par le référentiel
- * à l'enregistrement) et mémorise les valeurs hors liste. */
-/** Assainit l'id produit par `useId` (React 19 → caractères hors
- * [a-zA-Z0-9_-], type «R0») pour que l'association `list` ↔ <datalist>
- * fonctionne sur toutes les WebViews (les suggestions ne disparaissaient
- * plus sur certaines) — revue 2026-09-18. */
-export function idDatalistAssaini(rawId: string): string {
-  return `suggest-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-}
-
+/** Liste déroulante MODIFIABLE du back-office : saisie libre enrichie d'une
+ * liste de suggestions (niveau, classe, évaluation, année, matière, type de
+ * notification). Choisir une suggestion la valide telle quelle ; taper
+ * n'importe quoi reste possible (le serveur normalise au besoin et mémorise
+ * les valeurs hors liste). Même apparence que `Select`, même chevron unique. */
 export function EditableSelect({
   label,
   value,
@@ -293,46 +436,145 @@ export function EditableSelect({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: OptionChoix[];
   placeholder?: string;
 }) {
-  const id = useId();
-  const listId = idDatalistAssaini(id);
+  const [open, setOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   // Affiche le libellé lisible quand la valeur courante est un code connu
   // (ex. "terminale" → "Terminale") ; sinon la saisie libre brute.
   const affiche = options.find((o) => o.value === value)?.label ?? value;
+
+  useClickOutside(rootRef, () => setOpen(false), open);
+
+  // Suggestions filtrées par la saisie courante (insensible casse/accents) —
+  // la saisie reste libre, le filtre ne fait que resserrer la cible.
+  const suggestions = useMemo(() => {
+    if (!affiche.trim()) return options;
+    const q = foldText(affiche);
+    return options.filter((o) => foldText(o.label).includes(q) || foldText(o.value).includes(q));
+  }, [options, affiche]);
+
+  useEffect(() => {
+    if (!open) return;
+    const i = suggestions.findIndex((o) => o.value === value);
+    setHighlighted(i >= 0 ? i : 0);
+    // Focus différé : la frappe immédiate filtre la liste sans clic en plus.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [open, suggestions, value]);
+
+  useEffect(() => {
+    if (!open) return;
+    rootRef.current?.querySelector<HTMLElement>(`[data-option="${highlighted}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [highlighted, open]);
+
+  function choisir(v: string) {
+    onChange(v);
+    setOpen(false);
+    inputRef.current?.focus();
+  }
+
+  function onInputKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setOpen(true);
+    } else if (e.key === "Enter") {
+      // Listes ouverte : Entrée valide la suggestion surlignée ; fermée :
+      // Entrée soumet le formulaire (comportement natif conservé).
+      if (open && suggestions.length > 0) {
+        e.preventDefault();
+        choisir(suggestions[highlighted]?.value ?? affiche);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  function onPanelKeyDown(e: React.KeyboardEvent) {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlighted((i) => Math.min(i + 1, suggestions.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlighted((i) => Math.max(i - 1, 0));
+        break;
+      case "Home":
+        e.preventDefault();
+        setHighlighted(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setHighlighted(suggestions.length - 1);
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (suggestions[highlighted]) choisir(suggestions[highlighted].value);
+        break;
+      case "Escape":
+        e.preventDefault();
+        setOpen(false);
+        inputRef.current?.focus();
+        break;
+      case "Tab":
+        setOpen(false);
+        break;
+    }
+  }
+
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
-        {label}
-      </label>
-      {/* Chevron dessiné : une `<datalist>` n'affiche aucun trait natif dans
-          la plupart des navigateurs — le chevron signale la liste de
-          suggestions tout en laissant la saisie libre intacte. */}
+    <div ref={rootRef} className="relative">
+      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{label}</label>
       <div className="relative">
         <input
-          id={id}
+          ref={inputRef}
           value={affiche}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onInputKeyDown}
           placeholder={placeholder}
           role="combobox"
-          aria-expanded={false}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-autocomplete="list"
           aria-label={label}
-          list={listId}
-          className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-9 text-sm"
+          className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-10 text-sm text-ink transition-colors hover:border-highlight/50 focus:border-highlight/60 focus:outline-none"
         />
-        <ChevronDown
-          size={14}
-          strokeWidth={1.75}
+        {/* Chevron dessiné UNIQUE : la gestion est 100 % customisée — aucune
+            flèche système ne peut se superposer (celle du `<input list>`
+            apparaissait DÈS LE SURVOL, doublon systématique — revue
+            2026-09-18). `onMouseDown` prévient la bascule focus→blur qui
+            refermerait puis rouvrirait le panneau. */}
+        <button
+          type="button"
+          tabIndex={-1}
           aria-hidden="true"
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-soft"
-        />
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((v) => !v)}
+          className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-r-[2px] text-ink-soft transition-colors hover:text-ink"
+        >
+          <ChevronDown size={16} strokeWidth={1.75} className="pointer-events-none" />
+        </button>
       </div>
-      <datalist id={listId}>
-        {options.map((o) => (
-          <option key={o.value} value={o.label} />
-        ))}
-      </datalist>
+      {open && (
+        <div
+          className="absolute z-20 mt-1 w-full min-w-[220px] rounded-[2px] border border-ink-soft/20 bg-paper-raised shadow-lg"
+          aria-activedescendant={`option-liste-${highlighted}`}
+          onKeyDown={onPanelKeyDown}
+        >
+          <ListeOptions
+            value={value}
+            options={suggestions}
+            highlighted={highlighted}
+            onHighlight={setHighlighted}
+            onSelect={choisir}
+          />
+        </div>
+      )}
     </div>
   );
 }

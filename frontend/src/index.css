@@ -141,23 +141,6 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* Liste déroulante native « customisée » (voir Select dans
-   pages/admin/shared.tsx) : retire la flèche NATIVE du <select> pour
-   n'afficher QUE le chevron dessiné. Les préfixes -webkit/-moz sont
-   écrits EN PLUS de `appearance` : certains moteurs (anciennes WebView
-   Android de Capacitor, Safari < 15.4) ignorent la forme non-préfixée
-   et laissaient la flèche native apparaître À CÔTÉ du chevron
-   personnalisé — chevron en double (revue 2026-09-18). `-moz-appearance`
-   n'empêche pas l'ouverture de la liste nativement dans Firefox. */
-.select-custom {
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-}
-.select-custom::-ms-expand {
-  display: none;
-}
-
 
 @font-face {
   font-family: "Source Serif 4";

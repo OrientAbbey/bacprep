@@ -14,22 +14,43 @@ const MAX_BADGE = 9;
  * relative, lien éventuel vers l'épreuve publiée), avec « Tout marquer
  * comme lu ». Rendu uniquement pour l'utilisateur connecté (les routes
  * /api/notifications exigent une session). */
+
+/** Charge les notifications et met à jour le badge (nombre de non lues). */
+function loadNotifications(setData: (d: NotificationsEleve | null) => void) {
+  api
+    .get<NotificationsEleve>("/api/notifications")
+    .then(setData)
+    .catch(() => undefined);
+}
+
 export function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<NotificationsEleve | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  function load() {
-    api
-      .get<NotificationsEleve>("/api/notifications")
-      .then(setData)
-      .catch(() => undefined);
-  }
-
-  // Charge à l'ouverture (badge frais avant affichage du panneau).
+  // Charge AU MONTAGE : le badge « non lues » doit apparaître dès le
+  // chargement de la page, sans attendre un clic sur la cloche (le badge
+  // restait invisible — onglet notifications « vide » au premier rendu,
+  // revue 2026-09-18).
   useEffect(() => {
-    if (open) load();
+    loadNotifications(setData);
+  }, []);
+
+  // Charge aussi à l'ouverture (l'utilisateur voit sur-le-champ les
+  // notifications actives, sans attendre de bouton).
+  useEffect(() => {
+    if (open) loadNotifications(setData);
   }, [open]);
+
+  // Rafraîchit le badge à chaque retour sur l'onglet (une épreuve publiée
+  // entre-temps met à jour le compteur sans interaction).
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") loadNotifications(setData);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   // Clique à l'extérieur ou Échap → referme le panneau.
   useEffect(() => {
@@ -51,7 +72,7 @@ export function NotificationsBell() {
   async function toutMarquerLu() {
     try {
       await api.post("/api/notifications/lues");
-      load();
+      loadNotifications(setData);
     } catch {
       // Silencieux : l'utilisateur reverra le badge au prochain chargement.
     }

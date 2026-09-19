@@ -741,18 +741,21 @@ export function EpreuvesPanel({
               value={form.niveau}
               onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
               options={scopeOptions("niveau")}
+              placeholder="ex. Secondaire"
             />
             <EditableSelect
               label="Classe"
               value={form.classe}
               onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
               options={scopeOptions("classe")}
+              placeholder="ex. Terminale"
             />
             <EditableSelect
               label="Évaluation"
               value={form.evaluation}
               onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
               options={scopeOptions("evaluation")}
+              placeholder="ex. Baccalauréat"
             />
             <EditableSelect
               label="Année"
@@ -761,9 +764,10 @@ export function EpreuvesPanel({
               placeholder="ex. 2024"
               options={anneesProposees().map((a) => ({ value: a, label: a }))}
             />
-            {/* Matière : saisie libre (champ + datalist), valeurs déjà
-                connues du référentiel proposées — toute valeur hors liste
-                est mémorisée par le serveur à l'enregistrement. */}
+            {/* Matière : saisie libre (champ + liste de suggestions),
+                valeurs déjà connues du référentiel proposées — toute
+                valeur hors liste est mémorisée par le serveur à
+                l'enregistrement. */}
             <EditableSelect
               label="Matière"
               value={form.matiere}
