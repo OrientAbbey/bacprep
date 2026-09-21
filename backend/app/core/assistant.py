@@ -311,25 +311,40 @@ _PROVIDERS = {
 async def _call_provider(nom: str, message, key_env: str) -> Optional[str]:
     """Appel non-streaming générique : essaie chaque modèle du fournisseur
     dans l'ordre (fallback) et rend la main (None) pour laisser l'appelant
-    basculer de fournisseur."""
+    basculer de fournisseur.
+
+    Quota (429) : la limite de débit est GLOBALE au fournisseur (l'API
+    gratuite), pas au modèle — sans pause, la liste des modèles serait
+    brûlée en vain dès le premier 429 transitoire. On ne retente donc
+    QU'UNE fois (sur le même modèle, après 2 s) avant d'avancer (plafond :
+    au plus +2 s par fournisseur)."""
     spec = _PROVIDERS[nom]
     api_key = os.getenv(key_env)
     if not api_key:
+        log.info("%s : pas de clé %s configurée — fournisseur ignoré", nom, key_env)
         return None
     client = _get_http_client()
+    quota_retente = False
     for model in _provider_models(spec["env"], spec["default"]):
-        try:
-            resp = await client.post(
-                spec["url"](model, False),
-                headers=spec["headers"](api_key),
-                json=spec["body"](model, message, False),
-            )
-            resp.raise_for_status()
-            return spec["extract"](resp.json())
-        except httpx.HTTPStatusError as exc:
-            log.warning("%s %s a échoué (%s) : %s", nom, model, exc.response.status_code, exc.response.text)
-        except Exception as exc:
-            log.warning("%s %s a échoué (exception): %s", nom, model, exc)
+        for _tentative in range(2):
+            try:
+                resp = await client.post(
+                    spec["url"](model, False),
+                    headers=spec["headers"](api_key),
+                    json=spec["body"](model, message, False),
+                )
+                resp.raise_for_status()
+                return spec["extract"](resp.json())
+            except httpx.HTTPStatusError as exc:
+                log.warning("%s %s a échoué (%s) : %s", nom, model, exc.response.status_code, exc.response.text)
+                if exc.response.status_code == 429 and not quota_retente:
+                    quota_retente = True
+                    await asyncio.sleep(2.0)
+                    continue  # nouvelle tentative sur le MÊME modèle (quota global)
+                break  # échec définitif : essayer le modèle suivant
+            except Exception as exc:
+                log.warning("%s %s a échoué (exception): %s", nom, model, exc)
+                break  # exception avant toute réponse : essayer le modèle suivant
     return None
 
 
@@ -337,49 +352,60 @@ async def _stream_provider(nom: str, message, key_env: str) -> AsyncIterator[str
     """Variante streaming générique (SSE `data: ...`). Essaie chaque modèle
     dans l'ordre tant qu'aucun fragment n'a été cédé ; si l'échec survient
     APRÈS des fragments, la réponse reste partielle (compromis assumé — on
-    ne peut plus revenir en arrière sur ce qui a déjà été affiché)."""
+    ne peut plus revenir en arrière sur ce qui a déjà été affiché).
+
+    Quota (429) : même logique que `_call_provider` — une seule nouvelle
+    tentative sur le MÊME modèle après 2 s, car la limite de débit est
+    globale au fournisseur, pas au modèle."""
     spec = _PROVIDERS[nom]
     api_key = os.getenv(key_env)
     if not api_key:
+        log.info("%s : pas de clé %s configurée — fournisseur ignoré", nom, key_env)
         return
     client = _get_http_client()
+    quota_retente = False
     for model in _provider_models(spec["env"], spec["default"]):
         if not _model_supports_streaming(model):
             continue
-        produced = False
-        try:
-            async with client.stream(
-                "POST",
-                spec["url"](model, True),
-                headers=spec["headers"](api_key),
-                json=spec["body"](model, message, True),
-            ) as resp:
-                if resp.status_code >= 400:
-                    body = await resp.aread()
-                    log.warning(
-                        "%s %s (streaming) a échoué (%s) : %s",
-                        nom, model, resp.status_code, body.decode(errors="replace"),
-                    )
-                    continue
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    raw = line[len("data:"):].strip()
-                    if not raw or raw == "[DONE]":
-                        continue
-                    try:
-                        text = spec["stream_extract"](json.loads(raw))
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
-                    if text:
-                        produced = True
-                        yield text
-                return  # modèle consommé jusqu'au bout : pas de repli nécessaire
-        except Exception as exc:
-            log.warning("%s %s (streaming) a échoué (exception): %s", nom, model, exc)
-            if produced:
-                return  # réponse partielle déjà cédée : ne pas repartir sur un autre modèle
-            continue  # rien cédé avant l'échec : essayer le modèle suivant
+        for _tentative in range(2):
+            produced = False
+            try:
+                async with client.stream(
+                    "POST",
+                    spec["url"](model, True),
+                    headers=spec["headers"](api_key),
+                    json=spec["body"](model, message, True),
+                ) as resp:
+                    if resp.status_code >= 400:
+                        body = await resp.aread()
+                        log.warning(
+                            "%s %s (streaming) a échoué (%s) : %s",
+                            nom, model, resp.status_code, body.decode(errors="replace"),
+                        )
+                        if resp.status_code == 429 and not quota_retente:
+                            quota_retente = True
+                            await asyncio.sleep(2.0)
+                            continue  # nouvelle tentative sur le MÊME modèle (quota global)
+                        break  # échec définitif : essayer le modèle suivant
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        raw = line[len("data:"):].strip()
+                        if not raw or raw == "[DONE]":
+                            continue
+                        try:
+                            text = spec["stream_extract"](json.loads(raw))
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+                        if text:
+                            produced = True
+                            yield text
+                    return  # modèle consommé jusqu'au bout : pas de repli nécessaire
+            except Exception as exc:
+                log.warning("%s %s (streaming) a échoué (exception): %s", nom, model, exc)
+                if produced:
+                    return  # réponse partielle déjà cédée : ne pas repartir sur un autre modèle
+                break  # rien cédé avant l'échec : essayer le modèle suivant
 
 
 async def _call_gemini(prompt: str, image_paths: list[Path]) -> Optional[str]:
@@ -426,16 +452,29 @@ async def _stream_groq(prompt: str, nb_images_ignorees: int) -> AsyncIterator[st
         yield chunk
 
 
-def _demo_fallback(epreuve_meta: dict, question: str, image_paths: list[Path]) -> str:
+def _demo_fallback(epreuve_meta: dict, question: str, image_paths: list[Path], cle_ia: bool) -> str:
     """Réponse simulée renvoyée quand Gemini et Groq sont tous deux
-    indisponibles (aucune clé configurée, ou échec des deux)."""
+    indisponibles. `cle_ia=False` : aucune clé n'est configurée (message
+    formaté en conséquence) ; avec une clé, les fournisseurs ont échoué —
+    en général un quota 429 des API gratuites, message sans accusation
+    trompeuse."""
     note_image = f" (dont {len(image_paths)} image(s) jointe(s))" if image_paths else ""
+    if not cle_ia:
+        cause = (
+            "aucune clé `GEMINI_API_KEY` ou `GROQ_API_KEY` n'est configurée. "
+            "Configure une vraie clé API dans le fichier `.env` du backend "
+            "pour obtenir une réponse générée."
+        )
+    else:
+        cause = (
+            "Gemini et Groq sont temporairement indisponibles — probablement "
+            "la limite d'utilisation de l'API gratuite (quota 429). Réessaie "
+            "dans quelques minutes, ou passe à un plan payant."
+        )
     return (
-        "**[Mode démonstration]** — aucune clé `GEMINI_API_KEY` ou `GROQ_API_KEY` valide "
-        "n'est configurée, ou les deux fournisseurs ont échoué.\n\n"
+        "**[Mode démonstration]** — " + cause + "\n\n"
         f"Voici une réponse simulée à ta question *« {question} »*{note_image} à propos de "
-        f"**{epreuve_meta.get('matiere', 'cette épreuve')}**. Configure une vraie clé API dans "
-        "le fichier `.env` du backend pour obtenir une réponse générée."
+        f"**{epreuve_meta.get('matiere', 'cette épreuve')}**."
     )
 
 
@@ -450,6 +489,7 @@ async def ask_assistant(
     paywall sur les images référencées par le contexte."""
     prompt = _build_prompt(epreuve_meta, contexte, question, historique)
     image_paths = await _extract_local_image_paths_async(contexte, user_id)
+    cle_ia = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY"))
     try:
         async with _get_semaphore():
             reponse = await _call_gemini(prompt, image_paths)
@@ -460,7 +500,7 @@ async def ask_assistant(
                 return reponse
 
         log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles)")
-        return _demo_fallback(epreuve_meta, question, image_paths)
+        return _demo_fallback(epreuve_meta, question, image_paths, cle_ia)
     finally:
         _cleanup_image_paths(image_paths)
 
@@ -484,6 +524,7 @@ async def ask_assistant_stream(
     paywall sur les images référencées par le contexte."""
     prompt = _build_prompt(epreuve_meta, contexte, question, historique)
     image_paths = await _extract_local_image_paths_async(contexte, user_id)
+    cle_ia = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY"))
     try:
         async with _get_semaphore():
             got_any = False
@@ -500,6 +541,6 @@ async def ask_assistant_stream(
                 return
 
         log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles, streaming)")
-        yield _demo_fallback(epreuve_meta, question, image_paths)
+        yield _demo_fallback(epreuve_meta, question, image_paths, cle_ia)
     finally:
         _cleanup_image_paths(image_paths)
