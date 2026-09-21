@@ -70,6 +70,21 @@ const LABEL_MAX_LEN = 24;
  * fermeture), et les questions partent en `epreuve_id`/`historique` sans
  * `conversation_id` (le serveur ne persiste rien non plus).
  */
+/** Extrait le message explicite d'un HTTPException FastAPI (corps
+ * `{"detail": "..."}`), qu'il vienne de `ApiError.detail` (client.ts) ou de
+ * l'erreur enrichie par `streamEventSource` (streaming.ts). Retourne `null`
+ * si le corps ne porte pas de chaîne exploitable (ex. validation 422). */
+function detailServeur(err: unknown): string | null {
+  const brut = (err as { detail?: unknown })?.detail;
+  const detail =
+    typeof brut === "string"
+      ? brut
+      : brut && typeof brut === "object"
+        ? (brut as { detail?: unknown }).detail
+        : undefined;
+  return typeof detail === "string" && detail.trim() ? detail : null;
+}
+
 /** Libellé d'onglet lisible dérivé d'un texte (première question du élève
  * ou passage sélectionné) : nettoyé, tronqué avec ellipse. */
 function resumeLabel(text: string): string {
@@ -509,13 +524,14 @@ export function AssistantPanel({
           const status = (err as Error & { status?: number })?.status;
           if (typeof status === "number" && status >= 400 && status < 500) {
             // Erreur client (ex. 404 : discussion supprimée ailleurs,
-            // 401 : session expirée) : définitif, pas de relance aveugle.
+            // 401 : session expirée, 403 : épreuve retirée / paywall) :
+            // définitif, pas de relance aveugle. La raison explicite du
+            // serveur (corps `detail`) prime sur un message générique.
             erreurFinale =
               status === 404
                 ? "Cette discussion n'existe plus (elle a peut-être été fermée)."
-                : err instanceof Error
-                  ? err.message
-                  : "Requête refusée.";
+                : (detailServeur(err) ??
+                  (err instanceof Error ? err.message : "Requête refusée."));
             break;
           }
           // Transitoire (réseau, 5xx) : on le note mais on laisse la
@@ -572,8 +588,12 @@ export function AssistantPanel({
       } catch (err) {
         const status = (err as Error & { status?: number })?.status;
         if (typeof status === "number" && status >= 400 && status < 500) {
-          // Erreur client (ex. 403 consentement refusé) : pas de relance.
-          erreurFinale = err instanceof Error ? err.message : "Requête refusée.";
+          // Erreur client (ex. 403 : épreuve retirée entre-temps, paywall,
+          // consentement refusé) : pas de relance aveugle. Le `detail` du
+          // serveur porte la VRAIE raison — on l'affiche telle quelle.
+          erreurFinale =
+            detailServeur(err) ??
+            (err instanceof Error ? err.message : "Requête refusée.");
           break;
         }
         // Panne transport ou 5xx transitoire : boucle de reconnexion.

@@ -49,7 +49,22 @@ def _load_conversation_and_epreuve(db: Session, user, conversation_id: str):
     if not conv:
         raise HTTPException(404, "Discussion introuvable")
 
-    epreuve = get_public_epreuve_or_404(db, conv.epreuve_id, user)
+    try:
+        epreuve = get_public_epreuve_or_404(db, conv.epreuve_id, user)
+    except HTTPException as exc:
+        # L'épreuve a pu être retirée / repassée en brouillon PENDANT la
+        # discussion (épreuve publique au moment de la création, plus
+        # aujourd'hui) : la discussion existe encore, mais elle n'est plus
+        # accessible. Ne pas amalgamer avec une discussion SUPPRIMÉE (le
+        # frontend afficherait à tort « Cette discussion n'existe plus ».
+        # Un 403 explicite lui permet de montrer la VRAIE raison renvoyée
+        # par le serveur.
+        if exc.status_code == 404:
+            raise HTTPException(
+                403,
+                "Cette épreuve ne peut plus être utilisée pour le moment (elle a peut-être été retirée par ton équipe).",
+            ) from exc
+        raise
     return conv, epreuve
 
 

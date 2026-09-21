@@ -135,6 +135,29 @@ describe("streamAssistantAsk — propagation des erreurs de transport", () => {
     expect(captured!.status).toBe(503);
   });
 
+  it("attache le detail du corps (HTTPException) sur une erreur 4xx ou 5xx", async () => {
+    // Le backend répond 403 avec le message EXPLICITE (« épreuve retirée »,
+    // paywall, consentement…) : il doit être transporté jusqu'au panneau
+    // pour remplacer le statut brut « Erreur API 403 ».
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Cette épreuve ne peut plus être utilisée pour le moment." }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    let captured: (Error & { status?: number; detail?: unknown }) | undefined;
+    try {
+      await streamAssistantAsk({ conversation_id: "c1", message: "Q" }, vi.fn());
+    } catch (e) {
+      captured = e as Error & { status?: number; detail?: unknown };
+    }
+    expect(captured).toBeDefined();
+    expect(captured!.status).toBe(403);
+    expect(captured!.detail).toEqual({
+      detail: "Cette épreuve ne peut plus être utilisée pour le moment.",
+    });
+  });
+
   it("rejette sur panne réseau (fetch rejeté)", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     await expect(streamAssistantAsk({ message: "Q" }, vi.fn())).rejects.toThrow();

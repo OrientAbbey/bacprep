@@ -423,6 +423,23 @@ def _get_conversation_or_404(db: Session, user_id: str, epreuve_id: str, conv_id
     return conv
 
 
+@router.get("/{epreuve_id}/conversations/{conv_id}", response_model=ConversationOut)
+def get_conversation(
+    epreuve_id: str, conv_id: str, db: Session = Depends(get_db), user=Depends(require_user)
+) -> ConversationOut:
+    """Récupère une discussion appartenant à cet utilisateur/épreuve, ou
+    lève 404. Utilisé par le lecteur (AssistantPanel) pour la réconciliation
+    avant chaque tentative de streaming : rejouer la MÊME question exige de
+    ramener les messages serveur à l'état d'avant — sans cette route, le GET
+    renvoyait un 404 « ressource introuvable » que le front interprétait à
+    tort comme une discussion fermée. Aucune garde d'épreuve ici (comme PUT/
+    DELETE) : une épreuve retirée laisse la discussion LISIBLE par son
+    propriétaire, et c'est la route d'interrogation LLM qui lève le 403
+    explicite (voir `_load_conversation_and_epreuve`, assistant.py)."""
+    conv = _get_conversation_or_404(db, user.id, epreuve_id, conv_id)
+    return ConversationOut(**store.conversation_to_dict(conv))
+
+
 @router.put("/{epreuve_id}/conversations/{conv_id}", response_model=ConversationOut)
 def update_conversation(
     epreuve_id: str,

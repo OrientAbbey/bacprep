@@ -28,9 +28,20 @@ export async function streamEventSource<T>(
     // (type "error"). L'échec HTTP/transport, lui, REJETTE le fetch : les
     // appelants distinguent ainsi une panne réseau d'une erreur applicative
     // (et les statuts 4xx d'un 5xx transitoire, pour le comportement de
-    // reconnexion automatique). Le statut HTTP est attaché à l'erreur.
-    const err = new Error(`Le serveur a répondu ${res.status}.`);
-    (err as Error & { status?: number }).status = res.status;
+    // reconnexion automatique). Le statut HTTP et le `detail` du corps
+    // (le message explicite d'un HTTPException FastAPI) sont attachés à
+    // l'erreur pour que le panneau affiche la VRAIE raison (ex. « épreuve
+    // retirée » en 403) au lieu d'un statut brut.
+    const err = new Error(`Le serveur a répondu ${res.status}.`) as Error & {
+      status?: number;
+      detail?: unknown;
+    };
+    err.status = res.status;
+    try {
+      err.detail = await res.json();
+    } catch {
+      err.detail = await res.text().catch(() => "");
+    }
     throw err;
   }
 
