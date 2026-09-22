@@ -75,3 +75,16 @@ def test_navigation_publique(client, epreuve_gratuite):
     terminale = next(c for c in niveaux["SECONDAIRE"]["classes"] if c["code"] == "terminale")
     assert terminale["epreuves"] >= 1
     assert terminale["actif"]
+
+
+def test_navigation_primaire_inactif_zero_epreuve(client, epreuve_gratuite):
+    """La carte PRIMAIRE (réservée) ne doit JAMAIS afficher les comptages
+    du secondaire : aucune classe, aucun total — le frontend additionne
+    `classes[].epreuves` pour le compteur de la carte niveau."""
+    r = client.get("/api/epreuves/navigation")
+    assert r.status_code == 200
+    niveaux = {n["code"]: n for n in r.json()["niveaux"]}
+    primaire = niveaux["PRIMAIRE"]
+    assert primaire["actif"] is False
+    assert primaire["classes"] == []
+    assert sum(c["epreuves"] for c in primaire["classes"]) == 0

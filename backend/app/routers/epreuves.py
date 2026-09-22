@@ -153,21 +153,25 @@ def navigation(db: Session = Depends(get_db)) -> dict:
     connus du référentiel avec, pour chaque niveau, la liste des classes et
     le nombre d'épreuves PUBLIÉES de chacune — le frontend désactive les
     cartes de classe sans épreuve (prompt d'amélioration §3)."""
-    counts = dict(
-        db.query(EpreuveORM.classe, func.count(EpreuveORM.id))
-        .filter(
-            EpreuveORM.statut == "publie",
-            EpreuveORM.niveau == referentiel.NIVEAU_SECONDAIRE,
-        )
-        .group_by(EpreuveORM.classe)
+    rows = (
+        db.query(EpreuveORM.niveau, EpreuveORM.classe, func.count(EpreuveORM.id))
+        .filter(EpreuveORM.statut == "publie")
+        .group_by(EpreuveORM.niveau, EpreuveORM.classe)
         .all()
     )
+    counts = {(niveau, classe): total for niveau, classe, total in rows}
     niveaux = []
     for niveau in referentiel.NIVEAUX:
+        # Chaque niveau ne montre QUE ses propres classes (PRIMAIRE n'en a
+        # aucune dans le référentiel) — sinon le comptage du secondaire
+        # serait affiché sur toutes les cartes de niveau.
+        classes_du_niveau = (
+            referentiel.CLASSES_SECONDAIRE if niveau["code"] == referentiel.NIVEAU_SECONDAIRE else []
+        )
         classes = []
-        for entry in referentiel.CLASSES_SECONDAIRE:
+        for entry in classes_du_niveau:
             code = entry["code"]
-            count = counts.get(code, 0)
+            count = counts.get((niveau["code"], code), 0)
             classes.append(
                 {
                     "code": code,
