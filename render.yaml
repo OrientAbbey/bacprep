@@ -81,7 +81,12 @@ services:
         value: "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash"
       - key: GROQ_API_KEY
         sync: false
+      # qwen/qwen3.6-27b a été RETIRÉ de la liste : il n'existe plus chez
+      # l'API Groq (404 model_not_found, vérifié le 2026-09-22) — une
+      # tentative gaspillée à chaque question. qwen/qwen3.8-27b est le
+      # modèle VISION de la liste : avec des images, il est essayé EN
+      # PREMIER (voir _groq_models_ordonnes dans assistant.py).
       - key: GROQ_MODELS
-        value: "openai/gpt-oss-20b,qwen/qwen3.6-27b,openai/gpt-oss-120b,qwen/qwen3.8-27b"
+        value: "openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.8-27b"
       - key: LLM_CONCURRENCY_LIMIT
         value: "5"

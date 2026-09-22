@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from starlette.requests import ClientDisconnect
 
 from ..core.admin_assistant import ask_admin_assistant_stream
+from ..core.assistant import FournisseursIndisponiblesError
 from ..core.logging_config import get_logger
 from ..core.rate_limit import SlidingWindowLimiter, client_ip
 from ..core import store
@@ -145,6 +146,11 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
             async for chunk in ask_admin_assistant_stream(payload.epreuve, payload.question, messages):
                 accumulated += chunk
                 yield f"data: {json.dumps({'type': 'chunk', 'text': chunk}, ensure_ascii=False)}\n\n"
+        except FournisseursIndisponiblesError as exc:
+            # Production : jamais de réponse simulée côté admin non plus.
+            log.error("Assistant admin : aucun fournisseur LLM disponible (conversation=%s): %s", conv_id, exc)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            return
         except ClientDisconnect:
             log.debug("Client disconnect pendant le streaming assistant admin (conversation=%s)", conv_id)
             return

@@ -18,6 +18,25 @@ from .storage import get_storage
 
 log = get_logger("assistant")
 
+
+class FournisseursIndisponiblesError(RuntimeError):
+    """Levée quand AUCUN fournisseur LLM n'a répondu et que l'on refuse de
+    masquer le problème par une réponse simulée — comportement production :
+    le mode démonstration n'est jamais envoyé en prod (il ferait croire à
+    un vrai service). Message affiché tel quel à l'élève."""
+
+    def __init__(self):
+        super().__init__(
+            "Les fournisseurs d'IA sont temporairement indisponibles — réessaie dans quelques minutes."
+        )
+
+
+def _est_prod() -> bool:
+    """Vrai en production (`ENV=prod`, posé par render.yaml) — le mode
+    démonstration n'est autorisé qu'hors prod."""
+    return os.getenv("ENV", "dev") == "prod"
+
+
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 
@@ -38,6 +57,38 @@ def _provider_models(env: str, default: str) -> list[str]:
     module si la variable est vide."""
     models = [m.strip() for m in os.getenv(env, "").split(",") if m.strip()]
     return models or [default]
+
+
+# --- Modèles Groq Vision (images) ---------------------------------------
+
+# Les modèles Groq "texte seul" rejettent la forme `content` de l'API
+# compatible OpenAI (message "content must be a string", vérifié le
+# 2026-09-22 pour openai/gpt-oss-20b et openai/gpt-oss-120b). Les modèles
+# Vision acceptent une LISTE de parts texte + image_url (data URI) :
+# qwen/qwen3.8-27b confirmé en direct (image 64x64, réponse correcte).
+# Surchargeable via GROQ_VISION_MODELS (CSV) — cf. backend/.env.example.
+_GROQ_VISION_MODELS: set[str] = {"qwen/qwen3.8-27b"}
+
+
+def _groq_vision_models() -> set[str]:
+    """Modèles Groq capables de traiter les images (data URI)."""
+    extra = {m.strip() for m in os.getenv("GROQ_VISION_MODELS", "").split(",") if m.strip()}
+    return extra or set(_GROQ_VISION_MODELS)
+
+
+def _groq_models_ordonnes(image_paths: list[Path]) -> list[str]:
+    """Ordre d'essai des modèles Groq pour une question.
+
+    AVEC des images : les modèles Vision d'abord (l'image est vraiment
+    exploitée), puis les modèles texte seul (le prompt porte alors une note
+    signalant que des images ont dû être ignorées). SANS image : ordre
+    déclaré (GROQ_MODELS) inchangé."""
+    models = _provider_models("GROQ_MODELS", DEFAULT_GROQ_MODEL)
+    if not image_paths:
+        return models
+    visions = [m for m in models if m in _groq_vision_models()]
+    textes = [m for m in models if m not in visions]
+    return visions + textes
 
 # --- Streaming ---------------------------------------------------------
 #
@@ -299,7 +350,7 @@ _PROVIDERS = {
         "url": lambda model, stream: "https://api.groq.com/openai/v1/chat/completions",
         "body": lambda model, message, stream: {
             "model": model,
-            "messages": [{"role": "user", "content": message}],
+            "messages": [{"role": "user", "content": _groq_content(model, message[0], message[1])}],
             **({"stream": True} if stream else {}),
         },
         "extract": lambda data: data["choices"][0]["message"]["content"],
@@ -308,10 +359,13 @@ _PROVIDERS = {
 }
 
 
-async def _call_provider(nom: str, message, key_env: str) -> Optional[str]:
+async def _call_provider(
+    nom: str, message, key_env: str, models: list[str] | None = None,
+) -> Optional[str]:
     """Appel non-streaming générique : essaie chaque modèle du fournisseur
     dans l'ordre (fallback) et rend la main (None) pour laisser l'appelant
-    basculer de fournisseur.
+    basculer de fournisseur. `models` permet à l'appelant d'ordonner la
+    liste au cas par cas (ex. modèles Vision Groq d'abord avec images).
 
     Quota (429) : la limite de débit est GLOBALE au fournisseur (l'API
     gratuite), pas au modèle — sans pause, la liste des modèles serait
@@ -325,7 +379,7 @@ async def _call_provider(nom: str, message, key_env: str) -> Optional[str]:
         return None
     client = _get_http_client()
     quota_retente = False
-    for model in _provider_models(spec["env"], spec["default"]):
+    for model in (models if models is not None else _provider_models(spec["env"], spec["default"])):
         for _tentative in range(2):
             try:
                 resp = await client.post(
@@ -348,11 +402,14 @@ async def _call_provider(nom: str, message, key_env: str) -> Optional[str]:
     return None
 
 
-async def _stream_provider(nom: str, message, key_env: str) -> AsyncIterator[str]:
+async def _stream_provider(
+    nom: str, message, key_env: str, models: list[str] | None = None,
+) -> AsyncIterator[str]:
     """Variante streaming générique (SSE `data: ...`). Essaie chaque modèle
     dans l'ordre tant qu'aucun fragment n'a été cédé ; si l'échec survient
     APRÈS des fragments, la réponse reste partielle (compromis assumé — on
     ne peut plus revenir en arrière sur ce qui a déjà été affiché).
+    `models` permet à l'appelant d'ordonner la liste au cas par cas.
 
     Quota (429) : même logique que `_call_provider` — une seule nouvelle
     tentative sur le MÊME modèle après 2 s, car la limite de débit est
@@ -364,7 +421,7 @@ async def _stream_provider(nom: str, message, key_env: str) -> AsyncIterator[str
         return
     client = _get_http_client()
     quota_retente = False
-    for model in _provider_models(spec["env"], spec["default"]):
+    for model in (models if models is not None else _provider_models(spec["env"], spec["default"])):
         if not _model_supports_streaming(model):
             continue
         for _tentative in range(2):
@@ -422,11 +479,11 @@ async def _stream_gemini(prompt: str, image_paths: list[Path]) -> AsyncIterator[
 
 def _groq_prompt_with_image_note(prompt: str, nb_images_ignorees: int) -> str:
     """Préfixe le prompt d'une note si des images ont dû être ignorées
-    (Groq est un modèle texte seul) — factorisé entre les variantes
+    (modèle Groq dit texte seul) — factorisé entre les variantes
     streaming et non-streaming."""
     if not nb_images_ignorees:
         return prompt
-    # Groq (Llama 3.3 70B) est un modèle texte seul : on le signale
+    # Groq (modèles "texte seul") ne traite pas les images : on le signale
     # explicitement dans le prompt plutôt que de perdre silencieusement
     # l'information qu'une image faisait partie du contexte.
     return (
@@ -436,18 +493,55 @@ def _groq_prompt_with_image_note(prompt: str, nb_images_ignorees: int) -> str:
     )
 
 
-async def _call_groq(prompt: str, nb_images_ignorees: int) -> Optional[str]:
+def _image_to_groq_part(path: Path) -> Optional[dict]:
+    """Encode une image locale en pièce `image_url` (data URI) pour les
+    modèles Groq Vision — analogie de `_image_to_gemini_part` pour l'API
+    compatible OpenAI de Groq."""
+    mime_type, _ = mimetypes.guess_type(path.name)
+    if not mime_type or not mime_type.startswith("image/"):
+        return None
+    try:
+        data = base64.b64encode(path.read_bytes()).decode("ascii")
+    except Exception as exc:
+        log.warning("Lecture de l'image %s impossible (Groq Vision) : %s", path, exc)
+        return None
+    return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{data}"}}
+
+
+def _groq_content(model: str, prompt: str, image_paths: list[Path]):
+    """Corps du `content` d'un message Groq : liste de parts texte + images
+    (data URI) pour un modèle Vision ; sinon texte simple — avec la note
+    signalant les images ignorées (`_groq_prompt_with_image_note`) pour les
+    modèles texte seul."""
+    if image_paths and model in _groq_vision_models():
+        parts = [{"type": "text", "text": prompt}]
+        for path in image_paths:
+            part = _image_to_groq_part(path)
+            if part is not None:
+                parts.append(part)
+        if len(parts) > 1:
+            log.info("%d image(s) transmise(s) au modèle Vision Groq %s", len(parts) - 1, model)
+            return parts
+    return _groq_prompt_with_image_note(prompt, len(image_paths))
+
+
+async def _call_groq(prompt: str, image_paths: list[Path]) -> Optional[str]:
     """Appel Groq non-streaming (conservé pour `/ask` historique et comme
-    filet de secours du streaming) — voir `_call_provider`."""
+    filet de secours du streaming) — voir `_call_provider`. Avec images,
+    les modèles Vision Groq les reçoivent en data URI (qwen/qwen3.8-27b
+    confirmé) ; les modèles texte seul reçoivent une note."""
     return await _call_provider(
-        "Groq", _groq_prompt_with_image_note(prompt, nb_images_ignorees), "GROQ_API_KEY"
+        "Groq", (prompt, image_paths), "GROQ_API_KEY",
+        models=_groq_models_ordonnes(image_paths),
     )
 
 
-async def _stream_groq(prompt: str, nb_images_ignorees: int) -> AsyncIterator[str]:
-    """Variante streaming de `_call_groq` (`stream: true`, API compatible OpenAI)."""
+async def _stream_groq(prompt: str, image_paths: list[Path]) -> AsyncIterator[str]:
+    """Variante streaming de `_call_groq` (`stream: true`, API compatible
+    OpenAI) — même gestion des images (voir `_groq_content`)."""
     async for chunk in _stream_provider(
-        "Groq", _groq_prompt_with_image_note(prompt, nb_images_ignorees), "GROQ_API_KEY"
+        "Groq", (prompt, image_paths), "GROQ_API_KEY",
+        models=_groq_models_ordonnes(image_paths),
     ):
         yield chunk
 
@@ -495,11 +589,16 @@ async def ask_assistant(
             reponse = await _call_gemini(prompt, image_paths)
             if reponse:
                 return reponse
-            reponse = await _call_groq(prompt, nb_images_ignorees=len(image_paths))
+            reponse = await _call_groq(prompt, image_paths)
             if reponse:
                 return reponse
 
         log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles)")
+        if _est_prod():
+            # Jamais de réponse SIMULÉE en production : une erreur franche
+            # vaut mieux qu'une réponse factice qui ferait croire à un vrai
+            # service (cf. rendu par le routeur : 503, ou évènement SSE error).
+            raise FournisseursIndisponiblesError()
         return _demo_fallback(epreuve_meta, question, image_paths, cle_ia)
     finally:
         _cleanup_image_paths(image_paths)
@@ -534,13 +633,18 @@ async def ask_assistant_stream(
             if got_any:
                 return
 
-            async for chunk in _stream_groq(prompt, nb_images_ignorees=len(image_paths)):
+            async for chunk in _stream_groq(prompt, image_paths):
                 got_any = True
                 yield chunk
             if got_any:
                 return
 
         log.info("Bascule vers le mode démonstration (Gemini et Groq indisponibles, streaming)")
+        if _est_prod():
+            # Jamais de réponse SIMULÉE en production : le routeur la
+            # traduit en évènement SSE error (message franc, pas de texte
+            # factice affiché comme une vraie réponse).
+            raise FournisseursIndisponiblesError()
         yield _demo_fallback(epreuve_meta, question, image_paths, cle_ia)
     finally:
         _cleanup_image_paths(image_paths)

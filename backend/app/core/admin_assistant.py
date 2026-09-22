@@ -149,10 +149,15 @@ async def ask_admin_assistant_stream(
         if got_any:
             return
 
-        async for chunk in assistant_llm._stream_groq(prompt, nb_images_ignorees=0):
+        async for chunk in assistant_llm._stream_groq(prompt, []):
             got_any = True
             yield chunk
         if got_any:
             return
 
+    if assistant_llm._est_prod():
+        # Même règle que l'assistant élève : jamais de réponse SIMULÉE en
+        # production (l'admin verrait une réponse factice pour une vraie
+        # question). Le routeur la traduit en évènement SSE error.
+        raise assistant_llm.FournisseursIndisponiblesError()
     yield _demo_fallback_admin(epreuve, question)
