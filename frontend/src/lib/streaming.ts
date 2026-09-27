@@ -10,17 +10,24 @@ import type { Conversation } from "../components/AssistantPanel";
  * cookies inter-origines facilement dans tous les navigateurs) : chaque
  * évènement SSE (`data: {...}\n\n`) est découpé manuellement du flux de
  * texte reçu, puis transmis à `onEvent` déjà parsé en JSON.
+ *
+ * `signal` rend l'appel ANNULABLE : sans lui, fermer le panneau laissait la
+ * lecture du flux se poursuivre, donc la boucle applicative continuait de
+ * modifier des messages pour un composant démonté, et le serveur-State
+ * recevait l'échange jusqu'au bout.
  */
 export async function streamEventSource<T>(
   url: string,
   body: unknown,
-  onEvent: (event: T) => void
+  onEvent: (event: T) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}${url}`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!res.ok || !res.body) {
@@ -75,10 +82,17 @@ export async function streamEventSource<T>(
   }
 
   while (true) {
+    // L'annulation doit sortir de la boucle même si le flux ne produit plus
+    // rien (démontage du panneau) : `reader.read()` resterait sinon en
+    // attente jusqu'au prochain fragment serveur.
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => {});
+      return;
+    }
     const { done, value } = await reader.read();
+    if (done) break;
     buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
     processBuffer();
-    if (done) break;
   }
 
   // Dernier événement : le serveur peut fermer le flux après le dernier
@@ -107,7 +121,8 @@ export type AssistantStreamEvent =
 
 export async function streamAssistantAsk(
   payload: AssistantAskPayload,
-  onEvent: (event: AssistantStreamEvent) => void
+  onEvent: (event: AssistantStreamEvent) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   // Les erreurs de TRANSPORT (fetch rejeté) et HTTP (statut non-2xx)
   // se propagent par rejet (avec `.status` pour les HTTP) — les panneaux
@@ -115,7 +130,7 @@ export async function streamAssistantAsk(
   // évènement `error` du flux SSE. Un flux qui se ferme SANS `done` ni
   // `error` (connexion interrompue en plein vol) résout sans évènement :
   // l'appelant détecte l'absence de `done` pour déclencher la reconnexion.
-  await streamEventSource("/api/assistant/ask/stream", payload, onEvent);
+  await streamEventSource("/api/assistant/ask/stream", payload, onEvent, signal);
 }
 
 /** Délai d'attente (ms) avant une tentative de reconnexion, croissant avec
@@ -170,7 +185,8 @@ export type AdminStreamEvent =
  * erreurs applicatives arrivent en évènement `error` du flux. */
 export async function streamAdminAsk(
   payload: AdminAskPayload,
-  onEvent: (event: AdminStreamEvent) => void
+  onEvent: (event: AdminStreamEvent) => void,
+  signal?: AbortSignal
 ): Promise<void> {
-  await streamEventSource("/api/admin/assistant/ask", payload, onEvent);
+  await streamEventSource("/api/admin/assistant/ask", payload, onEvent, signal);
 }

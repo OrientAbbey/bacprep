@@ -181,6 +181,22 @@ export function AssistantPanel({
     conversationsRef.current = conversations;
   }, [conversations]);
 
+  // Échange IA en cours : son annulation. Fermer le panneau ou poser une
+  // nouvelle question interrompt la lecture du flux — sans cela, la boucle
+  // continuait d'écrire dans l'état d'un composant démonté et le serveur
+  // traitait l'échange jusqu'au bout.
+  const abortRef = useRef<AbortController | null>(null);
+  // Frames d'application des fragments en attente, à annuler au démontage
+  // pour ne pas re-rendre sur un composant parti.
+  const chunkRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (chunkRafRef.current !== null) cancelAnimationFrame(chunkRafRef.current);
+    };
+  }, []);
+
   // Ref miroir de l'onglet actif : les fonctions de l'envoi (y compris le
   // dépilement automatique de la file d'attente) doivent lire l'état le
   // PLUS RÉCENT, jamais une closure figée au moment où elles ont été créées.
@@ -269,10 +285,13 @@ export function AssistantPanel({
 
   // Échap ferme le panneau lui-même — en feuille mobile comme en tiroir
   // bureau (le tiroir desktop, colonne sœur du lecteur, se ferme sur la
-  // même touche).
+  // même touche). Une modale ouverte PAR-DESSUS (signalement, confirmation)
+  // absorbe la touche : sans ce test, le panneau se refermait en même temps
+  // qu'elle et l'utilisateur perdait le contexte de sa discussion.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       onClose();
     }
     window.addEventListener("keydown", onKey);
@@ -430,6 +449,13 @@ export function AssistantPanel({
     const url = `/api/epreuves/${epreuveId}/conversations/${convId}`;
     const nowIso = new Date().toISOString();
 
+    // Un échange annule le précédent : la reconnexion automatique ne doit
+    // pas repartir sur une question que l'utilisateur a abandonnée.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
+
     // Ajout optimiste : la question + une bulle assistant vide (remplie au
     // fil du streaming).
     setConversations((prev) =>
@@ -464,8 +490,13 @@ export function AssistantPanel({
     const MAX_ATTEMPTES = 3;
     let erreurFinale: string | null = null;
     let aReussi = false;
+    let annule = false;
 
     for (let tentative = 1; tentative <= MAX_ATTEMPTES; tentative++) {
+      if (signal.aborted) {
+        annule = true;
+        break;
+      }
       let gotDone = false;
       let gotErrorEvent = false;
       let pendingChunkText = "";
@@ -477,6 +508,7 @@ export function AssistantPanel({
       // avant toute réconciliation serveur (événement `done`).
       function flushChunk() {
         chunkRaf = null;
+        chunkRafRef.current = null;
         if (!pendingChunkText) return;
         const fragment = pendingChunkText;
         pendingChunkText = "";
@@ -549,12 +581,18 @@ export function AssistantPanel({
         await streamAssistantAsk(payload, (event) => {
           if (event.type === "chunk") {
             pendingChunkText += event.text;
-            if (chunkRaf === null) chunkRaf = requestAnimationFrame(flushChunk);
+            if (chunkRaf === null) {
+              chunkRaf = requestAnimationFrame(flushChunk);
+              chunkRafRef.current = chunkRaf;
+            }
           } else if (event.type === "done") {
             gotDone = true;
             // Vider le tampon de chunks restants AVANT toute réconciliation,
             // sinon le rAF en attente écraserait l'état serveur reçu.
-            if (chunkRaf !== null) cancelAnimationFrame(chunkRaf);
+            if (chunkRaf !== null) {
+              cancelAnimationFrame(chunkRaf);
+              chunkRafRef.current = null;
+            }
             flushChunk();
             if (!event.conversation) return; // voie éphémère : rien à réconcilier
             const conversation = event.conversation;
@@ -584,8 +622,14 @@ export function AssistantPanel({
             gotErrorEvent = true;
             erreurFinale = event.message;
           }
-        });
+        }, signal);
       } catch (err) {
+        // Annulation volontaire (nouvel échange, démontage) : ce n'est pas
+        // une panne, donc ni message d'erreur ni nouvelle tentative.
+        if (signal.aborted || (err as Error)?.name === "AbortError") {
+          annule = true;
+          break;
+        }
         const status = (err as Error & { status?: number })?.status;
         if (typeof status === "number" && status >= 400 && status < 500) {
           // Erreur client (ex. 403 : épreuve retirée entre-temps, paywall,
@@ -611,6 +655,13 @@ export function AssistantPanel({
         await new Promise((r) => setTimeout(r, delaiReconnexion(tentative)));
       }
     }
+
+    // Échange annulé : le panneau peut être démonté, ou une autre question
+    // avoir pris le relais — dans les deux cas l'état a été réécrit ailleurs
+    // et il ne faut surtout pas afficher une erreur ni remettre `sending` à
+    // faux par-dessus le nouvel envoi en cours.
+    if (annule) return;
+    if (abortRef.current === controller) abortRef.current = null;
 
     setReconnectAttempt(0);
     setSending(false);

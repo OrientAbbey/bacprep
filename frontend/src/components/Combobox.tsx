@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { foldText } from "../lib/text";
 
 export interface ComboOption {
@@ -62,6 +62,15 @@ export function Combobox({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+
+  // IDs uniques par instance. En dur (`combo-opt-${i}`), deux Combobox de la
+  // même page se volaient leurs identifiants et `aria-activedescendant`
+  // désignait l'option de l'AUTRE liste.
+  const id = useId();
+  const labelId = `${id}-label`;
+  const inputId = `${id}-input`;
+  const listboxId = `${id}-listbox`;
+  const optionId = (index: number) => `${id}-option-${index}`;
 
   const selected = options.find((o) => o.value === value);
 
@@ -149,14 +158,22 @@ export function Combobox({
     }
   }
 
+  const listeVide = filtered.length === 0;
+
   return (
     <div ref={rootRef} className="relative min-w-[160px]">
-      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{label}</label>
+      {/* `htmlFor` indispensable : sans lui ce <label> ne labelait RIEN
+          (le champ visé est plus bas dans l'arbre, hors de tout
+          enfant), et le lecteur d'écran annonçait « boîte de saisie » nu. */}
+      <label htmlFor={inputId} id={labelId} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
+        {label}
+      </label>
       <button
         ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={`${label} : ${selected ? selected.label : "Tous"}`}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onTriggerKeyDown}
         className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 py-2 text-left text-sm text-ink transition-colors hover:border-highlight/50"
@@ -170,8 +187,17 @@ export function Combobox({
           className="absolute z-20 mt-1 w-full min-w-[220px] rounded-[2px] border border-ink-soft/20 bg-paper-raised shadow-lg"
           onKeyDown={onListKeyDown}
         >
+          {/* Le CHAMP porte `role="combobox"` : c'est lui qui détient
+              `aria-activedescendant` et `aria-controls` (ARIA 1.2). Placés
+              sur le <ul>, ils étaient ignorés des lecteurs d'écran. */}
           <input
             ref={inputRef}
+            id={inputId}
+            role="combobox"
+            aria-expanded={open}
+            aria-autocomplete="list"
+            aria-controls={listeVide ? undefined : listboxId}
+            aria-activedescendant={listeVide ? undefined : optionId(highlighted)}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -180,25 +206,27 @@ export function Combobox({
             placeholder={placeholder}
             className="w-full border-b border-ink-soft/15 bg-transparent px-3 py-2 text-sm text-ink outline-none"
           />
-          {filtered.length === 0 ? (
+          {listeVide ? (
             <p className="px-3 py-3 text-sm text-slate">Aucun résultat</p>
           ) : (
-            <ul ref={listRef} role="listbox" aria-activedescendant={`combo-opt-${highlighted}`} className="max-h-64 overflow-y-auto py-1">
+            <ul ref={listRef} id={listboxId} role="listbox" aria-label={label} className="max-h-64 overflow-y-auto py-1">
               {navigable.map((o, i) => (
-                <li key={o.value || "__all__"} data-index={i}>
-                  <button
-                    id={`combo-opt-${i}`}
-                    type="button"
-                    role="option"
-                    aria-selected={value === o.value}
-                    onMouseEnter={() => setHighlighted(i)}
-                    onClick={() => selectOption(i)}
-                    className={`min-h-[44px] w-full px-3 py-2 text-left text-sm ${
-                      highlighted === i ? "bg-highlight-soft" : ""
-                    } ${value === o.value ? "font-medium text-ink" : "text-ink-soft"}`}
-                  >
-                    {o.label}
-                  </button>
+                // `role="option"` sur l'enfant DIRECT du listbox : il était
+                // sur un <button> imbriqué dans un <li> sans rôle, donc
+                // invisible pour la relation de parenté ARIA.
+                <li
+                  key={o.value || "__all__"}
+                  data-index={i}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={value === o.value}
+                  onMouseEnter={() => setHighlighted(i)}
+                  onClick={() => selectOption(i)}
+                  className={`min-h-[44px] cursor-pointer px-3 py-2 text-sm ${
+                    highlighted === i ? "bg-highlight-soft" : ""
+                  } ${value === o.value ? "font-medium text-ink" : "text-ink-soft"}`}
+                >
+                  {o.label}
                 </li>
               ))}
             </ul>

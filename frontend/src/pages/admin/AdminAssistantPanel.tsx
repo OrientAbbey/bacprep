@@ -74,6 +74,18 @@ export function AdminAssistantPanel({
     messagesRef.current = messages;
   }, [messages]);
 
+  // Annulation de l'échange en cours + frame de fragments en attente, à
+  // nettoyer au démontage (même raison que l'assistant élève).
+  const abortRef = useRef<AbortController | null>(null);
+  const chunkRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (chunkRafRef.current !== null) cancelAnimationFrame(chunkRafRef.current);
+    };
+  }, []);
+
   // Mode PERSISTÉ : recharge la conversation roulante de CET admin sur cette
   // épreuve au montage (id, labels, horodatages inclus) — le tiroir rouvre
   // exactement là où on l'avait laissé.
@@ -193,11 +205,24 @@ export function AdminAssistantPanel({
     setSending(true);
     setErreurStream(null);
 
+    // Échange annulable : quitter la page admin pendant une réponse stoppait
+    // la boucle de réécriture d'état et laissait le serveur produire un
+    // échange sans personne pour le recevoir.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
+
     const MAX_ATTEMPTES = 3;
     let erreurFinale: string | null = null;
     let aReussi = false;
+    let annule = false;
 
     for (let tentative = 1; tentative <= MAX_ATTEMPTES; tentative++) {
+      if (signal.aborted) {
+        annule = true;
+        break;
+      }
       let gotDone = false;
       let gotErrorEvent = false;
       let pendingChunkText = "";
@@ -208,6 +233,7 @@ export function AdminAssistantPanel({
       // l'assistant élève). `flushChunk` est forcé avant la clôture.
       function flushChunk() {
         chunkRaf = null;
+        chunkRafRef.current = null;
         if (!pendingChunkText) return;
         const fragment = pendingChunkText;
         pendingChunkText = "";
@@ -232,10 +258,16 @@ export function AdminAssistantPanel({
         await streamAdminAsk(payload, (event) => {
           if (event.type === "chunk") {
             pendingChunkText += event.text;
-            if (chunkRaf === null) chunkRaf = requestAnimationFrame(flushChunk);
+            if (chunkRaf === null) {
+              chunkRaf = requestAnimationFrame(flushChunk);
+              chunkRafRef.current = chunkRaf;
+            }
           } else if (event.type === "done") {
             gotDone = true;
-            if (chunkRaf !== null) cancelAnimationFrame(chunkRaf);
+            if (chunkRaf !== null) {
+              cancelAnimationFrame(chunkRaf);
+              chunkRafRef.current = null;
+            }
             flushChunk();
             // Mode persisté : le serveur renvoie la conversation mise à jour ;
             // les messages sont la source de vérité (question + réponse, ts
@@ -253,8 +285,14 @@ export function AdminAssistantPanel({
             gotErrorEvent = true;
             erreurFinale = event.message;
           }
-        });
+        }, signal);
       } catch (err) {
+        // Annulation volontaire (démontage) : ni erreur affichée ni
+        // nouvelle tentative — ce n'est pas une panne de transport.
+        if (signal.aborted || (err as Error)?.name === "AbortError") {
+          annule = true;
+          break;
+        }
         const status = (err as Error & { status?: number })?.status;
         if (typeof status === "number" && status >= 400 && status < 500) {
           erreurFinale = err instanceof Error ? err.message : "Requête refusée.";
@@ -274,6 +312,11 @@ export function AdminAssistantPanel({
         await new Promise((r) => setTimeout(r, delaiReconnexion(tentative)));
       }
     }
+
+    // Annulé : le composant peut être parti, ou un autre envoi avoir pris
+    // le relais — ne surtout pas réécrire `sending` par-dessus.
+    if (annule) return;
+    if (abortRef.current === controller) abortRef.current = null;
 
     setReconnectAttempt(0);
     setSending(false);

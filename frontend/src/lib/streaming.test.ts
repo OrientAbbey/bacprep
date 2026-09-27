@@ -163,3 +163,66 @@ describe("streamAssistantAsk — propagation des erreurs de transport", () => {
     await expect(streamAssistantAsk({ message: "Q" }, vi.fn())).rejects.toThrow();
   });
 });
+
+describe("streamEventSource — annulation", () => {
+  /** Flux qui n'envoie RIEN puis reste ouvert : c'est le cas réel d'une
+   * réponse LLM en cours quand l'utilisateur ferme le panneau. */
+  function hangingResponse(): { response: Response; fermer: () => void } {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c;
+        },
+      })
+    );
+    return { response, fermer: () => controller.close() };
+  }
+
+  it("transmet le signal à fetch (annulation de la requête HTTP)", async () => {
+    fetchMock.mockResolvedValue(sseResponse([]));
+    const controller = new AbortController();
+    await streamAdminAsk({ question: "Q", historique: [], epreuve: {} }, vi.fn(), controller.signal);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
+  it("sort de la boucle même si le serveur n'envoie plus rien", async () => {
+    // Régression : `reader.read()` restait en attente indéfiniment, la
+    // promesse ne se résolvait jamais et la boucle de reconnexion du
+    // panneau repartait sur un échange abandonné.
+    const { response } = hangingResponse();
+    fetchMock.mockResolvedValue(response);
+    const controller = new AbortController();
+    const events: unknown[] = [];
+    const courant = streamAssistantAsk({ message: "Q" }, (e) => events.push(e), controller.signal);
+    controller.abort();
+    await expect(courant).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+  });
+
+  it("rejette sur AbortError si l'annulation survient pendant le fetch", async () => {
+    const aborted = new Error("The operation was aborted.");
+    aborted.name = "AbortError";
+    fetchMock.mockRejectedValue(aborted);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      streamAssistantAsk({ message: "Q" }, vi.fn(), controller.signal)
+    ).rejects.toThrow();
+  });
+
+  it("ignore les fragments arrivés après l'annulation", async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse(['data:{"type":"chunk","text":"a"}\n\n', 'data:{"type":"chunk","text":"b"}\n\n'])
+    );
+    const controller = new AbortController();
+    const events: unknown[] = [];
+    await streamAdminAsk({ question: "Q", historique: [], epreuve: {} }, (e) => events.push(e), controller.signal);
+    // Le flux terminé normalement reste livré : l'annulation n'a pas
+    // tronqué la réponse si elle était déjà partie.
+    expect(events).toHaveLength(2);
+  });
+});

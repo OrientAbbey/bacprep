@@ -142,11 +142,19 @@ export function AdminPage() {
   // comportement attendu.
   useEffect(() => {
     if (!token) return;
+    // Garde anti-recouvrement : sans elle, un serveur qui met plus de 30 s à
+    // répondre voit les battements s'empiler (plusieurs requêtes ouvertes en
+    // parallèle) et, à l'expiration, appeler handle401 autant de fois.
+    let enVol = false;
     const battement = setInterval(async () => {
+      if (enVol) return;
+      enVol = true;
       try {
         await api.post("/api/admin/heartbeat", undefined, authHeaders(token));
       } catch (err) {
         handle401(err);
+      } finally {
+        enVol = false;
       }
     }, 30_000);
     return () => clearInterval(battement);
@@ -157,7 +165,7 @@ export function AdminPage() {
     setError(null);
     setBlocker(null);
     try {
-      await api.post<{ session_token: string; email: string }>("/api/admin/login", {
+      await api.post<{ email: string }>("/api/admin/login", {
         email,
         token: loginToken,
         force,
@@ -187,17 +195,24 @@ export function AdminPage() {
     try {
       // La session part par le cookie httpOnly ; le serveur l'efface.
       await api.post("/api/admin/logout", undefined, authHeaders(token));
-    } finally {
-      // Reset complet du formulaire : sans lui, les identifiants de la
-      // session précédente restaient affichés au retour à l'écran de
-      // connexion (risque sur poste partagé).
-      setToken("");
-      setEmail("");
-      setLoginToken("");
-      setError(null);
-      setBlocker(null);
-      showToast("Déconnexion admin réussie.", "info");
+    } catch {
+      // ÉCHEC : on ne vide PAS l'état. Le cookie de session reste valide
+      // côté serveur, donc afficher l'écran de connexion ferait croire à une
+      // déconnexion alors que la session est toujours active — le prochain
+      // appel du navigateur repartirait avec le cookie. Prévenir l'admin et
+      // le laisser réessayer.
+      setError("Déconnexion impossible — la session reste active côté serveur. Réessaie.");
+      return;
     }
+    // Reset complet du formulaire : sans lui, les identifiants de la
+    // session précédente restaient affichés au retour à l'écran de
+    // connexion (risque sur poste partagé).
+    setToken("");
+    setEmail("");
+    setLoginToken("");
+    setError(null);
+    setBlocker(null);
+    showToast("Déconnexion admin réussie.", "info");
   }
 
   if (verification) {

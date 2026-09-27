@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Lock, LockOpen, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { Consultation, EpreuveListItem, Filtres } from "../api/types";
@@ -56,19 +56,30 @@ export function CataloguePage() {
   // Filtres dynamiques : recalculés dans le cadre de la classe courante.
   useEffect(() => {
     setInitialized(false);
+    const ac = new AbortController();
     const params = new URLSearchParams();
     if (classe) params.set("classe", classe);
     api
-      .get<Filtres>(`/api/epreuves/filtres?${params}`)
+      .get<Filtres>(`/api/epreuves/filtres?${params}`, undefined, ac.signal)
       .then((f) => {
+        if (ac.signal.aborted) return;
         setFiltres(f);
         setInitialized(true);
       })
-      .catch(() => setInitialized(true));
+      .catch(() => {
+        if (ac.signal.aborted) return;
+        setInitialized(true);
+      });
     // Historique : silencieux si non connecté (catalogue public, 401 inoffensif).
-    api.get<Consultation[]>("/api/me/historique").then(setHistorique).catch(() => {});
+    api
+      .get<Consultation[]>("/api/me/historique", undefined, ac.signal)
+      .then((h) => {
+        if (!ac.signal.aborted) setHistorique(h);
+      })
+      .catch(() => {});
     setFiliere(""); setMatiere(""); setAnnee(""); setEvaluation("");
     setCorrige("tous"); setAcces("tous");
+    return () => ac.abort();
   }, [classe]);
 
   function buildParams(offset: number): URLSearchParams {
@@ -93,20 +104,36 @@ export function CataloguePage() {
     return params;
   }
 
+  // Séquence des requêtes de liste : le dernier appel gagne. Une réponse
+  // portant un jeton périmé ne peut plus écraser (première page) ni
+  // concaténer (« Voir plus ») une liste qui correspond à d'autres filtres.
+  const seqRef = useRef(0);
+
+  /** Signature de la requête courante : tous les filtres SAUF la pagination.
+   * Permet de refuser une réponse dont les filtres ne sont plus ceux-là. */
+  function signatureFiltres(): string {
+    const params = buildParams(0);
+    params.delete("limit");
+    params.delete("offset");
+    return params.toString();
+  }
+
   // Recharge la première page à chaque changement de filtre/requête
-  // (effet) ou au clic sur « Réessayer ». AbortController recréé à chaque
-  // effet : une réponse d'un filtre périmé ne peut plus écraser la liste
+  // (effet) ou au clic sur « Réessayer ». AbortController + jeton de
+  // séquence : une réponse d'un filtre périmé ne peut plus écraser la liste
   // courante (courses de réponses).
   async function loadFirstPage(signal?: AbortSignal) {
+    const jeton = ++seqRef.current;
     setChargement(true);
     setErreur(false);
     try {
       const page = await api.get<EpreuveListItem[]>(`/api/epreuves?${buildParams(0)}`, undefined, signal);
+      if (signal?.aborted || jeton !== seqRef.current) return;
       setEpreuves(page);
       setHasMore(page.length === PAGE_SIZE);
       setChargement(false);
     } catch (err) {
-      if (signal?.aborted) return;
+      if (signal?.aborted || jeton !== seqRef.current) return;
       setErreur(true);
       setChargement(false);
       // L'utilisateur voit déjà le bandeau « Le catalogue n'a pas pu être
@@ -123,19 +150,29 @@ export function CataloguePage() {
   }, [filiere, matiere, annee, evaluation, corrige, acces, initialized, query]);
 
   async function loadMore() {
+    // Deux clics rapprochés partiraient sur le même `epreuves.length` et
+    // concaténeraient deux fois la même page.
+    if (loadingMore) return;
     setErreurSuite(false);
     setLoadingMore(true);
+    // Filtres et numéro de page figés AU MOMENT du clic : la réponse n'est
+    // acceptée que si l'utilisateur n'a rien changé d'ici là.
+    const jeton = ++seqRef.current;
+    const signature = signatureFiltres();
+    const offset = epreuves.length;
     try {
-      const page = await api.get<EpreuveListItem[]>(`/api/epreuves?${buildParams(epreuves.length)}`);
+      const page = await api.get<EpreuveListItem[]>(`/api/epreuves?${buildParams(offset)}`);
+      if (jeton !== seqRef.current || signature !== signatureFiltres()) return;
       setEpreuves((prev) => [...prev, ...page]);
       setHasMore(page.length === PAGE_SIZE);
     } catch {
+      if (jeton !== seqRef.current) return;
       // "Voir plus" échoué : on garde la liste déjà affichée, l'utilisateur
       // peut relancer — mais pas de concaténation de résultats périmés.
       setHasMore(true);
       setErreurSuite(true);
     } finally {
-      setLoadingMore(false);
+      if (jeton === seqRef.current) setLoadingMore(false);
     }
   }
 

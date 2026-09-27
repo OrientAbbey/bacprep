@@ -270,34 +270,44 @@ function ListeOptions({
   highlighted,
   onHighlight,
   onSelect,
+  idPrefix,
+  listboxId,
+  label,
 }: {
   value: string;
   options: OptionChoix[];
   highlighted: number;
   onHighlight: (i: number) => void;
   onSelect: (v: string) => void;
+  /** Préfixe d'identifiants UNIQUE par champ : en dur, les `id` de tous les
+   * sélecteurs d'un formulaire d'épreuve se recouvraient et
+   * `aria-activedescendant` pointait vers l'option d'un AUTRE champ. */
+  idPrefix: string;
+  listboxId: string;
+  label: string;
 }) {
   if (options.length === 0) {
     return <p className="px-3 py-3 text-sm text-slate">Aucun résultat</p>;
   }
   return (
-    <ul role="listbox" className="max-h-64 overflow-y-auto py-1">
+    <ul id={listboxId} role="listbox" aria-label={label} className="max-h-64 overflow-y-auto py-1">
       {options.map((o, i) => (
-        <li key={o.value}>
-          <button
-            id={`option-liste-${i}`}
-            data-option={i}
-            type="button"
-            role="option"
-            aria-selected={value === o.value}
-            onMouseEnter={() => onHighlight(i)}
-            onClick={() => onSelect(o.value)}
-            className={`min-h-[44px] w-full px-3 py-2 text-left text-sm ${
-              highlighted === i ? "bg-highlight-soft" : ""
-            } ${value === o.value ? "font-medium text-ink" : "text-ink-soft"}`}
-          >
-            {o.label}
-          </button>
+        // `role="option"` sur l'enfant DIRECT du listbox (et non sur un
+        // <button> imbriqué dans un <li> sans rôle) : sinon la relation de
+        // parenté ARIA est rompue et le lecteur d'écran voit une liste vide.
+        <li
+          key={o.value}
+          id={`${idPrefix}-${i}`}
+          data-option={i}
+          role="option"
+          aria-selected={value === o.value}
+          onMouseEnter={() => onHighlight(i)}
+          onClick={() => onSelect(o.value)}
+          className={`min-h-[44px] cursor-pointer px-3 py-2 text-sm ${
+            highlighted === i ? "bg-highlight-soft" : ""
+          } ${value === o.value ? "font-medium text-ink" : "text-ink-soft"}`}
+        >
+          {o.label}
         </li>
       ))}
     </ul>
@@ -328,6 +338,12 @@ export function Select({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const selected = options.find((o) => o.value === value);
+  // Identifiants propres à CETTE instance (un formulaire d'épreuve en compte
+  // plusieurs sur la même page).
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  const listboxId = `${uid}-listbox`;
+  const idPrefix = `${uid}-option`;
 
   useClickOutside(rootRef, () => setOpen(false), open);
 
@@ -394,7 +410,7 @@ export function Select({
 
   return (
     <div ref={rootRef} className="relative">
-      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
+      <label id={labelId} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
         {label} {obligatoire && <span className="text-correction">*</span>}
       </label>
       <button
@@ -403,7 +419,11 @@ export function Select({
         role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={label}
+        // `aria-labelledby` plutôt qu'un `aria-label` figé : l'astérisque
+        // « obligatoire » est ainsi annoncé avec le nom du champ.
+        aria-labelledby={labelId}
+        aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={open ? `${idPrefix}-${highlighted}` : undefined}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={onTriggerKeyDown}
         className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 py-2 text-left text-sm text-ink transition-colors hover:border-highlight/50"
@@ -414,7 +434,6 @@ export function Select({
       {open && (
         <div
           className="absolute z-20 mt-1 w-full min-w-[220px] rounded-[2px] border border-ink-soft/20 bg-paper-raised shadow-lg"
-          aria-activedescendant={`option-liste-${highlighted}`}
           onKeyDown={onPanelKeyDown}
         >
           <ListeOptions
@@ -423,6 +442,9 @@ export function Select({
             highlighted={highlighted}
             onHighlight={setHighlighted}
             onSelect={choisir}
+            idPrefix={idPrefix}
+            listboxId={listboxId}
+            label={label}
           />
         </div>
       )}
@@ -455,6 +477,11 @@ export function EditableSelect({
   const [highlighted, setHighlighted] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Identifiants propres à CETTE instance (voir `Select`).
+  const uid = useId();
+  const inputId = `${uid}-input`;
+  const listboxId = `${uid}-listbox`;
+  const idPrefix = `${uid}-option`;
 
   // Affiche le libellé lisible quand la valeur courante est un code connu
   // (ex. "terminale" → "Terminale") ; sinon la saisie libre brute.
@@ -540,12 +567,13 @@ export function EditableSelect({
 
   return (
     <div ref={rootRef} className="relative">
-      <label className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
+      <label htmlFor={inputId} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
         {label} {obligatoire && <span className="text-correction">*</span>}
       </label>
       <div className="relative">
         <input
           ref={inputRef}
+          id={inputId}
           value={affiche}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setOpen(true)}
@@ -555,7 +583,11 @@ export function EditableSelect({
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-autocomplete="list"
-          aria-label={label}
+          // `aria-label` retiré : le <label htmlFor> labellise désormais
+          // réellement le champ (il ne le faisait pas avant, le champ étant
+          // hors de tout enfant du <label>).
+          aria-controls={open && suggestions.length > 0 ? listboxId : undefined}
+          aria-activedescendant={open && suggestions.length > 0 ? `${idPrefix}-${highlighted}` : undefined}
           className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 pr-10 text-sm text-ink transition-colors hover:border-highlight/50 focus:border-highlight/60 focus:outline-none"
         />
         {/* Chevron dessiné UNIQUE : la gestion est 100 % customisée — aucune
@@ -577,7 +609,6 @@ export function EditableSelect({
       {open && (
         <div
           className="absolute z-20 mt-1 w-full min-w-[220px] rounded-[2px] border border-ink-soft/20 bg-paper-raised shadow-lg"
-          aria-activedescendant={`option-liste-${highlighted}`}
           onKeyDown={onPanelKeyDown}
         >
           <ListeOptions
@@ -586,6 +617,9 @@ export function EditableSelect({
             highlighted={highlighted}
             onHighlight={setHighlighted}
             onSelect={choisir}
+            idPrefix={idPrefix}
+            listboxId={listboxId}
+            label={label}
           />
         </div>
       )}

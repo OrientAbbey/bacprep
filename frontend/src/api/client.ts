@@ -10,30 +10,95 @@ export class ApiError extends Error {
   }
 }
 
-async function parseError(res: Response): Promise<ApiError> {
-  let detail: unknown = null;
-  try {
-    detail = await res.json();
-  } catch {
-    detail = await res.text().catch(() => null);
+/** Erreur « délai dépassé » : distincte d'une panne réseau pour que
+ * l'interface puisse expliquer la cause au lieu d'afficher un échec opaque. */
+export class ApiTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Le serveur n'a pas répondu dans le délai imparti (${Math.round(ms / 1000)} s).`);
+    this.name = "ApiTimeoutError";
   }
-  return new ApiError(res.status, detail);
+}
+
+/**
+ * Corps lu UNE SEULE FOIS. `res.json()` puis `res.text()` en secours ne peut
+ * pas marcher : le premier appel consomme le flux, le second rejette sur un
+ * corps déjà lu et son `.catch` renvoyait `null` — le message d'erreur du
+ * serveur (ex. « épreuve retirée ») était donc systématiquement perdu sur
+ * une réponse d'erreur qui n'était pas du JSON.
+ */
+async function parseError(res: Response): Promise<ApiError> {
+  const texte = await res.text().catch(() => "");
+  if (!texte) return new ApiError(res.status, null);
+  try {
+    return new ApiError(res.status, JSON.parse(texte));
+  } catch {
+    return new ApiError(res.status, texte);
+  }
+}
+
+/** Délai au-delà duquel une requête non-SSE est abandonnée. */
+const TIMEOUT_DEFAUT_MS = 15_000;
+
+/**
+ * Combine le `signal` de l'appelant avec un délai d'attente interne.
+ * Implémenté à la main plutôt qu'avec `AbortSignal.any`/`AbortSignal.timeout`
+ * (support plus large) et surtout pour pouvoir distinguer « l'appelant a
+ * annulé » de « le délai a expiré » : seule la seconde est une erreur à
+ * signaler à l'utilisateur.
+ */
+function signauxCombines(externe: AbortSignal | null | undefined) {
+  const interne = new AbortController();
+  let expire = false;
+  const minuterie = setTimeout(() => {
+    expire = true;
+    interne.abort();
+  }, TIMEOUT_DEFAUT_MS);
+  const surAbort = () => interne.abort();
+  if (externe) {
+    if (externe.aborted) interne.abort();
+    else externe.addEventListener("abort", surAbort, { once: true });
+  }
+  return {
+    signal: interne.signal,
+    expire: () => expire,
+    liberer: () => {
+      clearTimeout(minuterie);
+      externe?.removeEventListener("abort", surAbort);
+    },
+  };
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const { headers, ...rest } = options;
+  const { headers, body, ...rest } = options;
   // IMPORTANT : fusionner les en-têtes (headers) après avoir étalé `rest`,
   // sans jamais étaler `options` (qui contient déjà `headers`) par-dessus un
   // objet headers déjà construit — sinon Content-Type est silencieusement
   // écrasé dès qu'un appel fournit ses propres en-têtes.
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: "include",
-    ...rest,
-    headers: {
-      "Content-Type": "application/json",
-      ...(headers || {}),
-    },
-  });
+  // `Content-Type: application/json` n'a de sens qu'AVEC un corps : sur un GET
+  // ou un DELETE sans corps, il annonce à tort le type de la requête et peut
+  // déclencher un preflight CORS inutile.
+  const comb = signauxCombines(rest.signal as AbortSignal | undefined);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      credentials: "include",
+      ...rest,
+      body,
+      signal: comb.signal,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(headers || {}),
+      },
+    });
+  } catch (err) {
+    // Annulation demandée par l'appelant : ce n'est pas une panne, on laisse
+    // remonter tel quel pour qu'il distingue le cas.
+    if (rest.signal?.aborted) throw err;
+    if (comb.expire()) throw new ApiTimeoutError(TIMEOUT_DEFAUT_MS);
+    throw err;
+  } finally {
+    comb.liberer();
+  }
 
   if (!res.ok) throw await parseError(res);
 
@@ -60,15 +125,32 @@ export const api = {
     }),
   del: <T>(path: string, headers?: Record<string, string>, signal?: AbortSignal) =>
     request<T>(path, { method: "DELETE", headers, signal }),
-  upload: async <T>(path: string, formData: FormData, headers?: Record<string, string>): Promise<T> => {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-      headers: headers || {},
-    });
-    if (!res.ok) throw await parseError(res);
-    return res.json();
+  upload: async <T>(
+    path: string,
+    formData: FormData,
+    headers?: Record<string, string>,
+    signal?: AbortSignal
+  ): Promise<T> => {
+    // `Content-Type` laissé à fetch : il doit porter la frontière
+    // multipart, un en-tête explicite la casserait.
+    const comb = signauxCombines(signal);
+    try {
+      const res = await fetch(`${BASE_URL}${path}`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+        signal: comb.signal,
+        headers: headers || {},
+      });
+      if (!res.ok) throw await parseError(res);
+      return res.json();
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (comb.expire()) throw new ApiTimeoutError(TIMEOUT_DEFAUT_MS);
+      throw err;
+    } finally {
+      comb.liberer();
+    }
   },
 };
 

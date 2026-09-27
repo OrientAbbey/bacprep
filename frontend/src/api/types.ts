@@ -301,12 +301,3 @@ export interface NotificationsEleve {
 export interface NotificationAdmin extends Omit<NotificationEleve, "lue"> {
   actif: boolean;
 }
-
-/** Création d'une notification (POST /api/admin/notifications). */
-export interface NotificationIn {
-  titre: string;
-  message?: string;
-  type?: string;
-  epreuve_id?: string | null;
-  actif?: boolean;
-}

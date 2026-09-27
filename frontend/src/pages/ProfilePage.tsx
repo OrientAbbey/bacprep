@@ -66,12 +66,17 @@ export function ProfilePage() {
   const [noteEdition, setNoteEdition] = useState<Note | null>(null);
   const [erreurChargement, setErreurChargement] = useState(false);
   // Confirmation en attente : annule l'abonnement ou supprime une note.
+  // Le `tone` voyage AVEC la confirmation : un drapeau global était
+  // obligatoire parce que les deux confirmations le partageaient, et il
+  // restait figé à `true` après le premier usage — la branche « default »
+  // était morte et une confirmation non destructive aurait été peinte en
+  // rouge. Chaque confirmation choisit désormais sa propre couleur.
   const [confirmation, setConfirmation] = useState<{
     titre: string;
     message: string;
+    tone: "default" | "danger";
     action: () => void | Promise<void>;
   } | null>(null);
-  const [confirmDanger, setConfirmDanger] = useState(false);
   // Formulaire d'infos étendues (édition locale, sauvegarde explicite).
   const [form, setForm] = useState({ nom: "", niveau: "", classe: "", etablissement: "" });
   const [formOuvert, setFormOuvert] = useState(false);
@@ -177,10 +182,10 @@ export function ProfilePage() {
   }
 
   function cancel(subId: string) {
-    setConfirmDanger(true);
     setConfirmation({
       titre: "Annuler cet abonnement ?",
       message: "L'accès sera révoqué immédiatement.",
+      tone: "danger",
       action: async () => {
         try {
           await api.post(`/api/subscriptions/${subId}/cancel`);
@@ -193,10 +198,10 @@ export function ProfilePage() {
   }
 
   function deleteNote(id: string) {
-    setConfirmDanger(true);
     setConfirmation({
       titre: "Supprimer cette note ?",
       message: "Supprimer définitivement cette note ?",
+      tone: "danger",
       action: async () => {
         try {
           await api.del(`/api/me/notes/${id}`);
@@ -458,7 +463,7 @@ export function ProfilePage() {
 
       {confirmation && (
         <ConfirmDialog
-          tone={confirmDanger ? "danger" : "default"}
+          tone={confirmation.tone}
           title={confirmation.titre}
           message={confirmation.message}
           onConfirm={confirmation.action}
