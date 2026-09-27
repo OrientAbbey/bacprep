@@ -130,7 +130,11 @@ def _ensure_epreuve_files_document_unique() -> None:
             sa_text(
                 "SELECT epreuve_id, cible, sujet_index, COUNT(*) AS n "
                 "FROM epreuve_files WHERE format = 'md' "
-                "GROUP BY epreuve_id, cible, sujet_index HAVING n > 1"
+                # `HAVING COUNT(*) > 1` et NON `HAVING n > 1` : PostgreSQL
+                # refuse un alias de colonne dans HAVING (UndefinedColumn),
+                # SQLite l'accepte. La production étant sur PostgreSQL, seul
+                # COUNT(*) fonctionne sur les deux moteurs.
+                "GROUP BY epreuve_id, cible, sujet_index HAVING COUNT(*) > 1"
             )
         ).fetchall()
     if doublons:
