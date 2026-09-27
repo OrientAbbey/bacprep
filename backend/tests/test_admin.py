@@ -10,7 +10,8 @@ def test_admin_login_ok_et_mauvais_jeton(client):
     assert r.status_code == 401
     r = client.post("/api/admin/login", json={"email": "admin@example.com", "token": "test-admin-token"})
     assert r.status_code == 200
-    assert "session_token" in r.json()
+    assert "session_token" not in r.json()
+    assert dict(client.cookies).get("admin_session")
 
 
 def test_routes_admin_sans_session_401(client):

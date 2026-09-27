@@ -54,12 +54,28 @@ def eleve(client):
 
 @pytest.fixture()
 def admin(eleve):
-    """Client élève AYANT AUSSI une session admin (en-tête X-Admin-Session)."""
+    """Client élève AYANT AUSSI une session admin (cookie admin_session)."""
     r = eleve.post("/api/admin/login", json={"email": "admin@example.com", "token": "test-admin-token"})
     assert r.status_code == 200, r.text
-    token = r.json()["session_token"]
-    eleve.headers = {**eleve.headers, "X-Admin-Session": token}
+    # Le jeton ne quitte jamais le cookie httpOnly : les appels admin
+    # suivants s'authentifient par le jar de cookies du TestClient.
     return eleve
+
+
+@pytest.fixture()
+def db():
+    """Session SQLAlchemy sur la base de test, fermée après le test.
+
+    À utiliser pour les assertions qui doivent lire l'état réel en base
+    (lignes `epreuve_files`, `admin_lock`…), là où passer par l'API ne
+    permet pas de vérifier une transaction annulée."""
+    from app.db import SessionLocal
+
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
 @pytest.fixture()

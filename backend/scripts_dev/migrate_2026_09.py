@@ -4,7 +4,7 @@ dimensions d'images, logs d'import, audit enrichi) puis rebâlit les données
 dérivées (extraits du sujet, dimensions des images). S'exécute plusieurs
 fois sans effet de bord : chaque ALTER TABLE est testé avant application.
 
-Usage : cd backend && python -m app.scripts_dev.migrate_2026_09
+Usage : cd backend && python -m scripts_dev.migrate_2026_09
 """
 
 from __future__ import annotations

@@ -62,9 +62,15 @@ class StorageService(Protocol):
 
     def exists(self, key: str) -> bool: ...
 
-    def presigned_url(self, key: str, expires_seconds: int = 900) -> Optional[str]:
+    def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
         """URL d'accès temporaire, ou None si le backend n'en produit pas
-        (backend local : l'accès passe par le streaming FastAPI)."""
+        (backend local : l'accès passe par le streaming FastAPI).
+
+        ``content_disposition`` (``"attachment"``) force le téléchargement
+        côté navigateur au lieu du rendu inline — nécessaire pour les types
+        actifs comme SVG. Le paramètre ``ResponseContentDisposition`` est
+        pris en charge par ``get_object``.
+        """
         ...
 
 
@@ -109,7 +115,7 @@ class LocalStorage:
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
 
-    def presigned_url(self, key: str, expires_seconds: int = 900) -> Optional[str]:
+    def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
         return None
 
     def local_path(self, key: str) -> Optional[Path]:
@@ -184,12 +190,11 @@ class S3CompatibleStorage:
         except botocore.exceptions.ClientError:
             return False
 
-    def presigned_url(self, key: str, expires_seconds: int = 900) -> Optional[str]:
-        return self._client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": self.bucket, "Key": normalize_key(key)},
-            ExpiresIn=expires_seconds,
-        )
+    def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
+        params = {"Bucket": self.bucket, "Key": normalize_key(key)}
+        if content_disposition:
+            params["ResponseContentDisposition"] = content_disposition
+        return self._client.generate_presigned_url("get_object", Params=params, ExpiresIn=expires_seconds)
 
 
 _storage: Optional[StorageService] = None
@@ -224,13 +229,17 @@ def get_storage() -> StorageService:
     return _storage
 
 
-def presigned_url_or_none(key: str, expires_seconds: Optional[int] = None) -> Optional[str]:
-    """URL signée si le backend actif en produit (s3), sinon None —
+def presigned_url_or_none(
+    key: str,
+    expires_seconds: Optional[int] = None,
+    content_disposition: Optional[str] = None,
+) -> Optional[str]:
+    """URL signée si le backend actif en produit (s3), sinon None -
     l'appelant retombe alors sur le streaming FastAPI."""
     if expires_seconds is None:
         expires_seconds = int(os.getenv("STORAGE_SIGNED_URL_EXPIRY", "900"))
     try:
-        return get_storage().presigned_url(key, expires_seconds)
+        return get_storage().presigned_url(key, expires_seconds, content_disposition)
     except Exception as exc:  # jamais bloquant : le streaming reste possible
         log.warning("Génération d'URL signée impossible pour %s: %s", key, exc)
         return None

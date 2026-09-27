@@ -206,8 +206,8 @@ class WebhookIn(BaseModel):
 # ---------- Admin ----------
 
 class AdminLoginIn(BaseModel):
-    email: str
-    token: str
+    email: str = Field(min_length=3, max_length=254)
+    token: str = Field(min_length=1, max_length=256)
     force: bool = False
 
 

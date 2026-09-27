@@ -80,7 +80,7 @@ print("detail gratuit:", st, "| sujet:", det["contenu_markdown"][:40].replace("\
 admin_created = False
 if paid is None:
     st, res = req("POST", "/api/admin/login", {"email": "admin@example.com", "token": "admin123"})
-    AT = {"X-Admin-Session": json.loads(res)["session_token"]}
+    AT: dict[str, str] = {}  # session admin portée par le cookie httpOnly
     st, res = req(
         "POST",
         "/api/admin/epreuves",
@@ -125,6 +125,5 @@ print("abonnements:", [(s["scope"], s["evaluation"], s["classe"], s["epreuves_co
 
 if admin_created:
     st, res = req("POST", "/api/admin/login", {"email": "admin@example.com", "token": "admin123"})
-    AT = {"X-Admin-Session": json.loads(res)["session_token"]}
-    st, res = req("DELETE", f"/api/admin/epreuves/{paid['id']}", None, AT)
+    st, res = req("DELETE", f"/api/admin/epreuves/{paid['id']}", None, {})
     print("nettoyage épreuve de test:", st)

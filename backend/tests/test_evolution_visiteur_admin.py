@@ -230,6 +230,88 @@ def test_fenetre_inactivite_admin_parametrable(monkeypatch):
     assert admin_session.session_timeout() == timedelta(minutes=7)
 
 
+def test_duree_absolue_admin_parametrable(monkeypatch):
+    """La borne absolue (ADMIN_SESSION_MAX_MINUTES) est distincte de la
+    fenêtre d'inactivité et borne le temps de vie même d'une session
+    activement rafraîchie."""
+    from app.core import admin_session
+
+    monkeypatch.delenv("ADMIN_SESSION_MAX_MINUTES", raising=False)
+    assert admin_session.session_max_duration() == timedelta(minutes=480)  # 8 h
+    monkeypatch.setenv("ADMIN_SESSION_MAX_MINUTES", "30")
+    assert admin_session.session_max_duration() == timedelta(minutes=30)
+    # Une valeur absurde est ramenée au plancher plutôt que d'ouvrir une
+    # session qui expire immédiatement (division par zéro, 401 en boucle).
+    monkeypatch.setenv("ADMIN_SESSION_MAX_MINUTES", "0")
+    assert admin_session.session_max_duration() == timedelta(minutes=1)
+    monkeypatch.setenv("ADMIN_SESSION_MAX_MINUTES", "n'importe-quoi")
+    assert admin_session.session_max_duration() == timedelta(minutes=480)
+
+
+def test_jeton_admin_hache_en_base(admin):
+    """La base ne doit conserver que l'empreinte du jeton : une fuite de la
+    table `admin_lock` ne permet pas de rejouer la session. Le cookie, lui,
+    porte le jeton brut."""
+    from app.core import admin_session
+    from app.db import SessionLocal
+    from app.db_models import AdminLockORM
+
+    cookie_brut = admin.cookies.get("admin_session")
+    assert cookie_brut, "le login doit poser un cookie admin_session"
+
+    with SessionLocal() as db:
+        lock = db.query(AdminLockORM).filter(AdminLockORM.id == admin_session.LOCK_ID).one()
+        stocke = lock.token
+
+    assert stocke != cookie_brut, "le jeton brut ne doit jamais être stocké"
+    assert stocke == admin_session.hash_token(cookie_brut)
+    # SHA-256 déterministe : vérifie bien que c'est l'empreinte du cookie.
+    assert len(stocke) == 64
+    # Et le cookie brut reste le seul moyen de s'authentifier.
+    assert admin.get("/api/admin/stats").status_code == 200
+
+
+def test_duree_absolue_admin_independante_de_l_activite(admin):
+    """Une session dont `last_activity` vient d'être rafraîchit doit malgré
+    tout expirer si `since` dépasse la durée absolue : c'est ce qui empêche
+    un jeton volé de survivre indéfiniment grâce aux heartbeats."""
+    from app.core import admin_session
+    from app.db import SessionLocal, utc_now
+    from app.db_models import AdminLockORM
+
+    def _depuis_inception(delta):
+        with SessionLocal() as db:
+            lock = db.query(AdminLockORM).filter(AdminLockORM.id == admin_session.LOCK_ID).one()
+            lock.since = utc_now() - delta
+            lock.last_activity = utc_now()  # activité fraîche : seule la borne absolue joue
+            db.commit()
+
+    # Session ouverte il y a 9 h (> 8 h) mais active à l'instant → 401.
+    _depuis_inception(timedelta(hours=9))
+    r = admin.get("/api/admin/stats")
+    assert r.status_code == 401
+
+    # Re-login, ouverte il y a 1 h et active → 200.
+    admin.post("/api/admin/login", json={"email": "admin@example.com", "token": "test-admin-token"})
+    _depuis_inception(timedelta(hours=1))
+    assert admin.get("/api/admin/stats").status_code == 200
+
+
+def test_heartbeat_renouvelle_le_cookie_brut(admin):
+    """Le heartbeat rallonge le cookie httpOnly : il doit le réécrire avec le
+    MÊME jeton brut (lu dans la requête), pas avec l'empreinte stockée en
+    base — sinon le cookie deviendrait inauthentifiable au 2e battement."""
+    avant = admin.cookies.get("admin_session")
+    r = admin.post("/api/admin/heartbeat")
+    assert r.status_code == 200
+    assert admin.cookies.get("admin_session") == avant
+    # Le cookie réémis reste valide sur les routes admin.
+    assert admin.get("/api/admin/stats").status_code == 200
+    # Deux heartbeats d'affilée ne cassent rien.
+    assert admin.post("/api/admin/heartbeat").status_code == 200
+    assert admin.get("/api/admin/stats").status_code == 200
+
+
 def test_heartbeat_admin_rafraichit_le_verrou(admin):
     # Le battement de cœur maintient la session tant que la console est
     # ouverte : 200 avec le délai configuré, 401 avec un mauvais jeton.

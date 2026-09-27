@@ -91,7 +91,9 @@ def main() -> None:
         # email avec le bon jeton est autorisé, cf. admin_login)
         r = c.post("/api/admin/login", json={"email": "admin@x.cm", "token": os.getenv("ADMIN_TOKEN", "admin123")})
         assert r.status_code == 200, r.text
-        h = {"X-Admin-Session": r.json()["session_token"]}
+        # Le jeton admin ne quitte jamais le corps de la réponse : la session
+        # passe par le cookie httpOnly du client.
+        h: dict[str, str] = {}
 
         counts = c.get("/api/admin/epreuves/counts", headers=h).json()
         assert counts["tous"] == counts["brouillon"] + counts["a_reviser"] + counts["publie"], counts

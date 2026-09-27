@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
@@ -14,6 +16,21 @@ from .auth import optional_user
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 log = get_logger("files")
+
+_UNSAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def safe_filename(name: str | None, fallback: str) -> str:
+    """Nom de fichier réduit à un alphabet sûr pour un en-tête HTTP.
+
+    Le nom est stocké en base et réinjecté dans ``Content-Disposition`` : sans
+    filtrage, un guillemet ou un CR/LF dans le nom allowait de casser
+    l'en-tête. On ne garde que le nom de base (les séparateurs de chemin sont
+    donc exclus par construction).
+    """
+    base = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    cleaned = _UNSAFE_IN_FILENAME.sub("_", base).strip("._")
+    return cleaned[:120] or fallback
 
 
 def _load_file_or_404(db: Session, file_id: str) -> EpreuveFileORM:
@@ -61,6 +78,28 @@ def get_file(
         if not epreuve or not store.has_access(db, user.id, epreuve):
             raise HTTPException(403, "Accès non autorisé — un abonnement est requis")
 
+    media_type = f.mime_type or "application/octet-stream"
+
+    # SVG accepté historiquement mais XSS-able (il embarque <script>) : il ne
+    # doit JAMAIS être rendu inline. Ce test passe AVANT la branche objet —
+    # une redirection vers une URL signée du bucket servirait le SVG inline
+    # avec son vrai Content-Type, et neutraliserait l'attachement ci-dessous.
+    if f.mime_type == "image/svg+xml":
+        disposition = f'attachment; filename="{safe_filename(f.filename, "image.svg")}"'
+        if get_storage().backend != "local":
+            signed = presigned_url_or_none(f.storage_key, expires_seconds=300, content_disposition="attachment")
+            if signed:
+                return RedirectResponse(signed, status_code=302)
+        try:
+            data = get_storage().get_bytes(f.storage_key)
+        except StorageError:
+            raise HTTPException(404, "Fichier introuvable")
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={"Content-Disposition": disposition, "Cache-Control": "no-store"},
+        )
+
     # Backend objet (s3) : on délègue le servir au stockage via une URL
     # signée courte plutôt que de transiter par FastAPI (recommandation
     # architecture : réduire la charge du backend sur les fichiers).
@@ -74,18 +113,6 @@ def get_file(
     except StorageError:
         raise HTTPException(404, "Fichier introuvable")
 
-    media_type = f.mime_type or "application/octet-stream"
-    if f.mime_type == "image/svg+xml":
-        # SVG accepté historiquement mais XSS-able (embarque <script>) :
-        # jamais rendu inline, toujours proposé au téléchargement.
-        return Response(
-            content=data,
-            media_type=media_type,
-            headers={
-                "Content-Disposition": f'attachment; filename="{f.filename}"',
-                "Cache-Control": "no-store",
-            },
-        )
     if f.format == "image":
         # Cache long : les images sont immuables (clé unique par upload)
         # — réduit fortement les rechargements pendant la lecture.

@@ -34,6 +34,13 @@ from .deps import require_admin
 router = APIRouter(prefix="/api/admin/assistant", tags=["admin-assistant"])
 log = get_logger("admin_assistant_router")
 
+# Bornes de la charge utile de l'assistant (cf. AdminAskIn). Le serveur
+# n'exploite que les 20 derniers messages, mais le corps de la requête est
+# intégralement parsé avant cette troncature : sans plafond, un client
+# envoyait un tableau arbitrairement grand.
+MESSAGE_CONTENT_MAX_CHARS = 20_000
+EPREUVE_TEXT_MAX_CHARS = 200_000
+
 # Plafonne le coût LLM par admin (les APIs appelées sont payantes) —
 # comptage mémoire, mono-instance ; partage l'interrupteur
 # ASSISTANT_RATE_LIMIT (désactivé en test).
@@ -59,7 +66,14 @@ class AdminAskIn(BaseModel):
     de réconciliation)."""
 
     question: str = Field(min_length=1, max_length=8000)
-    historique: list[dict] = Field(default_factory=list)
+    # Bornes sur l'historique : sans elles, un client pouvait envoyer un
+    # tableau arbitrairement grand — entièrement parsé en mémoire AVANT que
+    # `_historique_borne` ne le tronque à 20. Le plafond de 100 messages
+    # reste très au-dessus de ce qu'envoie le frontend (une conversation
+    # d'édition) tout en refusant les charges aberrantes ; `role` et
+    # `content` sont bornés pour la même raison (une seule chaîne géante
+    # suffit à saturer la mémoire).
+    historique: list[dict] = Field(default_factory=list, max_length=100)
     epreuve: dict = Field(default_factory=dict)
     epreuve_id: str | None = Field(default=None, max_length=64)
 
@@ -69,6 +83,35 @@ class AdminAskIn(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("la question ne peut pas être vide")
+        return v
+
+    @field_validator("historique")
+    @classmethod
+    def historique_borne(cls, v: list[dict]) -> list[dict]:
+        for i, message in enumerate(v):
+            role = message.get("role")
+            content = message.get("content")
+            if not isinstance(role, str) or len(role) > 16:
+                raise ValueError(f"historique[{i}].role invalide (1 à 16 caractères)")
+            if not isinstance(content, str) or len(content) > MESSAGE_CONTENT_MAX_CHARS:
+                raise ValueError(
+                    f"historique[{i}].content trop long (max {MESSAGE_CONTENT_MAX_CHARS} caractères)"
+                )
+        return v
+
+    @field_validator("epreuve")
+    @classmethod
+    def epreuve_bornee(cls, v: dict) -> dict:
+        # `contenu_markdown` / `corrige_markdown` sont renvoyés au modèle :
+        # une valeur non bornée est à la fois un risque mémoire et un coût
+        # LLM contrôlé par le client. 200 000 caractères couvre un sujet
+        # d'examen complet très largement.
+        for champ in ("contenu_markdown", "corrige_markdown"):
+            valeur = v.get(champ)
+            if valeur is not None and (
+                not isinstance(valeur, str) or len(valeur) > EPREUVE_TEXT_MAX_CHARS
+            ):
+                raise ValueError(f"epreuve.{champ} trop long (max {EPREUVE_TEXT_MAX_CHARS} caractères)")
         return v
 
 

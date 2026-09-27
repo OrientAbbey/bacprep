@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import store
 from .core.catalogue import seed_database_if_empty
-from .core.config import is_prod
+from .core.config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
 from .core.logging_config import get_logger, setup_logging
 from .db import Base, SessionLocal, engine
 from .routers import (
@@ -100,18 +100,116 @@ def _ensure_epreuve_files_sujet_index() -> None:
             conn.execute(sa_text("ALTER TABLE epreuve_files ADD COLUMN sujet_index INTEGER NOT NULL DEFAULT 0"))
 
 
+def _ensure_epreuve_files_document_unique() -> None:
+    """Migration minimale et idempotente : crée l'index unique partiel
+    `uq_epreuve_files_document` sur les documents Markdown.
+
+    `create_all` ne crée QUE les tables absentes : un index déclaré dans le
+    modèle n'est donc jamais ajouté à une base existante. Il faut le créer
+    explicitement, une seule fois.
+
+    Si des doublons préexistent, la création échouerait et rendrait le
+    service incapable de démarrer. On les signale alors en ERROR et on
+    laisse l'index absent (l'application continue : c'est la micro-migration
+    `sujet_index` qui a pu créer ces doublons, et un opérateur doit trancher
+    avant de purger) — un index unique qui casse le déploiement serait
+    pire que le risque qu'il couvre.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+
+    try:
+        noms = {ix["name"] for ix in sa_inspect(engine).get_indexes("epreuve_files")}
+    except Exception:
+        return
+    if "uq_epreuve_files_document" in noms:
+        return
+
+    with engine.begin() as conn:
+        doublons = conn.execute(
+            sa_text(
+                "SELECT epreuve_id, cible, sujet_index, COUNT(*) AS n "
+                "FROM epreuve_files WHERE format = 'md' "
+                "GROUP BY epreuve_id, cible, sujet_index HAVING n > 1"
+            )
+        ).fetchall()
+    if doublons:
+        log.error(
+            "epreuve_files : %s groupe(s) de documents Markdown en double "
+            "(epreuve_id, cible, sujet_index) — index unique NON créé, "
+            "purger les doublons puis redémarrer. Détail : %s",
+            len(doublons),
+            doublons[:10],
+        )
+        return
+
+    with engine.begin() as conn:
+        # `IF NOT EXISTS` : sûr même si un autre worker a créé l'index
+        # entretemps (plusieurs instances redémarrant en même temps).
+        conn.execute(
+            sa_text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_epreuve_files_document "
+                "ON epreuve_files (epreuve_id, cible, sujet_index) "
+                "WHERE format = 'md'"
+            )
+        )
+
+
+def _check_prod_config() -> None:
+    """Refuse de démarrer en production si une variable de sécurité est
+    absente ou faible.
+
+    ``is_prod()`` gouverne cinq décisions (cookie ``Secure``, refus du
+    mock-login, refus du jeton d'exemple, ``ADMIN_ROOT`` obligatoire, webhook
+    de paiement). Toutes basculent en mode dégradé si la variable
+    correspondante manque. Mieux vaut un échec de démarrage visible qu'un
+    service qui accepte une connexion par simple email.
+    """
+    problems: list[str] = []
+
+    admin_token = os.getenv("ADMIN_TOKEN", "").strip()
+    if not admin_token:
+        problems.append("ADMIN_TOKEN absent")
+    elif admin_token == EXAMPLE_ADMIN_TOKEN:
+        problems.append("ADMIN_TOKEN encore égal à la valeur d'exemple")
+
+    if not os.getenv("ADMIN_ROOT", "").strip():
+        problems.append("ADMIN_ROOT absent (personne ne pourrait se connecter)")
+
+    if os.getenv("AUTH_MODE", "").strip().lower() != "google":
+        problems.append("AUTH_MODE doit valoir 'google' (le mock-login est refusé hors démo)")
+
+    if not os.getenv("GOOGLE_CLIENT_ID", "").strip():
+        problems.append("GOOGLE_CLIENT_ID absent")
+
+    secret = os.getenv("FILE_URL_SECRET", "")
+    if len(secret.encode("utf-8")) < MIN_FILE_URL_SECRET_BYTES:
+        problems.append(
+            f"FILE_URL_SECRET trop court ({len(secret.encode('utf-8'))} octets, "
+            f"minimum {MIN_FILE_URL_SECRET_BYTES})"
+        )
+
+    if problems:
+        raise RuntimeError(
+            "Configuration de production incomplète — démarrage refusé :\n  - "
+            + "\n  - ".join(problems)
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Crée les tables au démarrage (pas de migrations dans ce prototype —
-    `Base.metadata.create_all` suffit), applique les micro-migrations des
-    colonnes `users.role` et `epreuve_files.sujet_index`, et importe le
-    contenu de seed si la table `epreuves` est vide. Le seed n'est PAS
-    bloquant : un échec de stockage (bucket manquant, réseau…) est
+    """Vérifie la configuration, crée les tables au démarrage, applique les
+    micro-migrations des colonnes `users.role` et `epreuve_files.sujet_index`,
+    et importe le contenu de seed si la table `epreuves` est vide. Le seed
+    n'est PAS bloquant : un échec de stockage (bucket manquant, réseau…) est
     journalisé et le serveur démarre quand même — l'import reste possible
     ensuite via l'admin."""
+    if is_prod():
+        _check_prod_config()
     Base.metadata.create_all(bind=engine)
     _ensure_users_role_column()
     _ensure_epreuve_files_sujet_index()
+    _ensure_epreuve_files_document_unique()
     db = SessionLocal()
     try:
         from .core.referentiel_options import seed_referentiel_options

@@ -57,7 +57,6 @@ def test_seul_le_root_promouvoit(client, admin):
     # Le ROOT délègue le verrou admin au délégué (force=true), qui tente.
     r = d.post("/api/admin/login", json={"email": "delegue@test.cm", "token": "test-admin-token", "force": True})
     assert r.status_code == 200, r.text
-    d.headers = {**d.headers, "X-Admin-Session": r.json()["session_token"]}
     assert d.post(f"/api/admin/utilisateurs/{autre_id}/promouvoir").status_code == 403
     assert d.post(f"/api/admin/utilisateurs/{delegate_id}/demouvoir").status_code == 403
 
@@ -106,7 +105,7 @@ def test_session_admin_par_cookie_httpoly(client):
 
     r = c.post("/api/admin/login", json={"email": "admin@example.com", "token": "test-admin-token"})
     assert r.status_code == 200, r.text
-    assert "session_token" in r.json()
+    assert "session_token" not in r.json()
     assert dict(c.cookies).get("admin_session")
 
     # Aucun en-tête X-Admin-Session : ces appels ne doivent PAS faire 401.

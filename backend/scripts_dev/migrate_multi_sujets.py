@@ -12,7 +12,7 @@ application). Le serveur applique aussi cette migration au démarrage
 (`_ensure_epreuve_files_sujet_index` dans main.py) — ce script permet de
 la déclencher hors du cycle de vie de l'API.
 
-Usage : cd backend && python -m app.scripts_dev.migrate_multi_sujets
+Usage : cd backend && python -m scripts_dev.migrate_multi_sujets
 """
 
 from __future__ import annotations

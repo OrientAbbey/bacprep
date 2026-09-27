@@ -135,6 +135,116 @@ def test_rate_limit_login_etudiant(client, monkeypatch):
     assert all(s == 200 for s in statuts[:-1])
 
 
+def test_client_ip_privilegie_entree_xff_de_droite(monkeypatch):
+    """L'entrée XFF la plus à gauche est choisie par l'attaquant : le
+    compteur doit retenir celle de droite (ajoutée par le proxy), sinon le
+    quota se contourne en forgeant l'en-tête."""
+    from starlette.requests import Request
+
+    from app.core.rate_limit import client_ip
+
+    monkeypatch.setenv("ENV", "prod")
+
+    def _requete(headers, host="10.0.0.1"):
+        return Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+                "client": (host, 1234),
+            }
+        )
+
+    # Forgé à gauche, IP réelle à droite → c'est celle de droite qui compte.
+    r = _requete({"x-forwarded-for": "1.2.3.4, 5.6.7.8, 9.10.11.12"})
+    assert client_ip(r) == "9.10.11.12"
+
+    # Un en-tête entièrement falsifié reste pris tel quel en dernier recours :
+    # au moins la clé est-elle bien normalisée et non le texte brut ?
+    r = _requete({"x-forwarded-for": "1.2.3.4, 5.6.7.8"})
+    assert client_ip(r) == "5.6.7.8"
+
+    # En-têtes de bord prioritaires, et validés comme IP.
+    r = _requete({"true-client-ip": "203.0.113.7", "x-forwarded-for": "1.2.3.4"})
+    assert client_ip(r) == "203.0.113.7"
+    r = _requete({"cf-connecting-ip": "203.0.113.8"})
+    assert client_ip(r) == "203.0.113.8"
+
+    # Valeur non-IP : on l'ignore et on passe à la suite, sinon un en-tête
+    # fourré de texte ferait exploser la cardinalité des compteurs.
+    r = _requete({"true-client-ip": "pas-une-ip", "x-forwarded-for": "nawak, 203.0.113.9"})
+    assert client_ip(r) == "203.0.113.9"
+
+    # Rien d'exploitable → repli sur l'IP socket du proxy.
+    r = _requete({"x-forwarded-for": "pourriel"}, host="198.51.100.4")
+    assert client_ip(r) == "198.51.100.4"
+
+
+def test_client_ip_ignore_entetes_de_bord_hors_production(monkeypatch):
+    """Hors production, seul le client socket fait foi : les en-têtes de
+    bord sont ignorés (et le test de session ne dépend pas d'un proxy)."""
+    from starlette.requests import Request
+
+    from app.core.rate_limit import client_ip
+
+    monkeypatch.setenv("ENV", "dev")
+    r = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", b"1.2.3.4")],
+            "client": ("127.0.0.1", 1234),
+        }
+    )
+    assert client_ip(r) == "127.0.0.1"
+
+
+def test_rate_limiter_memoire_bornee():
+    """Une rotation d'IP ne doit pas faire croître le dictionnaire sans
+    borne : au-delà de MAX_TRACKED_KEYS, les entrées les plus anciennes
+    sont évictées."""
+    from app.core.rate_limit import MAX_TRACKED_KEYS, SlidingWindowLimiter
+
+    lim = SlidingWindowLimiter(max_attempts=5, window_seconds=3600)
+    pic = 0
+    for i in range(MAX_TRACKED_KEYS + 2000):
+        lim.check(f"10.{(i // 256) % 256}.{i % 256}")
+        pic = max(pic, len(lim._attempts))
+    assert pic <= MAX_TRACKED_KEYS, f"mémoire non bornée : {pic} clés"
+    lim.reset()
+    assert lim._attempts == {}
+
+
+def test_rate_limiter_purge_les_cles_hors_fenetre(monkeypatch):
+    """Une IP jamais revisitée ne doit pas conserver ses horodatages
+    indéfiniment. Le balayage est déclenché à mi-capacité (coût amorté),
+    pas à chaque appel : le seuil est donc abaissé pour l'exercer."""
+    import time as _time
+
+    from app.core import rate_limit
+    from app.core.rate_limit import SlidingWindowLimiter
+
+    # Purge à partir de 100 clés (mi-capacité de 200), éviction à 200.
+    monkeypatch.setattr(rate_limit, "MAX_TRACKED_KEYS", 200)
+    lim = SlidingWindowLimiter(max_attempts=5, window_seconds=0.05)
+
+    for i in range(60):
+        lim.check(f"192.168.1.{i}")
+    assert len(lim._attempts) == 60
+    # Exactement au seuil (mi-capacité de 200) : le prochain appel purge.
+    for i in range(40):
+        lim.check(f"192.168.2.{i}")
+    assert len(lim._attempts) == 100
+
+    # Fenêtre écoulée, puis nouvel appel : le seuil est franchi, les 100
+    # entrées sont périmées et le dictionnaire se vide entièrement.
+    _time.sleep(0.08)
+    lim.check("192.168.3.1")
+    assert list(lim._attempts) == ["192.168.3.1"]
+
+
 # ---------- Assistant : paywall images + bornes ----------
 
 def test_assistant_ignore_image_paywalled(admin, eleve, epreuve_payante):

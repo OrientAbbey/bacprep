@@ -18,7 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core import admin_session, store
-from ..core.config import is_prod
+from ..core.config import EXAMPLE_ADMIN_TOKEN, is_prod
 from ..core.logging_config import get_logger
 from ..core.rate_limit import SlidingWindowLimiter, client_ip
 from ..db import get_db, utc_now
@@ -43,7 +43,7 @@ from .deps import log_admin_event, require_admin
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 log = get_logger("admin")
 
-EXAMPLE_TOKEN = "admin123"
+EXAMPLE_TOKEN = EXAMPLE_ADMIN_TOKEN
 # Freine le brute-force du jeton admin : 5 tentatives/minute/IP (limiteur
 # mémoire partagé, cf. core/rate_limit.py ; désactivable via
 # LOGIN_RATE_LIMIT pour les tests — défaut ACTIVÉ, y compris en dev).
@@ -69,10 +69,8 @@ def admin_login(
     contrôle.
 
     Le jeton de session part dans un cookie httpOnly (SameSite=Lax, Secure
-    en prod) : il n'est JAMAIS restitué au JavaScript — un XSS même-origine
-    ne peut plus l'exfiltrer. Le champ session_token reste dans la réponse
-    pour les clients non-navigateur (curl/tests) qui l'utilisent via
-    l'en-tête X-Admin-Session. SameSite=Lax (aligné sur le cookie élève) :
+    en prod) et n'est JAMAIS restitué dans le corps : un XSS même-origine ne
+    peut ni le lire ni l'exfiltrer. SameSite=Lax (aligné sur le cookie élève) :
     Strict brisait la session après un login depuis une autre origine que
     l'API (localhost vs 127.0.0.1, etc.)."""
     _login_limiter.check(client_ip(request))
@@ -84,7 +82,9 @@ def admin_login(
     if is_prod() and expected_token == EXAMPLE_TOKEN:
         log.error("ADMIN_TOKEN vaut la valeur d'exemple en production — connexion refusée")
         raise HTTPException(500, "ADMIN_TOKEN d'exemple refusé en production")
-    if not secrets.compare_digest(payload.token, expected_token):
+    # compare_digest refuse les str non ASCII (TypeError -> 500) : on compare
+    # des octets pour qu'un jeton accentué reste un 401.
+    if not secrets.compare_digest(payload.token.encode("utf-8"), expected_token.encode("utf-8")):
         raise HTTPException(401, "Jeton invalide")
 
     allowed = admin_session.allowed_emails(db)
@@ -99,12 +99,12 @@ def admin_login(
     elif email not in allowed:
         raise HTTPException(401, "Adresse e-mail non autorisée")
 
-    lock, blocker = admin_session.attempt_login(db, email, force=payload.force)
+    lock, session_token, blocker = admin_session.attempt_login(db, email, force=payload.force)
     if blocker:
         raise HTTPException(409, detail=blocker)
     response.set_cookie(
         "admin_session",
-        lock.token,
+        session_token,
         httponly=True,
         samesite="lax",
         secure=is_prod(),
@@ -112,7 +112,9 @@ def admin_login(
         max_age=int(admin_session.session_timeout().total_seconds()),
     )
     log_admin_event(db, None, "admin_login", email=email, details={"force": payload.force})
-    return {"session_token": lock.token, "email": lock.email}
+    # Le jeton ne figure QUE dans le cookie httpOnly : le renvoyer dans le
+    # corps annulerait la protection que ce cookie est censé apporter.
+    return {"email": lock.email}
 
 
 @router.post("/logout")
@@ -129,7 +131,13 @@ def admin_logout(
     token = x_admin_session or (admin_session_cookie or "")
     from ..db_models import AdminLockORM
 
-    lock = db.query(AdminLockORM).filter(AdminLockORM.token == token).one_or_none()
+    # La colonne ne stocke que l'empreinte SHA-256 : la recherche par jeton
+    # brut doit donc hasher avant de comparer.
+    lock = (
+        db.query(AdminLockORM)
+        .filter(AdminLockORM.token == admin_session.hash_token(token))
+        .one_or_none()
+    )
     email = lock.email if lock else ""
     admin_session.logout(db, token)
     response.delete_cookie("admin_session", path="/")
@@ -141,6 +149,8 @@ def admin_logout(
 @router.post("/heartbeat")
 def admin_heartbeat(
     response: Response,
+    x_admin_session: str = Header(default=""),
+    admin_session_cookie: str | None = Cookie(default=None, alias="admin_session"),
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> dict:
@@ -148,15 +158,19 @@ def admin_heartbeat(
     FRONTEND tant que la page /admin est ouverte, il rafraîchit le verrou
     (`require_admin` touche déjà l'horodatage) et rallonge la durée de vie
     du cookie httpOnly (le `max_age` posé au login expirerait sinon après
-    3 min même en activité) — l'admin restant sur la console n'est JAMAIS
-    déconnecté. La déconnexion automatique ne survient qu'après avoir
-    QUITTÉ la page (onglet fermé ou navigation ailleurs) : les battements
-    s'arrêtent et le verrou expire après ADMIN_SESSION_TIMEOUT_MINUTES
-    (défaut 3)."""
+    3 min même en activité). La déconnexion automatique ne survient qu'après
+    avoir QUITTÉ la page (onglet fermé ou navigation ailleurs) : les
+    battements s'arrêtent et le verrou expire après ADMIN_SESSION_TIMEOUT_MINUTES
+    (défaut 3) ou après ADMIN_SESSION_MAX_MINUTES (défaut 480) d'activité cumulée.
+
+    Le cookie est réécrit avec le jeton BRUT relu dans la requête — la base
+    n'en conserve que l'empreinte, et le cookie est httpOnly donc illisible
+    depuis le JavaScript.
+    """
     timeout_minutes = admin_session.session_timeout().total_seconds() / 60
     response.set_cookie(
         "admin_session",
-        lock.token,
+        x_admin_session or (admin_session_cookie or ""),
         httponly=True,
         samesite="lax",
         secure=is_prod(),
@@ -372,13 +386,12 @@ def admin_resoudre_signalement(
 
 # ---------- Utilisateurs (gouvernance RGPD) ----------
 
-# Tables liant des données personnelles à un compte : purgées lors d'une
-# suppression (droit à l'effacement). Les PAIEMENTS sont conservés mais
-# anonymisés (user_id vidé côté applicatif impossible — colonne non nullable
-# — donc l'utilisateur est supprimé APRÈS anonymisation de la référence).
-# Aucun secret n'est de toute façon stocké dans ce système : connexion par
-# Google/mock (pas de mot de passe), paiement simulé par référence — la
-# table admin n'expose que des informations de compte et des compteurs.
+# Suppression d'un compte : purge de TOUTES ses données personnelles, y
+# compris les PAIEMENTS (`admin_supprimer_utilisateur`). Rien n'est conservé
+# ni pseudonymisé — le revenu confirmé disparaît donc des totaux, ce que
+#assume le docstring de la fonction. Aucun secret n'est stocké par ailleurs :
+#connexion Google/mock (pas de mot de passe local), paiement référencé par
+#son seul identifiant d'agrégateur.
 
 
 @router.get("/utilisateurs")

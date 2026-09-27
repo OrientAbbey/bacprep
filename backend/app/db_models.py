@@ -6,10 +6,12 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -218,6 +220,26 @@ class EpreuveFileORM(Base):
     height = Column(Integer, nullable=True)
     checksum_sha256 = Column(String, nullable=True, index=True)
     uploaded_at = Column(UTCDateTime, default=utc_now)
+
+    # Au plus UN document Markdown par (epreuve, cible, sujet) : c'est
+    # l'invariant que suppose `write_document` (upsert) et que lisait
+    # `get_document` via `.one_or_none()` — deux lignes renvoyant un
+    # MultipleResultsFound, donc un 500 sur l'écriture d'un sujet ou d'un
+    # corrigé. L'index le fait garantir par le SGBD.
+    #
+    # Partiel (`WHERE format='md'`) car les IMAGES partagent ces colonnes
+    # avec sujet_index=0 et peuvent être multiples pour une même cible.
+    __table_args__ = (
+        Index(
+            "uq_epreuve_files_document",
+            "epreuve_id",
+            "cible",
+            "sujet_index",
+            unique=True,
+            sqlite_where=text("format = 'md'"),
+            postgresql_where=text("format = 'md'"),
+        ),
+    )
 
 
 class SubscriptionORM(Base):

@@ -25,6 +25,10 @@ import hmac
 import os
 import time
 
+from .logging_config import get_logger
+
+log = get_logger("signing")
+
 DEFAULT_MAX_AGE_SECONDS = 3600  # régénérées à chaque affichage du détail
 GRACE_SECONDS = 300  # tolérance : image qui casse en pleine lecture d'une page ouverte
 
@@ -32,22 +36,47 @@ GRACE_SECONDS = 300  # tolérance : image qui casse en pleine lecture d'une page
 def _secret() -> bytes:
     """Clé HMAC : ``FILE_URL_SECRET`` si fournie, sinon ``ADMIN_TOKEN``
     hors production. Aucun repli codé en dur — sans secret configuré, on
-    refuse de signer (une clé dev-secret partagée permettrait de forger
-    des jetons hors ligne). En production (ENV=prod), le fallback sur
-    ADMIN_TOKEN est refusé : un secret dédié devient obligatoire, pour
-    qu'une rotation du jeton admin n'invalide pas les URLs signées et
-    qu'un jeton faible n'affaiblisse pas la signature des fichiers."""
-    from .config import is_prod
+    refuse de signer (une clé « dev-secret » partagée permettrait de forger des
+    jetons hors ligne).
 
-    raw = os.getenv("FILE_URL_SECRET")
-    if not raw and is_prod():
-        raise RuntimeError(
-            "FILE_URL_SECRET est obligatoire en production (le repli sur ADMIN_TOKEN y est refusé)"
-        )
-    raw = raw or os.getenv("ADMIN_TOKEN")
+    En production (ENV=prod), le repli sur ADMIN_TOKEN est refusé ET la clé
+    doit atteindre ``MIN_FILE_URL_SECRET_BYTES`` octets : une clé courte, ou
+    le jeton d'exemple, rendrait les URLs de fichiers forçables hors ligne.
+    Un secret dédié est donc obligatoire, pour qu'une rotation du jeton
+    admin n'invalide pas les URLs signées et qu'un jeton faible
+    n'affaiblisse pas la signature des fichiers.
+    """
+    from .config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
+
+    prod = is_prod()
+    raw = (os.getenv("FILE_URL_SECRET") or "").strip()
     if not raw:
+        fallback = (os.getenv("ADMIN_TOKEN") or "").strip()
+        if prod:
+            raise RuntimeError(
+                "FILE_URL_SECRET est obligatoire en production "
+                "(le repli sur ADMIN_TOKEN y est refusé)"
+            )
+        if not fallback:
+            raise RuntimeError(
+                "FILE_URL_SECRET (ou ADMIN_TOKEN) doit être configuré pour signer les URLs de fichiers"
+            )
+        if fallback == EXAMPLE_ADMIN_TOKEN:
+            # Le jeton d'exemple est public : signer avec lui revient à ne
+            # signer avec aucune clé du tout.
+            raise RuntimeError(
+                "FILE_URL_SECRET doit être défini hors production : "
+                f"ADMIN_TOKEN est encore sur sa valeur d'exemple ({EXAMPLE_ADMIN_TOKEN!r})"
+            )
+        log.warning(
+            "FILE_URL_SECRET absent — repli sur ADMIN_TOKEN pour signer les URLs de fichiers. "
+            "Définissez un secret dédié : une rotation du jeton admin invalidera les URLs en circulation."
+        )
+        raw = fallback
+    elif prod and len(raw.encode("utf-8")) < MIN_FILE_URL_SECRET_BYTES:
         raise RuntimeError(
-            "FILE_URL_SECRET (ou ADMIN_TOKEN) doit être configuré pour signer les URLs de fichiers"
+            f"FILE_URL_SECRET trop court en production ({len(raw.encode('utf-8'))} octets, "
+            f"minimum {MIN_FILE_URL_SECRET_BYTES})"
         )
     return raw.encode("utf-8")
 

@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from ..db_models import EpreuveFileORM, EpreuveORM
@@ -24,6 +25,64 @@ log = get_logger("epreuve_files")
 
 DOCUMENT_FORMAT = "md"
 IMAGE_FORMAT = "image"
+
+# Clés d'objets devenus orphelins, accumulées dans ``db.info`` jusqu'au prochain
+# commit RÉUSSI (voir ``_purge_orphans_after_commit``).
+_ORPHANS_KEY = "epreuve_files.orphan_keys"
+
+
+def _defer_object_deletion(db: Session, storage_key: str | None) -> None:
+    """Programme la suppression d'un objet pour APRÈS le commit courant.
+
+    Le stockage objet et la base ne partagent pas de transaction : supprimer
+    l'objet avant le commit exposait une perte définitive. Si le commit
+    échoue (contrainte, péremption de connexion), la transaction est annulée,
+    la ligne conserve son ``storage_key`` — mais l'objet correspondant aurait
+    déjà disparu, et l'épreuve affichait un document cassé jusqu'à une
+    réécriture. L'ordre sûr est donc : écrire en base, valider, puis — et
+    seulement si la validation a réussi — nettoyer le stockage.
+    """
+    if not storage_key:
+        return
+    orphans = db.info.get(_ORPHANS_KEY)
+    if orphans is None:
+        orphans = db.info[_ORPHANS_KEY] = []
+    orphans.append(storage_key)
+
+
+@event.listens_for(Session, "after_commit")
+def _purge_orphans_after_commit(db: Session) -> None:
+    """Supprime les objets dont la référence en base a été validée.
+
+    Déclenché par SQLAlchemy après chaque ``commit()`` réussi, ce qui couvre
+    tous les appelants de ``write_document`` / ``delete_file`` sans qu'ils
+    aient à ordonnancer eux-mêmes la suppression.
+    """
+    for storage_key in db.info.pop(_ORPHANS_KEY, []):
+        try:
+            get_storage().delete(storage_key)
+        except Exception as exc:
+            # Fuite d'objet orphelin (coût de stockage, pas de perte de
+            # donnée) : on ne fait pas échouer la requête déjà validée.
+            log.warning("Suppression objet orphelin %s impossible: %s", storage_key, exc)
+
+
+@event.listens_for(Session, "after_rollback")
+def _forget_orphans_after_rollback(db: Session) -> None:
+    """Abandonne les suppressions programmées quand la transaction est annulée.
+
+    Sans ce nettoyage, la liste survit au rollback et le PROCHAIN commit réussi
+    de cette même session purge les clés : la ligne ayant retrouvé son
+    ``storage_key`` d'origine après l'annulation, on effaçait un objet encore
+    référencé — un document cassé sur une épreuve qui, elle, n'avait jamais été
+    modifiée. L'abandon provoque au pire une fuite d'objet, sans gravité ; la
+    perte de référence, elle, n'en a pas.
+
+    L'événement couvre aussi le rollback d'un SAVEPOINT : on perd alors peut-être
+    une suppression qui aurait dû avoir lieu, ce qui reste une fuite d'objet.
+    """
+    db.info.pop(_ORPHANS_KEY, None)
+
 
 # Source unique des MIME d'images acceptés à l'upload ET à l'import.
 # Le SVG en est volontairement EXCLU : servi depuis l'origine de l'app, un
@@ -128,13 +187,12 @@ def write_document(
         existing.checksum_sha256 = sha256_hex(data)
         db.add(existing)
         if old_key != key:
-            # Contenu modifié ET classe/année déplacée : l'objet de l'ancienne
-            # clé deviendrait orphelin dans le bucket — on l'efface après que
-            # la nouvelle écriture a réussi (revue 2026-09).
-            try:
-                get_storage().delete(old_key)
-            except Exception as exc:
-                log.warning("Suppression objet orphelin %s impossible: %s", old_key, exc)
+            # `document_key` dépend du NIVEAU et de l'ANNÉE (pas de la classe) :
+            # les modifier change la clé et laisse l'ancien objet orphelin dans
+            # le bucket. Sa suppression est DIFFÉRÉE jusqu'au commit (cf.
+            # _defer_object_deletion) — l'effacer ici laisserait un document
+            # cassé si le commit échouait.
+            _defer_object_deletion(db, old_key)
         return existing
 
     row = EpreuveFileORM(
@@ -186,12 +244,15 @@ def save_image(
 
 
 def delete_file(db: Session, row: EpreuveFileORM) -> None:
-    """Supprime un fichier : objet du stockage PUIS ligne en base (l'inverse
-    exposerait une clé pointant vers un objet fantôme)."""
-    try:
-        get_storage().delete(row.storage_key)
-    except Exception as exc:
-        log.warning("Suppression objet %s impossible (ligne supprimée quand même): %s", row.storage_key, exc)
+    """Supprime un fichier : la ligne d'abord, l'objet APRÈS le commit.
+
+    L'inverse (objet d'abord) exposait la perte définitive : un commit en
+    échec laissait la ligne pointer vers un objet déjà effacé. Une fuite
+    d'objet orphelin si la suppression échoue est sans gravité ; une référence
+    cassée ne l'est pas. La suppression est donc programmée par
+    ``_defer_object_deletion`` et exécutée par ``after_commit``.
+    """
+    _defer_object_deletion(db, row.storage_key)
     db.delete(row)
 
 

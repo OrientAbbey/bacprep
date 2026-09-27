@@ -71,9 +71,15 @@ def _fold_for_search(value):
 
 
 if IS_SQLITE:
+    # Délai d'attente du verrou d'écriture SQLite, en millisecondes. SQLite
+    # échoue immédiatement (SQLITE_BUSY) sur un verrou détenu par une autre
+    # connexion ; ce délai laisse la transaction concurrente se terminer au
+    # lieu de transformer une contention normale en erreur visible.
+    SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000"))
+
     engine = create_engine(
         DATABASE_URL,
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": SQLITE_BUSY_TIMEOUT_MS / 1000},
         pool_pre_ping=True,
     )
 
@@ -102,6 +108,11 @@ if IS_SQLITE:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA foreign_keys=ON")
+        # Sans délai d'attente, une écriture concurrente (requête HTTP
+        # pendant qu'un import boucle sur les épreuves) renvoie
+        # SQLITE_BUSY *immédiatement* au lieu d'attendre le verrou :
+        # l'appelant voit une erreur au lieu d'une contention passagère.
+        cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
         cursor.close()
         dbapi_connection.create_function("LOWER", 1, _fold_for_search)
 else:

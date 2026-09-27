@@ -19,3 +19,21 @@ __pycache__/
 .mimosa/
 # Cache pytest
 .pytest_cache/
+
+# --- Hygiène (N-03) ---
+# Clés et certificats : jamais versionnés. Aucun n'est suivi aujourd'hui
+# (vérifié par `git ls-files`), ces motifs sont purement préventifs.
+*.pem
+*.key
+*.p12
+*.pfx
+# Surcharges locales d'environnement. NB : `frontend/.env` et
+# `frontend/.env.production` sont VOLONTAIREMENT suivis (VITE_API_URL seul,
+# public par construction) et ne sont donc pas concernés.
+.env.*.local
+# Éditeurs / OS
+.idea/
+.vscode/
+Thumbs.db
+# Rapports de couverture
+coverage/

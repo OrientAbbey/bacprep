@@ -51,7 +51,6 @@ def test_seed_idempotent(client, admin):
         assert r.status_code == 200
         r = c.post("/api/admin/login", json={"email": "admin@example.com", "token": "test-admin-token"})
         assert r.status_code == 200
-        c.headers = {**c.headers, "X-Admin-Session": r.json()["session_token"]}
         assert len(_options(c, "niveau")) == nb_avant
 
 

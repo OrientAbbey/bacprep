@@ -588,13 +588,18 @@ def admin_upload_image(
     )
 
     # Détection de doublons : même contenu (SHA-256) déjà importé ailleurs ?
+    # `.first()` et non `.one_or_none()` : une même image peut légitimement
+    # figurer dans plusieurs épreuves (schéma partagé), et le cas renvoyait
+    # alors MultipleResultsFound, donc un 500 sur un upload parfaitement
+    # valide. Le premier pour signaler « déjà vu ailleurs ».
     doublon = (
         db.query(EpreuveFileORM)
         .filter(
             EpreuveFileORM.checksum_sha256 == row.checksum_sha256,
             EpreuveFileORM.epreuve_id != epreuve_id,
         )
-        .one_or_none()
+        .order_by(EpreuveFileORM.uploaded_at)
+        .first()
     )
     return {
         "id": row.id,
