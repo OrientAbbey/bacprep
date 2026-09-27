@@ -70,6 +70,12 @@ services:
         sync: false # requis ; origem Authorized JS = l'URL du service (voir DEPLOIEMENT.md)
       - key: DEMO_MODE
         value: "false" # paywall réel : checkout exige un paiement agrégateur, pas de webhook simulé
+      # Secret HMAC de vérification du webhook de paiement. SANS cette variable,
+      # /api/payments/webhook répond 503 ET /api/payments/simulate-webhook est
+      # refusé (DEMO_MODE=false) : aucun abonnement payant ne peut donc être
+      # activé. Doit correspondre au secret configuré chez l'agrégateur.
+      - key: PAYMENT_WEBHOOK_SECRET
+        sync: false
       - key: ADMIN_SESSION_TIMEOUT_MINUTES
         value: "3" # délai avant expiration du verrou admin après quitter /admin
       - key: GEMINI_API_KEY
