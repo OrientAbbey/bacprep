@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import zipfile
 from pathlib import Path
 from typing import Iterator, Optional
@@ -224,15 +225,36 @@ def _ecrire_partie(
     dossier_tmp: Path,
     report: dict,
     on_progress=None,
+    on_fichier=None,
 ) -> dict:
-    """Écrit une partie ZIP autonome et la téléverse. Retourne sa fiche index."""
+    """Écrit une partie ZIP autonome et la téléverse. Retourne sa fiche index.
+
+    `on_fichier(traites, octets)` est appelé après chaque ENTRÉE traitée, y
+    compris une entrée absente du stockage ou de lecture interrompue. C'est ce
+    qui permet à la barre d'avancement de bouger pendant la compression, qui
+    est le long du travail : sans ce rappel, la progression n'était rapportée
+    qu'une fois par partie, donc une sauvegarde en une seule partie — le cas
+    courant sous 1 Go — affichait 0 % pendant toute l'export, puis 100 % d'un
+    coup. Un compteur qui ne bouge pas pendant l'opération est pire
+    qu'absence de compteur : il affirme que le travail n'avance pas.
+    """
     chemin_tmp = dossier_tmp / (nom + ".tmp")
     ecrits = 0
+    traites = 0
+    octets_vus = 0
     with chemin_tmp.open("wb") as fh:
         with zipfile.ZipFile(fh, "w", zipfile.ZIP_DEFLATED) as zf:
             for fichier in fichiers:
                 if on_progress:
                     on_progress(f"[{nom}] {fichier['chemin']}")
+                # L'entrée est comptée AVANT toute écriture : une entrée qui
+                # échoue doit quand même faire avancer la barre, sinon elle
+                # resterait bloquée juste avant 100 % sur une sauvegarde
+                # contenant un objet manquant.
+                traites += 1
+                octets_vus += int(fichier.get("size_bytes") or 0)
+                if on_fichier:
+                    on_fichier(traites, octets_vus)
                 # L'existence est vérifiée AVANT d'ouvrir l'entrée : une
                 # entrée tronquée dans le ZIP donnerait un fichier partiel
                 # que la restauration extrairait tel quel.
@@ -306,6 +328,7 @@ def run_export(
     on_progress=None,
     dossier_tmp: Optional[Path] = None,
     progression=None,
+    periode_progression: float = 0.4,
 ) -> dict:
     """Exporte tout le catalogue. `destination` est le préfixe de stockage,
     sans slash final (ex. `_sauvegardes/2026-09-27T2240Z`).
@@ -314,10 +337,17 @@ def run_export(
     erreurs. N'interrompt jamais sur un objet manquant — il le signale.
 
     `progression(fichiers_faits, fichiers_total, parties_faites, parties_total,
-    octets_faits)` est appelé après chaque partie. Il est séparé de
-    `on_progress` parce que l'IHM a besoin de COMPTEURS : les messages sont
-    destinés à l'affichage, et les relire pour en déduire un pourcentage les
-    rendrait fragiles au premier mot modifié.
+    octets_faits)` est appelé après chaque **entrée traitée**, et toujours en
+    fin de partie. Il est séparé de `on_progress` parce que l'IHM a besoin de
+    COMPTEURS : les messages sont destinés à l'affichage, et les relire pour en
+    déduire un pourcentage les rendrait fragiles au premier mot modifié.
+
+    `periode_progression` borne la cadence (secondes entre deux écritures en
+    base). Elle est un paramètre et non une constante pour que le test puisse
+    la mettre à zéro et observer une progression à chaque fichier, au lieu
+    d'attendre quatre dixièmes de seconde et d'espérer que l'export dure
+    assez longtemps — un test dont le résultat dépend de la vitesse de la
+    machine n'est pas un test.
     """
     from ..db import utc_now
 
@@ -392,21 +422,67 @@ def run_export(
     if progression:
         progression(0, manifest["fichier_count"], 0, len(lots), 0)
 
+    # Compteurs cumulés, et un garde-fou de cadence.
+    #
+    # `progresser` écrit en base (un COMMIT par appel) : l'appeler pour chaque
+    # fichier d'un catalogue de plusieurs milliers générerait des milliers de
+    # transactions pour un écran qui n'est rafraîchi que toutes les 1,5 s.
+    # On limite donc à ~2 écritures par seconde — assez pour que la barre
+    # bouge visiblement, assez peu pour que la base ne paie pas le comptage.
+    # `dernier` vaut 0.0, ce qui force le premier appel.
+    dernier = [0.0]
+    cumules = {"fichiers": 0, "octets": 0}
+
+    def _annoncer(partie: int, force: bool = False) -> None:
+        if not progression:
+            return
+        maintenant = time.monotonic()
+        if not force and maintenant - dernier[0] < periode_progression:
+            return
+        dernier[0] = maintenant
+        progression(
+            cumules["fichiers"],
+            manifest["fichier_count"],
+            partie,
+            len(lots),
+            cumules["octets"],
+        )
+
     for i, lot in enumerate(lots, start=1):
         nom = nom_commun if nom_commun == NOM_SAUVEGARDE else nom_commun.format(numero=i)
         if on_progress:
             on_progress(f"Partie {i}/{len(lots)} — {len(lot)} fichier(s)")
+        deja_vus = cumules["fichiers"]
+        octets_deja = cumules["octets"]
+
+        def _sur_fichier(traites: int, octets: int, _i=i, _d=deja_vus, _o=octets_deja) -> None:
+            cumules["fichiers"] = _d + traites
+            cumules["octets"] = _o + octets
+            _annoncer(_i)
+
         fiche = _ecrire_partie(
-            prefixe, nom, lot, stockage, dossier_tmp, report, on_progress
+            prefixe,
+            nom,
+            lot,
+            stockage,
+            dossier_tmp,
+            report,
+            on_progress,
+            on_fichier=_sur_fichier,
         )
+        # Le cumul est aligné sur ce que la fiche dit RÉELLEMENT écrit, pas sur
+        # le nombre d'entrées traversées : un objet absent ne doit pas faire
+        # mentir le total du job, et l'écart doit être visible.
+        cumules["fichiers"] = deja_vus + fiche["nb_fichiers"]
+        cumules["octets"] = octets_deja + fiche["octets"]
         report["parties"].append(fiche)
         if progression:
             progression(
-                sum(p["nb_fichiers"] for p in report["parties"]),
+                cumules["fichiers"],
                 manifest["fichier_count"],
                 i,
                 len(lots),
-                sum(p["octets"] for p in report["parties"]),
+                cumules["octets"],
             )
 
     index = {

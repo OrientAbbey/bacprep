@@ -159,6 +159,13 @@ export function SauvegardesPanel({ token }: { token: string }) {
   const [lu, setLu] = useState(false);
   const [aSupprimer, setASupprimer] = useState<string>("");
   const [exportEnCours, setExportEnCours] = useState(false);
+  // Le suivi automatique a-t-il été abandonné pour dépassement de durée ?
+  // Distingue « le job tourne, je ne sais plus rien » de « le job est
+  // terminé » — sans cet état, l'écran afficherait « en cours » indéfiniment
+  // après l'arrêt du suivi, ce qui est un mensonge.
+  const [suiviFige, setSuiviFige] = useState(false);
+  // Incrémenté par la relecture manuelle pour recréer le minuteur.
+  const [nonceSuivi, setNonceSuivi] = useState(0);
   const refSuppression = useRef<HTMLDialogElement>(null);
 
   // La boîte de confirmation est un `<dialog>` monté en permanence et ouvert
@@ -195,16 +202,41 @@ export function SauvegardesPanel({ token }: { token: string }) {
   // chaque réponse met à jour le statut, et un effet dépendant de l'objet
   // serait donc démonté/remonté à chaque tick — le minuteur ne finirait jamais
   // son tour et le suivi se figerait.
+  //
+  // Le suivi a une DURÉE MAXIMALE. Un job qui n'atteint jamais un état
+  // terminal — service redémarré entre le POST et la tâche de fond, ligne de
+  // base orpheline — ferait tourner cette boucle indéfiniment : l'API
+  // reçoit une requête toutes les 1,5 s pour toujours, et l'écran affiche
+  // « en cours » alors qu'aucun processus ne travaille. Au-delà de
+  // SUIVI_MAX_MS, on arrête d'interroger et on affiche l'état réellement
+  // connu, avec un bouton pour reprendre la main.
   const jobSuivi = phase.etape === "essai" ? phase.job.id : null;
+  // `nonceSuivi` n'est pas un état affiché : c'est le levier qui RECRÉE le
+  // minuteur. Sans lui, la relecture manuelle ne pourrait que lire une fois —
+  // les dépendances de l'effet n'auraient pas changé, donc aucune
+  // interrogation ne reprendrait, et le message « suivi relancé » serait faux.
   useEffect(() => {
     if (!jobSuivi) return;
+    // Un nouveau suivi repart d'un état propre : l'ancien bandeau
+    // « suivi arrêté » ne doit pas survivre au job suivant.
+    setSuiviFige(false);
+    let arrete = false;
+    const debut = Date.now();
     const timer = setInterval(async () => {
+      if (Date.now() - debut > SUIVI_MAX_MS) {
+        arrete = true;
+        clearInterval(timer);
+        setSuiviFige(true);
+        return;
+      }
       try {
         const job = await api.get<SauvegardeJob>(
           `/api/admin/sauvegardes/jobs/${jobSuivi}`,
           authHeaders(token)
         );
+        if (arrete) return;
         if (job.status === "done" || job.status === "error") {
+          setSuiviFige(false);
           setPhase({ etape: "lecture", job });
           void chargerInventaire();
         } else {
@@ -216,7 +248,33 @@ export function SauvegardesPanel({ token }: { token: string }) {
       }
     }, 1500);
     return () => clearInterval(timer);
-  }, [jobSuivi, token, chargerInventaire]);
+  }, [jobSuivi, token, chargerInventaire, nonceSuivi]);
+
+  // Fin du suivi automatique : dernier état connu, rafraîchi à la demande.
+  async function relireJob() {
+    if (!job) return;
+    try {
+      const frais = await api.get<SauvegardeJob>(
+        `/api/admin/sauvegardes/jobs/${job.id}`,
+        authHeaders(token)
+      );
+      if (frais.status === "done" || frais.status === "error") {
+        setSuiviFige(false);
+        setPhase({ etape: "lecture", job: frais });
+        void chargerInventaire();
+      } else {
+        // Le job n'est pas terminal : on ne se contente pas de lire, on
+        // repart pour une nouvelle fenêtre de surveillance.
+        setSuiviFige(false);
+        setNonceSuivi((n) => n + 1);
+        setPhase({ etape: "essai", job: frais });
+        showToast("Le job tourne toujours — suivi relancé.", "info");
+      }
+    } catch (err) {
+      if (purgerSessionExpiree(err)) return;
+      showToast(erreurDetail(err, "Job illisible."), "error");
+    }
+  }
 
   async function creerSauvegarde() {
     setExportEnCours(true);
@@ -488,9 +546,35 @@ export function SauvegardesPanel({ token }: { token: string }) {
 
             {/* Compteurs, pas journal : une barre qui n'avance que grâce à des
                 lignes de log est une barre qu'on ne peut pas lire. */}
-            {enCours && job.total_fichiers > 0 && (
+            {enCours && !suiviFige && job.total_fichiers > 0 && (
               <div className="mt-3">
                 <Progression fait={job.fichiers_faits} total={job.total_fichiers} libelle="fichiers" />
+              </div>
+            )}
+
+            {/* Suivi arrêté pour dépassement de durée. Le dire est le point :
+                sans ce bandeau, la carte afficherait « En cours » pour un job
+                que plus personne ne surveille — un service redémarré laisse un
+                job `pending` que rien ne réclamera jamais. On affiche l'état
+                réellement connu au dernier instant, et on rend la main. */}
+            {enCours && suiviFige && (
+              <div className="mt-3 rounded-md border border-correction/30 bg-correction-soft p-3 text-sm text-correction">
+                <p className="flex items-center gap-2 font-medium">
+                  <AlertTriangle size={15} strokeWidth={2} aria-hidden="true" />
+                  Suivi arrêté après 30 minutes
+                </p>
+                <p className="mt-1 text-xs">
+                  {job.total_fichiers > 0
+                    ? `Dernier état connu : ${job.fichiers_faits} / ${job.total_fichiers} fichiers, ${libelleStatut(job.status)}. Le service a peut-être redémarré pendant l'opération — le job reste alors en attente, sans qu'aucun processus ne le prenne en charge.`
+                    : "Le job n'a jamais signalé de fichier à traiter. Il est probablement resté en attente, le service ayant redémarré entre le lancement et son exécution."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void relireJob()}
+                  className="mt-2 min-h-[44px] rounded-full border border-correction/40 px-3 text-xs hover:border-correction"
+                >
+                  Vérifier l'état du job
+                </button>
               </div>
             )}
 
@@ -765,6 +849,15 @@ function ChoisirMode({
     </fieldset>
   );
 }
+
+/** Durée maximale d'interrogation d'un job par l'écran.
+ *
+ *  Le suivi automatique interroge l'API toutes les 1,5 s jusqu'à l'état
+ *  terminal. Au-delà, on arrête et on affiche l'état réel : un job gigaoctets
+ *  peut légitimement durer, mais un job qui n'a jamais démarré ne se terminera
+ *  jamais, et continuer à l'interroger produirait un trafic perpétuel vers
+ *  l'API pour un écran figé. */
+const SUIVI_MAX_MS = 30 * 60 * 1000;
 
 function Compteur({ libelle, valeur }: { libelle: string; valeur: string }) {
   return (

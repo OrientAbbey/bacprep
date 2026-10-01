@@ -512,6 +512,106 @@ def test_job_inconnu_404(admin) -> None:
     assert admin.get("/api/admin/sauvegardes/jobs/nexiste-pas").status_code == 404
 
 
+def _job_pending(admin, db, *, age_secondes: float, statut: str = "pending") -> str:
+    """Insère un job à l'état voulu et ageing artificiallement.
+
+    Un job que personne ne réclamera reste `pending` indéfiniment : le scénario
+    se produit quand le service redémarre entre la réponse au POST et
+    l'exécution de la tâche de fond. On simule l'ancienneté en écrivant
+    directement `created_at`, plutôt qu'en attendant cinq minutes.
+    """
+    from datetime import timedelta
+
+    from app.db import utc_now
+    from app.db_models import SauvegardeJobORM
+
+    job = SauvegardeJobORM(
+        kind="export",
+        status=statut,
+        destination="_sauvegardes/jamais-demarre",
+        created_at=utc_now() - timedelta(seconds=age_secondes),
+    )
+    db.add(job)
+    db.commit()
+    return job.id
+
+
+def test_job_pending_ancien_passe_en_erreur(admin, db) -> None:
+    """Un job en attente depuis plus de cinq minutes est signalé.
+
+    L'alternative — le laisser en attente — condamne l'écran : le job
+    n'atteindra jamais un état terminal, donc le suivi automatique
+    l'interroge toutes les 1,5 s pour toujours, et la carte affiche « en
+    cours » alors qu'aucun processus ne travaille.
+    """
+    from app.routers.admin_sauvegardes import _ATTENTE_MAX
+
+    job_id = _job_pending(admin, db, age_secondes=_ATTENTE_MAX + 60)
+    r = admin.get(f"/api/admin/sauvegardes/jobs/{job_id}")
+    assert r.status_code == 200, r.text
+    etat = r.json()
+    assert etat["status"] == "error", "un job jamais repris doit être signalé, pas affiché en cours"
+    # Le motif doit être lisible par un humain : « erreur » sans raison laisse
+    # l'administrateur deviner.
+    rapport = json.dumps(etat.get("report") or {}, ensure_ascii=False)
+    assert "jamais démarré" in rapport.lower(), rapport
+
+
+def test_job_pending_recent_nest_pas_touche(admin, db) -> None:
+    """Un job lancé à l'instant est normal : le service peut prendre une
+    demi-seconde pour l'exécuter. Le signaler serait un faux positif qui
+    convince l'administrateur de relancer une sauvegarde déjà en cours.
+    """
+    job_id = _job_pending(admin, db, age_secondes=2)
+    r = admin.get(f"/api/admin/sauvegardes/jobs/{job_id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "pending"
+
+
+def test_job_running_ancien_nest_pas_touche(admin, db) -> None:
+    """Un job `running` a le droit de durer.
+
+    C'est la question qui décide de tout ici : un export lit des gigaoctets
+    dans S3 et les recompresse. Juger qu'il est bloqué sur la seule foi de son
+    âge reviendrait à declareer en erreur un travail qui aboutit — et à
+    inviter à relancer une sauvegarde qui écrit déjà.
+    """
+    job_id = _job_pending(admin, db, age_secondes=24 * 3600, statut="running")
+    r = admin.get(f"/api/admin/sauvegardes/jobs/{job_id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "running"
+
+
+def test_age_du_job_tolere_les_deux_fuseaux() -> None:
+    """`created_at` est naive sur SQLite, aware sur PostgreSQL.
+
+    Mélanger un `datetime` aware et un naïf lève `TypeError` au moment de la
+    soustraction — donc sur PostgreSQL, c'est-à-dire en production, et
+    seulement là : la suite locale, sur SQLite, passerait sans rien voir. Ce
+    test construit donc les DEUX formes et vérifie que l'âge calculé est le
+    même, pour que la différence entre les moteurs ne soit pas découverte par
+    un utilisateur.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.routers.admin_sauvegardes import _naive
+
+    maintenant = datetime.now(timezone.utc)
+    decale = timedelta(seconds=600)
+    formes = {
+        "aware (PostgreSQL)": maintenant - decale,
+        "naive (SQLite)": (maintenant - decale).replace(tzinfo=None),
+    }
+    ages = {}
+    for nom, valeur in formes.items():
+        # C'est exactement l'expression du calcul d'âge dans la route.
+        ages[nom] = (_naive(maintenant) - _naive(valeur)).total_seconds()
+    ecarts = set(ages.values())
+    assert len(ecarts) == 1, f"l'âge dépend du moteur : {ages}"
+    age = ecarts.pop()
+    assert 595 <= age <= 605, f"âge inattendu : {age}"
+
+
 def test_journal_du_job_conserve(admin, epreuve_gratuite) -> None:
     r = admin.post("/api/admin/sauvegardes/export", json={})
     job = _attendre(admin, r.json()["id"])

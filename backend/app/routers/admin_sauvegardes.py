@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -190,6 +191,72 @@ def lister(client=Depends(require_admin)) -> dict:
 # --------------------------------------------------------------------------
 # Export
 # --------------------------------------------------------------------------
+
+# Délai au-delà duquel un job encore `pending` n'est plus « en attente » : il
+# n'a jamais été pris en charge. La seule cause connue est un redémarrage du
+# service (déploiement) entre la réponse au POST et l'exécution de la tâche de
+# fond : la ligne est en base, la tâche, non.
+_ATTENTE_MAX = 300  # secondes
+
+
+def _marquer_orphelin_si_besoin(db, job: SauvegardeJobORM) -> None:
+    """Transforme en `error` un job `pending` que plus rien ne réclamera.
+
+    Sans cela, l'écran interroge le job toutes les 1,5 s INDÉFINIMENT : un
+    job jamais démarré n'atteindra jamais un état terminal, donc rien n'arrête
+    la boucle. Le pire n'est pas le scintillement — c'est un job affiché comme
+    « en cours » alors qu'aucun processus ne travaille, avec une barre de
+    progression figée à 0 % et rien qui ne le dise.
+
+    On ne touche qu'aux jobs `pending`, jamais aux `running` : un export
+    légitimement long (gigaoctets lus depuis S3) doit avoir le droit de finir.
+    Juger qu'il est bloqué, c'est l'affaire de l'écran, pas d'une lecture de
+    ligne.
+
+    AUCUNE nouvelle colonne : `sauvegardes_jobs` existe déjà en production et
+    `Base.metadata.create_all` ne rajoute pas de colonne à une table
+    existante — un `heartbeat_at` ajouté ici casserait toute lecture du job
+    par `UndefinedColumn` sur le serveur déjà déployé. `created_at` suffit.
+    """
+    if job.status != "pending" or not job.created_at:
+        return
+    # Les DEUX côtés sont ramenés en UTC naïf avant la soustraction : mixer un
+    # `datetime` aware et un naïf lève `TypeError`. Ce chemin est celui du
+    # polling, donc l'exception ne resterait pas invisible — chaque lecture
+    # d'un job en attente renverrait une erreur 500 au lieu de son état.
+    age = (_naive(utc_now()) - _naive(job.created_at)).total_seconds()
+    if age < _ATTENTE_MAX:
+        return
+    job.status = "error"
+    job.finished_at = utc_now()
+    job.report_json = json.dumps(
+        {
+            "erreurs": [
+                {
+                    "erreur": (
+                        f"Job jamais démarré (en attente depuis "
+                        f"{int(age)} s). Le service a probablement redémarré "
+                        "après le lancement. Relance l'opération."
+                    )
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    db.commit()
+    log.warning("Job de sauvegarde %s orphelin marqué en erreur", job.id)
+
+
+def _naive(moment) -> "datetime":
+    """`created_at` selon le moteur : aware sur PostgreSQL, naive sur SQLite.
+
+    La comparaison doit se faire dans le même univers que la valeur lue, sinon
+    `utc_now() - created_at` lève `TypeError` — précisément sur PostgreSQL,
+    c'est-à-dire en production, et seulement là.
+    """
+    if getattr(moment, "tzinfo", None) is not None:
+        return moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
 
 
 def _run_export_job(job_id: str, destination: str) -> None:
@@ -483,6 +550,7 @@ def lire_job(job_id: str, db: Session = Depends(get_db), lock=Depends(require_ad
     job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one_or_none()
     if not job:
         raise HTTPException(404, "Job de sauvegarde introuvable")
+    _marquer_orphelin_si_besoin(db, job)
     return _job_to_dict(job)
 
 

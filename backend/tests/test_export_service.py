@@ -394,3 +394,48 @@ def test_progression_rapporte_des_compteurs(db_prete, tmp_path) -> None:
     assert fichiers == total
     assert parties == parties_total
     assert octets > 0
+
+
+def test_progression_bouge_pendant_lexport(db_prete, tmp_path) -> None:
+    """La barre doit avancer PENDANT le travail, pas seulement à la fin.
+
+    Régression : la progression n'était rapportée qu'une fois par partie
+    terminée. Une sauvegarde sous 1 Go tient en une seule partie — le cas
+    courant — donc l'écran affichait 0 % pendant toute la compression et le
+    téléversement, puis 100 % d'un coup, à la seconde où le job se
+    terminait. Un compteur figé pendant l'opération n'est pas un compteur
+    absent : c'est une affirmation fausse (« rien n'avance »).
+
+    Le test vérifie donc l'EXISTENCE d'étapes intermédiaires, ce que le test
+    précédent ne pouvait pas faire : il ne regardait que le premier et le
+    dernier point, qui sont corrects dans les deux implémentations.
+    """
+    for i in range(4):
+        _epreuve(db_prete, f"22{i:02d}", matiere=f"Mat{i}")
+    _remplir_stockage(db_prete)
+    total_attendu = db_prete.query(EpreuveFileORM).count()
+    assert total_attendu > 2, "le test a besoin de plusieurs entrées pour être probant"
+
+    vu: list[tuple] = []
+    run_export(
+        db_prete,
+        "_sauvegardes/progression-bouge",
+        dossier_tmp=tmp_path,
+        progression=lambda *args: vu.append(args),
+        # Cadence forcée à zéro : sinon la limitation à ~2 écritures/s
+        # supprimerait les étapes intermédiaires sur un export local qui dure
+        # quelques dizaines de millisecondes, et le test ne testerait plus
+        # que la vitesse de la machine.
+        periode_progression=0,
+    )
+
+    intermediaires = [v for v in vu if 0 < v[0] < v[1]]
+    assert intermediaires, (
+        f"aucune étape intermédiaire : la barre resterait à 0 % jusqu'à la fin "
+        f"(points observés : {vu})"
+    )
+    # Progression monotone et croissante : une barre qui recule trahirait un
+    # cumul mal reporté d'une partie à l'autre.
+    comptes = [v[0] for v in vu]
+    assert comptes == sorted(comptes), f"progression non monotone : {comptes}"
+    assert comptes[-1] == total_attendu
