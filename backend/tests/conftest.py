@@ -101,6 +101,48 @@ def epreuve_gratuite(admin):
     return eid
 
 
+# --------------------------------------------------------------------------
+# Purge du catalogue
+# --------------------------------------------------------------------------
+
+# Tables d'identité et de session : les vider déconnecterait l'administrateur
+# au milieu du test. Tout le reste est du contenu de catalogue et peut
+# disparaître.
+_TABLES_PRESERVEES = {
+    "users",
+    "sessions",
+    "admin_lock",
+    "admin_events",
+    "kickout_notices",
+    "referentiel_options",
+}
+
+
+def purger_catalogue(session) -> None:
+    """Vide le catalogue, en respectant l'ordre des clés étrangères.
+
+    La base de test est PARTAGÉE par tous les tests du projet. Chaque fichier
+    qui a besoin d'un catalogue connu (export, restauration) doit donc vider
+    les tables plutôt que faire confiance à l'état laissé par ses voisins.
+
+    On énumère les tables depuis les métadonnées au lieu d'écrire une liste à la
+    main : c'est exactement la liste figée qui devient fausse le jour où une
+    table référence `epreuves` (une notification de publication, par exemple) —
+    et le symptôme est alors un « FOREIGN KEY constraint failed » à trois
+    fichiers d'ici. `reversed(sorted_tables)` donne les enfants avant les
+    parents, donc aucune référence ne survit à la suppression de sa cible.
+    """
+    from sqlalchemy import text
+
+    from app.db_models import Base
+
+    for table in reversed(Base.metadata.sorted_tables):
+        if table.name in _TABLES_PRESERVEES:
+            continue
+        session.execute(text(f'DELETE FROM "{table.name}"'))
+    session.commit()
+
+
 @pytest.fixture()
 def epreuve_payante(admin):
     """Crée et publie une épreuve PAYANTE."""

@@ -363,3 +363,79 @@ class NotificationUpdate(BaseModel):
     type: Optional[str] = Field(default=None, max_length=32)
     epreuve_id: Optional[str] = Field(default=None, max_length=40)
     actif: Optional[bool] = None
+
+
+# --------------------------------------------------------------------------
+# Sauvegardes (Phase 3 du plan `PLAN_SAUVEGARDES.md`)
+# --------------------------------------------------------------------------
+
+MODES_RESTAURATION = ("bucket", "disaster")
+
+
+class SauvegardeExportDemande(BaseModel):
+    """Demande d'export. Aucun paramètre : la sauvegarde porte sur TOUT le
+    catalogue, sans filtre.
+
+    On ne propose pas de choisir un sous-ensemble : une sauvegarde partielle
+    semble rassurante et protège mal, puisqu'il faut alors se souvenir de ce qui
+    n'y est pas. Le catalogue fait quelques centaines de fichiers, un export
+    complet reste rapide."""
+
+    # Ignoré s'il est présent : la clé est tirée du catalogue au moment de
+    # l'appel. Accepter une clé fournie par le client rouvrirait la porte à
+    # l'écrasement d'une autre sauvegarde.
+    destination: Optional[str] = Field(default=None, max_length=200)
+
+
+class SauvegardeRestaurerDemande(BaseModel):
+    """Demande de restauration.
+
+    `dry_run` est VRAI par défaut : un appel nu ne touche à rien. Passer
+    `dry_run=false` exige `confirme`, sinon la demande est rejetée — c'est le
+    garde-fou qui empêche qu'un bouton mal cliqué vide un catalogue."""
+
+    source: str = Field(min_length=1, max_length=1024)
+    mode: str = Field(default="bucket")
+    dry_run: bool = True
+    confirme: bool = False
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_connu(cls, valeur: str) -> str:
+        if valeur not in MODES_RESTAURATION:
+            raise ValueError(f"mode inconnu: {valeur!r}")
+        return valeur
+
+
+class SauvegardeJob(BaseModel):
+    """État d'un job de sauvegarde ou de restauration, tel que lu par l'IHM."""
+
+    id: str
+    kind: str
+    status: str
+    destination: str
+    source: str
+    mode: str
+    total_fichiers: int = 0
+    fichiers_faits: int = 0
+    total_octets: int = 0
+    octets_faits: int = 0
+    partie_courante: int = 0
+    parties_total: int = 0
+    report: dict = Field(default_factory=dict)
+    logs: list = Field(default_factory=list)
+    created_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+class SauvegardeResume(BaseModel):
+    """Récapitulatif d'une sauvegarde présente dans le stockage."""
+
+    cle: str
+    nom: str
+    taille_octets: int = 0
+    modifie_le: Optional[str] = None
+    parties: list = Field(default_factory=list)
+    epreuves: int = 0
+    fichiers: int = 0
+    url: Optional[str] = None

@@ -38,13 +38,70 @@ IMAGE_MIME = {
 }
 
 
-def _find_duplicate(db: Session, checksum: str, exclude_epreuve: Optional[str] = None) -> Optional[str]:
-    """Identifiant d'épreuve contenant déjà ce checksum (doublon), si any."""
+def _rewrite_image_refs(content: str, rel_name: str, url: str) -> tuple[str, int, int]:
+    """Remplace les références relatives pointant vers `rel_name` par `url`.
+
+    Retourne `(contenu, nb_reecrits, nb_non_reecrits)`.
+
+    Le motif utilisé auparavant — `\\]\\(<nom>\\)` — ne couvrait que la forme
+    `![](image.png)`. Restaient intacts, donc affichés cassés et sans qu'aucune
+    ligne de rapport ne le mentionne : `![alt](./image.png)`,
+    `![alt](image.png "titre")` et `<img src="image.png">`. Un nom de fichier
+    ne peut être confondu avec un autre : le éventuel segment de chemin doit
+    être vide ou se terminer par un séparateur, donc `xa.png` ne matche pas
+    `a.png`.
+
+    Les formes NON réécrites (notamment les liens de référence
+    `[alt][ref]` dont la définition est `[ref]: image.png`) sont COMPTEES, pas
+    laissées passer en silence : l'appelant les remonte dans le rapport.
+    """
+    nom = re.escape(rel_name)
+    # Vide, ou un segment relatif terminé par un séparateur.
+    prefixe = r"(?:[^()\s\"'<>]*[/\\])?"
+
+    md = re.compile(
+        r"(\]\(\s*)" + prefixe + nom + r"(\s*(?:\"[^\"]*\"|'[^']*')?\s*\))",
+        re.IGNORECASE,
+    )
+    html = re.compile(
+        r"(<img\b[^>]*?\bsrc\s*=\s*)(\"|'?)" + prefixe + nom + r"(\2)",
+        re.IGNORECASE,
+    )
+    # Les groupes sont reconstruits par fonction : l'URL contient des `/` et
+    # des chiffres qui seraient mal interprétés dans une chaîne de
+    # remplacement.
+    contenu, n_md = md.subn(lambda m: m.group(1) + url + m.group(2), content)
+    contenu, n_html = html.subn(
+        lambda m: m.group(1) + m.group(2) + url + m.group(3), contenu
+    )
+    restant = re.compile(
+        r"\]\(\s*" + prefixe + nom + r"(?![\w-])"
+        r"|\bsrc\s*=\s*[\"']?" + prefixe + nom + r"(?![\w-])"
+        r"|^[ \t]*\[[^\]]+\]:\s*" + prefixe + nom + r"(?![\w-])",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    return contenu, n_md + n_html, len(restant.findall(contenu))
+
+
+def _contenus_partages(db: Session, checksum: str, exclude_epreuve: Optional[str] = None) -> list[str]:
+    """Identifiants d'épreuve contenant DÉJÀ un fichier de mêmes octets.
+
+    purement informatif — ce n'est PAS une détection de doublon. Deux épreuves
+    peuvent légitimement partager des octets identiques (un logo commun à
+    toutes les épreuves d'une année, une page de consignes réutilisée) : les
+    refuser reviendrait à perdre des fichiers sans le moindre signal d'erreur.
+
+    Le doublon réel est d'ordre LOGIQUE — même épreuve, même cible, même index
+    de sujet — et il est détecté par `get_document` (documents) et par le nom de
+    fichier déjà présent (images). Ces deux contrôles suffisent aussi à
+    neutraliser la réimportation du même lot : la seconde passe retrouve la même
+    épreuve et la même cible. Le contenu identique n'a donc rien à bloquer, et
+    tout bloquer revient à générer des faux positifs.
+    """
     query = db.query(EpreuveFileORM).filter(EpreuveFileORM.checksum_sha256 == checksum)
     if exclude_epreuve:
         query = query.filter(EpreuveFileORM.epreuve_id != exclude_epreuve)
-    row = query.first()
-    return row.epreuve_id if row else None
+    return sorted({row.epreuve_id for row in query.all()})
 
 
 def _find_epreuve(db: Session, meta: dict) -> Optional[EpreuveORM]:
@@ -135,12 +192,16 @@ def _import_markdown(
 
     data = content.encode("utf-8")
     checksum = epreuve_files.sha256_hex(data)
-    doublon = _find_duplicate(db, checksum) or batch_checksums.get(checksum)
-    if doublon:
-        report["doublons"].append(
-            {"fichier": str(path.relative_to(root)), "doublon_de": doublon}
+    # Contenu identique ailleurs : information, pas blocage (voir
+    # `_contenus_partages`). Le doublon qui fait foi reste le doublon LOGIQUE,
+    # détecté plus bas sur (epreuve, cible).
+    partage = _contenus_partages(db, checksum)
+    if batch_checksums.get(checksum):
+        partage = list(partage) + [batch_checksums[checksum]]
+    if partage:
+        report["contenus_partages"].append(
+            {"fichier": str(path.relative_to(root)), "deja_dans": sorted(set(partage))}
         )
-        return None
 
     epreuve = _find_epreuve(db, meta)
     cible = meta["cible"]
@@ -232,11 +293,11 @@ def _import_images_of_folder(
             )
             continue
         checksum = epreuve_files.sha256_hex(data)
-        if _find_duplicate(db, checksum, exclude_epreuve=epreuve.id):
-            report["doublons"].append(
-                {"fichier": str(image_path.relative_to(root)), "doublon_de": "autre épreuve"}
+        partage = _contenus_partages(db, checksum, exclude_epreuve=epreuve.id)
+        if partage:
+            report["contenus_partages"].append(
+                {"fichier": str(image_path.relative_to(root)), "deja_dans": partage}
             )
-            continue
 
         row = epreuve_files.save_image(
             db, epreuve, "sujet", rel_name, data, image_mime
@@ -254,11 +315,18 @@ def _import_images_of_folder(
                 content = storage.get_bytes(doc.storage_key).decode("utf-8")
             except Exception:
                 continue
-            new_content = re.sub(
-                r"(\]\()(" + re.escape(rel_name) + r")(\))",
-                rf"\g<1>/api/files/{row.id}\g<3>",
-                content,
+            new_content, _n_ecrits, n_non_ecrits = _rewrite_image_refs(
+                content, rel_name, f"/api/files/{row.id}"
             )
+            if n_non_ecrits:
+                report["references_non_reecrites"].append(
+                    {
+                        "fichier": str(image_path.relative_to(root)),
+                        "document": cible_doc,
+                        "image": rel_name,
+                        "nb": n_non_ecrits,
+                    }
+                )
             if new_content != content:
                 storage.put_bytes(
                     doc.storage_key, new_content.encode("utf-8"), "text/markdown; charset=utf-8"
@@ -283,6 +351,8 @@ def run_import(db: Session, root: Path, dry_run: bool = False, on_progress=None)
         "images_importees": 0,
         "creees": [],
         "doublons": [],
+        "contenus_partages": [],
+        "references_non_reecrites": [],
         "ignores": [],
         "erreurs": [],
         "metadonnees_manquantes": [],
@@ -336,10 +406,17 @@ def run_import(db: Session, root: Path, dry_run: bool = False, on_progress=None)
                 log.exception("Échec d'import des images de %s", folder)
         db.commit()
 
-    trace(f"Import terminé — {report['epreuves_creees']} épreuve(s) créée(s), {len(report['doublons'])} doublon(s), {len(report['erreurs'])} erreur(s)")
+    trace(
+        f"Import terminé — {report['epreuves_creees']} épreuve(s) créée(s), "
+        f"{len(report['doublons'])} doublon(s), "
+        f"{len(report['contenus_partages'])} contenu(s) partagé(s), "
+        f"{len(report['erreurs'])} erreur(s)"
+    )
     # Compteurs récapitulatifs calculés une seule fois (les listes restent la
     # source de vérité, les *count évitent aux consommateurs de faire len()).
     report["doublons_count"] = len(report["doublons"])
+    report["contenus_partages_count"] = len(report["contenus_partages"])
+    report["references_non_reecrites_count"] = len(report["references_non_reecrites"])
     report["ignores_count"] = len(report["ignores"])
     report["erreurs_count"] = len(report["erreurs"])
     report["metadonnees_manquantes_count"] = len(report["metadonnees_manquantes"])

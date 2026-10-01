@@ -36,6 +36,7 @@ from .routers import (
     admin_misc,
     admin_notifications,
     admin_referentiel,
+    admin_sauvegardes,
     assistant,
     auth,
     epreuves,
@@ -348,6 +349,7 @@ app.include_router(subscriptions.router)
 app.include_router(admin_misc.router)
 app.include_router(admin_epreuves.router)
 app.include_router(admin_import.router)
+app.include_router(admin_sauvegardes.router)
 app.include_router(admin_referentiel.router)
 app.include_router(admin_notifications.router)
 app.include_router(admin_assistant.router)

@@ -23,7 +23,9 @@ jamais exposer les identifiants du bucket.
 """
 from __future__ import annotations
 
+import io
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -34,6 +36,54 @@ log = get_logger("storage")
 
 class StorageError(RuntimeError):
     """Erreur de stockage (clé invalide, objet introuvable à l'écriture...)."""
+
+
+class _IterChunks(io.RawIOBase):
+    """Adaptateur ``file-like`` en lecture autour d'un itérable de ``bytes``.
+
+    boto3 exige un objet fichier pour ``upload_fileobj`` ; l'export produit des
+    blocs au fil de l'eau. On ne construit donc JAMAIS l'objet complet en
+    mémoire : la classe se contente de servir le bloc suivant, en
+    réassemblant les ``memoryview`` que ``zipfile`` peut émettre.
+    """
+
+    def __init__(self, chunks):
+        self._it = iter(chunks)
+        self._buf = b""
+        self._pos = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return False
+
+    def read(self, size: int = -1) -> bytes:
+        # `zipfile` demande des blocs de taille fixe ; on sert exactement ce
+        # qu'il demande pour ne pas charger plus que nécessaire.
+        while len(self._buf) - self._pos < size:
+            try:
+                bloc = next(self._it)
+            except StopIteration:
+                break
+            bloc = bytes(bloc) if isinstance(bloc, (bytearray, memoryview)) else bloc
+            reste = self._buf[self._pos:]
+            self._buf = reste + bloc
+            self._pos = 0
+        out = self._buf[self._pos: self._pos + size]
+        self._pos += len(out)
+        if self._pos >= len(self._buf):
+            self._buf = b""
+            self._pos = 0
+        return out
+
+    def readinto(self, view) -> int:
+        data = self.read(len(view))
+        view[: len(data)] = data
+        return len(data)
 
 
 def normalize_key(key: str) -> str:
@@ -58,9 +108,49 @@ class StorageService(Protocol):
 
     def get_bytes(self, key: str) -> bytes: ...
 
+    def put_stream(
+        self, key: str, chunks, size: Optional[int] = None, mime_type: str = ""
+    ) -> None:
+        """Écrit un objet SANS jamais le maintenir entier en mémoire.
+
+        `chunks` est un itérable de `bytes` (blocs de 1 Mo en pratique). Les
+        backends locaux et S3 surchargent cette méthode ; l'implémentation par
+        défaut ci-dessous retombe sur `put_bytes` en assemblant le tout, ce qui
+        reste correct et suffit à l'import normal (fichiers plafonnés à 10 Mo).
+        """
+        data = b"".join(chunks)
+        if size is not None and len(data) != size:
+            raise StorageError(
+                f"Taille annoncée incohérente pour {key!r}: {len(data)} != {size}"
+            )
+        self.put_bytes(key, data, mime_type)
+
+    def open_read(self, key: str, chunk_size: int = 1024 * 1024):
+        """Itère sur l'objet par blocs, sans le charger entièrement.
+
+        Utilisé par l'export : une sauvegarde de plusieurs Go ne doit jamais
+        résider en mémoire. L'implémentation par défaut s'appuie sur
+        `get_bytes` (correct, mais là on charge tout d'un coup) ; les backends
+        locaux et S3 surchargent pour lire réellement en flux.
+        """
+        yield self.get_bytes(key)
+
     def delete(self, key: str) -> None: ...
 
     def exists(self, key: str) -> bool: ...
+
+    def list_objects(self, prefix: str) -> list[dict]:
+        """Liste les objets sous un préfixe : `[{cle, taille, modifie}, ...]`.
+
+        `modifie` est TOUJOURS un `datetime` aware, quel que soit le backend :
+        le backend local tire le `mtime` du disque, mais le convertir ici évite
+        à chaque appelant de deviner quel type il a sous les mains.
+
+        Utilisé pour présenter la liste des sauvegardes existantes. Les
+        backends qui ne savent pas énumérer lèvent `NotImplementedError` :
+        mieux vaut une liste vide affichable qu'un inventaire faux.
+        """
+        raise NotImplementedError
 
     def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
         """URL d'accès temporaire, ou None si le backend n'en produit pas
@@ -101,6 +191,29 @@ class LocalStorage:
             raise StorageError(f"Objet introuvable: {key}")
         return path.read_bytes()
 
+    def put_stream(self, key: str, chunks, size: Optional[int] = None, mime_type: str = "") -> None:
+        # Écriture directe sur disque : la taille peut dépasser la mémoire.
+        path = self._path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as out:
+            for chunk in chunks:
+                out.write(chunk)
+        if size is not None and path.stat().st_size != size:
+            raise StorageError(
+                f"Taille annoncée incohérente pour {key!r}: {path.stat().st_size} != {size}"
+            )
+
+    def open_read(self, key: str, chunk_size: int = 1024 * 1024):
+        path = self._path(key)
+        if not path.is_file():
+            raise StorageError(f"Objet introuvable: {key}")
+        with path.open("rb") as src:
+            while True:
+                bloc = src.read(chunk_size)
+                if not bloc:
+                    break
+                yield bloc
+
     def delete(self, key: str) -> None:
         path = self._path(key)
         if path.is_file():
@@ -114,6 +227,24 @@ class LocalStorage:
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
+
+    def list_objects(self, prefix: str) -> list[dict]:
+        base = self.root / normalize_key(prefix)
+        if not base.is_dir():
+            return []
+        trouves: list[dict] = []
+        for chemin in sorted(base.rglob("*")):
+            if not chemin.is_file():
+                continue
+            stat = chemin.stat()
+            trouves.append(
+                {
+                    "cle": chemin.relative_to(self.root).as_posix(),
+                    "taille": stat.st_size,
+                    "modifie": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                }
+            )
+        return trouves
 
     def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
         return None
@@ -178,6 +309,36 @@ class S3CompatibleStorage:
         resp = self._client.get_object(Bucket=self.bucket, Key=normalize_key(key))
         return resp["Body"].read()
 
+    def put_stream(self, key: str, chunks, size: Optional[int] = None, mime_type: str = "") -> None:
+        # `upload_fileobj` déclenche le multipart AWS au-delà du seuil : la
+        # mémoire reste constante quelle que soit la taille de l'objet. Le
+        # ContentType est fixé par un put_object vide préalable, upload_fileobj
+        # ne le portant pas.
+        key = normalize_key(key)
+        if mime_type:
+            self._client.put_object(Bucket=self.bucket, Key=key, Body=b"", ContentType=mime_type)
+        else:
+            self._client.put_object(Bucket=self.bucket, Key=key, Body=b"")
+        self._client.upload_fileobj(_IterChunks(chunks), self.bucket, key)
+        if size is not None:
+            if self._client.head_object(Bucket=self.bucket, Key=key)["ContentLength"] != size:
+                raise StorageError(
+                    f"Taille annoncée incohérente pour {key!r}: "
+                    f"{self._client.head_object(Bucket=self.bucket, Key=key)['ContentLength']} != {size}"
+                )
+
+    def open_read(self, key: str, chunk_size: int = 1024 * 1024):
+        resp = self._client.get_object(Bucket=self.bucket, Key=normalize_key(key))
+        body = resp["Body"]
+        try:
+            while True:
+                bloc = body.read(chunk_size)
+                if not bloc:
+                    break
+                yield bloc
+        finally:
+            body.close()
+
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self.bucket, Key=normalize_key(key))
 
@@ -189,6 +350,20 @@ class S3CompatibleStorage:
             return True
         except botocore.exceptions.ClientError:
             return False
+
+    def list_objects(self, prefix: str) -> list[dict]:
+        trouves: list[dict] = []
+        pagineur = self._client.get_paginator("list_objects_v2")
+        for page in pagineur.paginate(Bucket=self.bucket, Prefix=normalize_key(prefix)):
+            for objet in page.get("Contents", []):
+                trouves.append(
+                    {
+                        "cle": objet["Key"],
+                        "taille": objet.get("Size", 0),
+                        "modifie": objet.get("LastModified"),
+                    }
+                )
+        return trouves
 
     def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
         params = {"Bucket": self.bucket, "Key": normalize_key(key)}

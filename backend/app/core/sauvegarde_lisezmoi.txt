@@ -1,0 +1,98 @@
+Procédure de restauration d'une sauvegarde BacPrep
+=================================================
+
+Cette sauvegarde contient TOUT le catalogue : épreuves, sujets, corrigés,
+images et identifiants. Elle n'est pas filtrée : il n'y a pas de « partie
+sélectionnée » à installer.
+
+
+Ce qu'il y a dans ce dossier
+---------------------------
+
+  manifest.json   état complet et autoritaire du catalogue. C'est le fichier à
+                  lire en premier : il liste chaque épreuve et chaque fichier
+                  avec sa clé de stockage et son empreinte SHA-256.
+
+  index.json      liste des archives avec la taille et l'empreinte SHA-256 de
+                  chacune. C'est la référence pour vérifier que ce que vous avez
+                  téléchargé est intact.
+
+  sauvegarde.zip  les fichiers eux-mêmes (archive unique) — ou bien
+  part-0001.zip   plusieurs parties, chacune AUTONOME : chacune se relit seule
+  part-0002.zip   et peut être restaurée indépendamment.
+                  …
+
+Le manifeste se télécharge et se lit SEUL, sans les archives : c'est utile pour
+vérifier l'inventaire avant de récupérer plusieurs gigaoctets.
+
+
+Vérifier avant de restaurer
+---------------------------
+
+Depuis le back-office, onglet « Sauvegardes », chaque partie affiche son
+empreinte tronquée. Pour une vérification complète après avoir récupéré une
+archive de plusieurs gigaoctets, comparez son SHA-256 à celui de la partie dans
+index.json avec l'utilitaire standard de votre système :
+
+  sha256sum sauvegarde.zip          (Linux/macOS)
+  certutil -hashfile sauvegarde.zip SHA256    (Windows)
+
+Si l'empreinte ne correspond pas, la partie est corrompue : la restauration la
+refusera, ce qui est le comportement voulu. Ne contournez pas ce refus.
+
+
+Restaurer
+---------
+
+La méthode normale est l'onglet « Sauvegardes » du back-office, qui guide la
+restauration en deux temps : d'abord un ESSAI À BLANC qui n'écrit rien et dit ce
+qu'il ferait, puis l'écriture seule après votre confirmation explicite.
+
+Il n'existe pas de commande de restauration à lancer à la main. C'est
+délibéré : une restauration écrite hors de l'interface contournerait
+l'essai à blanc, donc l'étape qui dit ce qui va être écrit avant que ce
+quelque chose le soit. Passer par le back-office, c'est passer par cette
+étape — et par le refus qu'elle peut opposer.
+
+
+Les deux modes
+--------------
+
+Recharge du stockage (bucket) — le mode par défaut.
+
+    Réécrit seulement les fichiers manquants, à leur clé de stockage exacte. La
+    base n'est PAS touchée. Ré-exécutable sans dommage : les fichiers déjà
+    présents sont comptés, jamais réécrits. C'est le bon mode pour réparer un
+    stockage dégradé ou migrer vers un nouveau bucket.
+
+Restauration complète (disaster).
+
+    Recrée les épreuves ET leurs fichiers, en préservant les identifiants.
+    Le serveur REFUSE ce mode si la base contient déjà des épreuves : les
+    identifiants étant conservés, importer par-dessus un catalogue peuplé le
+    détruirait. Videz la base d'abord.
+
+Ce que la restauration garantit
+-------------------------------
+
+- Chaque fichier est vérifié par SHA-256 AVANT d'être écrit. Un fichier dont
+  l'empreinte ne correspond pas est signalé et n'est PAS écrit.
+- Une restauration qui laisse un fichier de côté n'est PAS considérée comme
+  réussie : les métadonnées ne sont alors pas écrites du tout. Le rapport
+  indique nommément les fichiers manquants ou altérés.
+- Les identifiants sont préservés. Les références /api/files/{id} contenues
+  dans les sujets et corrigés restent donc valides : aucun contenu n'est
+  réécrit.
+
+
+Limites assumées
+----------------
+
+- Pas de sauvegarde programmée. Une sauvegarde se déclenche à la main depuis le
+  back-office, et rien ne purge automatiquement les anciennes.
+- Pas d'upload de sauvegarde par l'interface. Pour une sauvegarde de plusieurs
+  gigaoctets, on récupère les parties puis on pointe la restauration sur un
+  dossier ou un préfixe de stockage.
+- Pas de chiffrement au repos des archives : c'est délégué au fournisseur de
+  stockage.
+- Pas de restauration partielle : on restaure tout ou rien.

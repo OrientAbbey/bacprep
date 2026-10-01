@@ -109,6 +109,12 @@ export interface ImportJobReport {
   images_importees?: number;
   creees?: { fichier: string; epreuve_id?: string; cible?: string; storage_key?: string; dry_run?: boolean }[];
   doublons?: { fichier: string; doublon_de: string }[];
+  /** Contenu identique déjà présent ailleurs : INFORMATION, pas un blocage.
+   *  Un logo commun à plusieurs épreuves est légitime. */
+  contenus_partages?: { fichier: string; deja_dans: string[] }[];
+  /** Références d'images non réécrites vers l'URL contrôlée : l'image
+   *  s'affichera cassée. Comptées pour être visibles, jamais ignorées. */
+  references_non_reecrites?: { fichier: string; document: string; image: string; nb: number }[];
   ignores?: string[];
   erreurs?: { fichier: string; erreur: string }[];
   metadonnees_manquantes?: { fichier: string; manquants: string[] }[];
@@ -300,4 +306,92 @@ export interface NotificationsEleve {
 /** Notification vue du back-office : toutes (actives et désactivées). */
 export interface NotificationAdmin extends Omit<NotificationEleve, "lue"> {
   actif: boolean;
+}
+
+// ---------- Sauvegardes ----------
+
+/** Une partie d'archive : autonome, restaurable seule, avec son empreinte.
+ *  `sha256` est la preuve d'intégrité affichée à l'admin — sans elle, la
+ *  sauvegarde n'aurait qu'une taille, ce qui ne prouve rien. */
+export interface SauvegardePartie {
+  nom: string;
+  octets: number;
+  sha256: string | null;
+  nb_fichiers: number;
+}
+
+/** Récapitulatif d'une sauvegarde présente dans le stockage, lu depuis son
+ *  index (et non recompté : l'index est la référence). */
+export interface SauvegardeResume {
+  cle: string;
+  nom: string;
+  taille_octets: number;
+  modifie_le: string | null;
+  parties: SauvegardePartie[];
+  epreuves: number;
+  fichiers: number;
+  url: string | null;
+}
+
+/** GET /api/admin/sauvegardes : l'inventaire et le volume total occupé. Aucun
+ *  indicateur de santé ni de saturation : la suppression reste une décision
+ *  humaine. */
+export interface SauvegardeInventaire {
+  sauvegardes: SauvegardeResume[];
+  total_octets: number;
+}
+
+/** Rapport d'un export ou d'une restauration. Les compteurs sont optionnels
+ *  parce qu'un job en échec n'a produit qu'une liste d'erreurs. */
+/** Rapport d'un job terminé. Les DEUX services écrivent des clés différentes et
+ *  l'IHM ne peut pas les confondre : l'export parle de `nb_fichiers`, la
+ *  restauration de `fichiers`/`ecrits`/`deja_presents`. Une clé inventée ici ne
+ *  provoque pas d'erreur de compilation — elle affiche `0` en silence, ce qui
+ *  est pire : un export réussi s'afficherait « 0 fichier écrit ». D'où les deux
+ *  formes, toutes deux optionnelles, et la discrimination par `dry_run`. */
+export interface SauvegardeRapport {
+  dry_run?: boolean;
+  // -- restauration --
+  epreuves?: number;
+  fichiers?: number;
+  ecrits?: number;
+  deja_presents?: number;
+  introuvables?: string[];
+  corrompues?: { partie: string; motif: string }[];
+  // -- export --
+  nb_fichiers?: number;
+  total_octets?: number;
+  // -- communes --
+  ecarts?: number;
+  octets?: number;
+  parties?: unknown[];
+  /** Empreinte lisible d'un objet au moment de l'export : `annonce` est ce que la
+   *  base affirmait, `calcule` ce que l'objet contenait réellement. Les DEUX
+   *  services nomment ces champs ainsi — voir `export_service` comme
+   *  `restore_service`. */
+  incoherences?: { fichier: string; annonce: string; calcule: string }[];
+  absents?: { fichier?: string; storage_key: string; erreur: string }[];
+  erreurs?: { fichier?: string; partie?: string; erreur: string }[];
+  [cle: string]: unknown;
+}
+
+/** Un job d'export ou de restauration. Les compteurs servent à la barre de
+ *  progression ; `report` et `logs` ne sont remplis qu'en fin de course. */
+export interface SauvegardeJob {
+  id: string;
+  kind: "export" | "restore" | string;
+  status: "pending" | "running" | "done" | "error" | string;
+  destination: string;
+  source: string;
+  mode: string;
+  total_fichiers: number;
+  fichiers_faits: number;
+  total_octets: number;
+  octets_faits: number;
+  partie_courante: number;
+  parties_total: number;
+  report: SauvegardeRapport;
+  logs: string[];
+  created_at: string | null;
+  finished_at: string | null;
 }

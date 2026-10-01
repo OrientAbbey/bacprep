@@ -206,6 +206,8 @@ Une fois `frontend/dist` présent, le backend le sert directement sur `/`
 
 ## Parcours de démonstration — admin
 
+0. Créer au moins une épreuve publiée (étapes 2 et 3 ci-dessous) : une
+   sauvegarde d'un catalogue vide ne démontre rien.
 1. Se connecter d'abord avec l'email **root** (`ADMIN_ROOT`, ex.
    `admin@votre-domaine.cm` — le lien « Admin » n'apparaît que pour les
    comptes root/promus), ouvrir `/admin` puis se connecter avec le jeton
@@ -225,8 +227,76 @@ Une fois `frontend/dist` présent, le backend le sert directement sur `/`
    dépenses) avec bannir/débannir/supprimer ; **promouvoir/révoquer un
    admin délégué** (réservé au root) ; le journal d'audit trace tout
    (champs modifiés, fichiers supprimés) et l'id d'épreuve y est cliquable.
-   La session admin se ferme automatiquement après
-   `ADMIN_SESSION_TIMEOUT_MINUTES` (défaut 3 min) d'inactivité.
+    La session admin se ferme automatiquement après
+    `ADMIN_SESSION_TIMEOUT_MINUTES` (défaut 3 min) d'inactivité.
+7. Onglet **Sauvegardes** : « Créer une sauvegarde maintenant » (barre de
+   progression, puis volume total occupé), puis « Lancer un essai à blanc »
+   sur la sauvegarde créée — le rapport annonce ce qui serait écrit sans rien
+   écrire. L'écriture réelle n'apparaît qu'après, avec sa case de
+   confirmation. Voir « Sauvegardes » plus bas.
+
+## Sauvegardes (onglet admin « Sauvegardes »)
+
+L'onglet **Sauvegardes** du back-office exporte et restaure le catalogue
+entier : épreuves, sujets, corrigés, images — et les identifiants, sans quoi les
+références `/api/files/{id}` contenues dans les sujets deviendraient fausses.
+
+**Créer une sauvegarde** — un clic. Rien n'est filtré (une sauvegarde partielle
+semble rassurante et protège mal : il faut alors se souvenir de ce qui n'y est
+pas), et la destination est calculée par le serveur — le client ne choisit pas
+la clé, ce qui empêcherait d'écraser une autre sauvegarde. Le catalogue de
+quelques centaines de fichiers s'exporte en une archive unique ; au-delà de
+1 Gio (`SAUVEGARDE_SEUILLE_PARTIE_OCTETS`), il est découpé en parties
+autonomes de 256 Mio (`SAUVEGARDE_TAILLE_PARTIE_OCTETS`).
+
+Une sauvegarde produite contient :
+
+```text
+_sauvegardes/2026-10-01T211422Z-e450d4/
+├── LISEZMOI.txt       procédure de restauration, embarquée AVEC les données
+├── manifest.json      état complet et autoritaire du catalogue
+├── index.json         SHA-256 et taille de chaque partie
+└── sauvegarde.zip     (ou part-0001.zip, part-0002.zip… au-delà de 1 Gio)
+```
+
+**Restaurer** se fait toujours en deux temps. Le premier appel est un **essai à
+blanc** : il vérifie l'empreinte de chaque partie, compare les octets lus aux
+empreintes du manifeste, et dit ce qu'il écrirait — sans rien écrire. L'écriture
+réelle n'est proposée qu'ensuite, et seulement si l'essai s'est terminé sans
+anomalie, après confirmation explicite. C'est aussi le serveur qui l'exige :
+`run_restore` refuse une écriture sans `confirmation_recue=True`.
+
+Deux modes :
+
+| Mode | Effet | Quand |
+|---|---|---|
+| **Recharge du stockage** (`bucket`, par défaut) | Réécrit seulement les fichiers manquants, à leur `storage_key` exacte. **La base n'est pas touchée.** Ré-exécutable sans dommage. | Réparer un stockage dégradé, migrer vers un nouveau bucket |
+| **Restauration complète** (`disaster`) | Recrée épreuves et fichiers en préservant les identifiants. **Refusée si la base contient déjà des épreuves.** | Base vide (catastrophe, nouveau serveur) |
+
+Le refus du mode `disaster` sur une base peuplée n'a pas de contournement :
+recréer des lignes par-dessus un catalogue existant, en conservant les
+identifiants, produirait des collisions destructrices.
+
+**Ce que la restauration garantit :**
+
+- Chaque fichier est vérifié par SHA-256 **avant** d'être écrit. Un fichier dont
+  l'empreinte ne correspond pas est signalé et n'est pas écrit.
+- Une restauration qui laisse un fichier de côté n'est **pas** une restauration :
+  les métadonnées ne sont alors pas écrites du tout, et le rapport nomme les
+  fichiers manquants ou altérés. Le job se termine alors en échec, pas en
+  succès partiel silencieux.
+- Les identifiants sont préservés, donc les références `/api/files/{id}` des
+  sujets restent valides : aucun contenu n'est réécrit.
+
+**Ce qui n'est pas fait, volontairement :** aucune sauvegarde programmée, aucune
+rotation, aucune purge automatique (une politique de rétention finit toujours
+par effacer la bonne sauvegarde au mauvais moment), et aucun envoi de sauvegarde
+par l'interface — pour un volume de plusieurs gigaoctets, on récupère les
+parties puis on pointe la restauration sur un dossier ou un préfixe de stockage.
+
+Le détail du format et la procédure complète sont dans `LISEZMOI.txt` à la
+racine de chaque sauvegarde. L'implémentation et ses décisions sont tracées dans
+`PLAN_SAUVEGARDES.md`.
 
 ## Import massif — format attendu
 

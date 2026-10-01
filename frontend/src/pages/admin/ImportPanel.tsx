@@ -215,6 +215,42 @@ export function ImportPanel({ token }: { token: string }) {
             </div>
           )}
 
+          {report?.references_non_reecrites && report.references_non_reecrites.length > 0 && (
+            <div className="mt-4">
+              <p className="font-mono-tag text-[10px] text-correction">
+                RÉFÉRENCES D&apos;IMAGES NON RÉÉCRITES
+              </p>
+              <p className="mt-1 text-xs text-ink-soft">
+                Ces images resteront cassées à l&apos;affichage : le lien pointe encore vers un
+                nom de fichier local au lieu de l&apos;URL contrôlée.
+              </p>
+              <ul className="mt-1 list-disc pl-5 text-xs text-ink-soft">
+                {report.references_non_reecrites.map((r, i) => (
+                  <li key={i}>
+                    <code>{r.fichier}</code> — {r.image} ({r.nb} référence(s), {r.document})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {report?.contenus_partages && report.contenus_partages.length > 0 && (
+            <div className="mt-4">
+              <p className="font-mono-tag text-[10px] text-slate">CONTENUS PARTAGÉS</p>
+              <p className="mt-1 text-xs text-ink-soft">
+                Ces fichiers ont été importés malgré des octets identiques déjà présents dans une
+                autre épreuve (logo commun, consignes réutilisées) — ce n&apos;est pas une erreur.
+              </p>
+              <ul className="mt-1 max-h-40 list-disc overflow-y-auto pl-5 text-xs text-ink-soft">
+                {report.contenus_partages.map((c, i) => (
+                  <li key={i}>
+                    <code>{c.fichier}</code> — identique dans {c.deja_dans.length} autre(s) épreuve(s)
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {report?.creees && report.creees.length > 0 && (
             <div className="mt-4">
               <p className="font-mono-tag text-[10px] text-ink-soft">FICHIERS IMPORTÉS</p>

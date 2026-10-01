@@ -8,6 +8,7 @@ import { ImportPanel } from "./admin/ImportPanel";
 import { JournalPanel } from "./admin/JournalPanel";
 import { NotificationsPanel } from "./admin/NotificationsPanel";
 import { ParametresPanel } from "./admin/ParametresPanel";
+import { SauvegardesPanel } from "./admin/SauvegardesPanel";
 import { SignalementsPanel } from "./admin/SignalementsPanel";
 import { StatsPanel } from "./admin/StatsPanel";
 import { UtilisateursPanel } from "./admin/UtilisateursPanel";
@@ -16,6 +17,7 @@ import { authHeaders } from "./admin/shared";
 type Onglet =
   | "epreuves"
   | "import"
+  | "sauvegardes"
   | "utilisateurs"
   | "parametres"
   | "journal"
@@ -40,7 +42,7 @@ export function AdminPage() {
   // volontaire pour garder l'URL stable).
   const [tab, setTab] = useState<Onglet>(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    return (["epreuves", "import", "utilisateurs", "parametres", "journal", "signalements", "notifications"] as const).includes(t as never)
+    return (["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "journal", "signalements", "notifications"] as const).includes(t as never)
       ? (t as Onglet)
       : "epreuves";
   });
@@ -59,7 +61,7 @@ export function AdminPage() {
   // Navigation clavier des onglets (pattern WAI-ARIA) : flèches droite/
   // gauche, Origine (Home) et Fin circulent dans l'ordre visuel affiché.
   function onTabsKeyDown(e: React.KeyboardEvent, current: Onglet) {
-    const order: Onglet[] = ["epreuves", "import", "utilisateurs", "parametres", "notifications", "signalements", "journal"];
+    const order: Onglet[] = ["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "notifications", "signalements", "journal"];
     const idx = order.indexOf(current);
     let next: Onglet | null = null;
     if (e.key === "ArrowRight") next = order[(idx + 1) % order.length];
@@ -329,6 +331,7 @@ export function AdminPage() {
           [
             ["epreuves", "Épreuves"],
             ["import", "Import massif"],
+            ["sauvegardes", "Sauvegardes"],
             ["utilisateurs", `Utilisateurs${stats?.utilisateurs ? ` (${stats.utilisateurs})` : ""}`],
             ["parametres", "Paramètres"],
             ["notifications", "Notifications"],
@@ -371,6 +374,8 @@ export function AdminPage() {
         </div>
         {tab === "import" ? (
           <ImportPanel token={token} />
+        ) : tab === "sauvegardes" ? (
+          <SauvegardesPanel token={token} />
         ) : tab === "utilisateurs" ? (
           <UtilisateursPanel token={token} />
         ) : tab === "parametres" ? (

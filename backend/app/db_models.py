@@ -264,6 +264,45 @@ class SubscriptionORM(Base):
     statut = Column(String, default="annulee")  # active|expiree|annulee
 
 
+class SauvegardeJobORM(Base):
+    """Job de sauvegarde (export ou restauration) — Phase 3 du plan
+    `PLAN_SAUVEGARDES.md`.
+
+    Distinct de `ImportJobORM` : une sauvegarde se décrit par des compteurs de
+    progression (octets, parties) là où un import ne compte que des fichiers.
+    Réutiliser la même table aurait forcé à rendre compteurs optionnels pour
+    tous les importers existants.
+
+    Aucune migration : `create_all` au lifespan crée la table sur SQLite comme
+    sur PostgreSQL.
+    """
+
+    __tablename__ = "sauvegarde_jobs"
+
+    id = Column(String, primary_key=True, default=_uid)
+    kind = Column(String, nullable=False, default="export")  # export|restore
+    status = Column(String, nullable=False, default="pending")  # pending|running|done|error
+    # Préfixe de stockage écrit par un export (`_sauvegardes/...`), vide pour
+    # une restauration. Sert à retrouver la sauvegarde depuis la liste.
+    destination = Column(String, nullable=False, default="")
+    # Pour une restauration, ce qui est lu : préfixe de stockage ou dossier
+    # local, selon le mode.
+    source = Column(String, nullable=False, default="")
+    mode = Column(String, nullable=False, default="")  # bucket|disaster (restore)
+    # Compteurs de progression, mis à jour pendant la tâche de fond. L'IHM
+    # n'affiche que ceux qui sont pertinents pour le `kind` en cours.
+    total_fichiers = Column(Integer, nullable=False, default=0)
+    fichiers_faits = Column(Integer, nullable=False, default=0)
+    total_octets = Column(Integer, nullable=False, default=0)
+    octets_faits = Column(Integer, nullable=False, default=0)
+    partie_courante = Column(Integer, nullable=False, default=0)
+    parties_total = Column(Integer, nullable=False, default=0)
+    report_json = Column(Text, nullable=False, default="{}")
+    logs_json = Column(Text, nullable=False, default="[]")
+    created_at = Column(UTCDateTime, default=utc_now)
+    finished_at = Column(UTCDateTime, nullable=True)
+
+
 class ImportJobORM(Base):
     """Job d'import massif (upload zip côté admin). Le rapport JSON
     (créées / doublons / erreurs / métadonnées manquantes) est écrit à la
