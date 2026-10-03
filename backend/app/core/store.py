@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import uuid
 from datetime import timedelta
 from typing import Optional
@@ -99,7 +100,7 @@ async def create_session(db: Session, user_id: str, platform: str) -> str:
         db.delete(existing)
         db.flush()
 
-    token = uuid.uuid4().hex
+    token = secrets.token_urlsafe(32)
     db.add(SessionORM(user_id=user_id, token=_hash_token(token), platform=platform, issued_at=utc_now()))
     db.commit()
     log.info("Session créée pour user_id=%s (platform=%s)", user_id, platform)

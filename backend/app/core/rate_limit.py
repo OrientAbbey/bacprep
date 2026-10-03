@@ -140,12 +140,23 @@ def client_ip(request: Request) -> str:
     valeur n'est une IP valide, on retombe sur l'IP socket.
     """
     if is_prod():
-        for header in ("true-client-ip", "cf-connecting-ip"):
-            normalised = _valid_ip(request.headers.get(header, ""))
-            if normalised:
-                return normalised
+        # TRUST_CLIENT_IP_HEADERS=0 si un contrôle (GET /api/health/ip avec un
+        # faux True-Client-IP) montre que le proxy ne réécrit pas ces en-têtes.
+        if os.getenv("TRUST_CLIENT_IP_HEADERS", "1").strip().lower() not in ("0", "off", "false"):
+            for header in ("true-client-ip", "cf-connecting-ip"):
+                normalised = _valid_ip(request.headers.get(header, ""))
+                if normalised:
+                    return normalised
+        # TRUSTED_PROXY_HOPS : nombre de proxys de confiance devant l'app ;
+        # on lit l'entrée située à cette distance depuis la DROITE.
+        try:
+            saut = max(1, int(os.getenv("TRUSTED_PROXY_HOPS", "1")))
+        except ValueError:
+            saut = 1
         forwarded = request.headers.get("x-forwarded-for", "")
         hops = [_valid_ip(part) for part in forwarded.split(",")]
+        if len(hops) >= saut and hops[-saut]:
+            return hops[-saut]
         for hop in reversed(hops):
             if hop:
                 return hop

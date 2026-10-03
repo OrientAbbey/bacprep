@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -30,6 +31,28 @@ _ask_limiter = SlidingWindowLimiter(
     message="Trop de questions à l'assistant — réessaie dans quelques minutes",
     env_switch="ASSISTANT_RATE_LIMIT",
 )
+
+
+# Quotas JOURNALIERS (coût LLM) : par compte et pour tout le site. Mémoire
+# process : repartent à zéro au redémarrage de l'instance (limite connue).
+_quota_jour = SlidingWindowLimiter(
+    max_attempts=int(os.getenv("ASSISTANT_DAILY_LIMIT", "60")),
+    window_seconds=86400.0,
+    message="Quota quotidien de l'assistant atteint — reviens demain",
+    env_switch="ASSISTANT_RATE_LIMIT",
+)
+_quota_global = SlidingWindowLimiter(
+    max_attempts=int(os.getenv("ASSISTANT_GLOBAL_DAILY_LIMIT", "1500")),
+    window_seconds=86400.0,
+    message="L'assistant est très sollicité aujourd'hui — réessaie plus tard",
+    env_switch="ASSISTANT_RATE_LIMIT",
+)
+
+
+def _check_quotas(user_id: str) -> None:
+    _ask_limiter.check(user_id)
+    _quota_jour.check(user_id)
+    _quota_global.check("site")
 
 
 def _load_conversation_and_epreuve(db: Session, user, conversation_id: str):
@@ -88,7 +111,7 @@ async def ask(payload: AskIn, db: Session = Depends(get_db), user=Depends(requir
     if user.consent_ia is False:
         raise HTTPException(403, "Tu as refusé le stockage de tes conversations IA — modifie ton choix dans ton profil.")
     conv, epreuve = _load_conversation_and_epreuve(db, user, payload.conversation_id)
-    _ask_limiter.check(user.id)
+    _check_quotas(user.id)
 
     messages = json.loads(conv.messages_json or "[]")
     messages.append({"role": "user", "content": payload.message, "ts": utc_now().isoformat()})
@@ -139,7 +162,7 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
         if not payload.epreuve_id:
             raise HTTPException(400, "epreuve_id requis pour une question éphémère")
         epreuve = get_public_epreuve_or_404(db, payload.epreuve_id, user)
-        _ask_limiter.check(user.id)
+        _check_quotas(user.id)
         contexte = payload.contexte
         # Historique borné côté client, réordonné par sécurité + question.
         messages = list(payload.historique)[-20:] + [{"role": "user", "content": payload.message}]
@@ -150,7 +173,7 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
                 403, "Tu as refusé le stockage de tes conversations IA — modifie ton choix dans ton profil pour retrouver tes discussions."
             )
         conv, epreuve = _load_conversation_and_epreuve(db, user, payload.conversation_id)
-        _ask_limiter.check(user.id)
+        _check_quotas(user.id)
 
         messages = json.loads(conv.messages_json or "[]")
         messages.append({"role": "user", "content": payload.message, "ts": utc_now().isoformat()})

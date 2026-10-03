@@ -34,6 +34,15 @@ def _resolve_user_from_cookie(cookie_header: str) -> str | None:
         return None
 
 
+def _origine_autorisee(origin: str, host: str) -> bool:
+    import os
+    from urllib.parse import urlparse
+
+    if urlparse(origin).netloc == host:
+        return True
+    return origin in {o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")}
+
+
 @router.websocket("/ws/session")
 async def ws_session(websocket: WebSocket) -> None:
     """Connexion WebSocket persistante par utilisateur connecté, utilisée
@@ -42,6 +51,14 @@ async def ws_session(websocket: WebSocket) -> None:
     entrante, `receive_text()` sert juste à garder la connexion ouverte et
     à détecter la déconnexion. Le frontend gère la reconnexion automatique
     avec délai croissant côté client (AuthProvider)."""
+    # Contrôle d'Origin : un site tiers ne doit pas pouvoir ouvrir ce socket
+    # avec les cookies de l'utilisateur. Origin absent (client non-navigateur)
+    # → accepté, le cookie de session reste exigé ci-dessous.
+    origin = websocket.headers.get("origin", "")
+    if origin and not _origine_autorisee(origin, websocket.headers.get("host", "")):
+        await websocket.close(code=4403)
+        return
+
     cookie_header = websocket.headers.get("cookie", "")
     token = _resolve_user_from_cookie(cookie_header)
 

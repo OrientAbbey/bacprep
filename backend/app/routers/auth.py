@@ -179,9 +179,12 @@ def me(user=Depends(require_user), db: Session = Depends(get_db)) -> UserOut:
     pas rester figé à la connexion explicite — revenir sur le site avec
     une session qui a survécu au rechargement compte comme une nouvelle
     connexion pour le tableau du back-office (« Dernière connexion »)."""
-    user.derniere_connexion = utc_now()
-    db.add(user)
-    db.commit()
+    # Au plus une écriture par heure : /me est appelé à chaque chargement de page.
+    derniere = user.derniere_connexion
+    if derniere is None or (utc_now() - derniere).total_seconds() > 3600:
+        user.derniere_connexion = utc_now()
+        db.add(user)
+        db.commit()
     return _user_out(user, db)
 
 

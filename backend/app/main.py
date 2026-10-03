@@ -271,6 +271,15 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # Identity Services injecte un iframe + scripts inline et KaTeX pose des
 # styles inline — une politique trop stricte casserait la connexion
 # Google et le rendu des formules ; à introduire en report-only d'abord.
+_CSP = (
+    "default-src 'self'; script-src 'self' https://accounts.google.com; "
+    "style-src 'self' 'unsafe-inline' https://accounts.google.com; "
+    "img-src 'self' data: blob: https:; font-src 'self' data:; "
+    "connect-src 'self' https://accounts.google.com; frame-src https://accounts.google.com; "
+    "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+)
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -279,6 +288,11 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     if is_prod():
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # CSP en mode RAPPORT SEUL (rien n'est bloqué) : les violations
+        # apparaissent dans la console du navigateur ; passer à
+        # `Content-Security-Policy` une fois la politique validée.
+        response.headers.setdefault("Content-Security-Policy-Report-Only", _CSP)
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     return response
 
 # Origines autorisées : configurable via CORS_ORIGINS (liste séparée par des
@@ -361,10 +375,24 @@ app.include_router(ws.router)
 
 @app.get("/api/health")
 def health() -> dict:
-    """Sonde de santé simple — utilisée pour vérifier que le backend a
-    démarré. (N'expose plus `env_file_found`, détail de configuration
-    inutile en public.)"""
+    """Sonde de santé : vérifie aussi la base (`SELECT 1`). Appelée chaque
+    jour par GitHub Actions — l'activité maintient le projet Supabase
+    gratuit éveillé. (N'expose aucun détail de configuration.)"""
+    from sqlalchemy import text
+
+    with SessionLocal() as db:
+        db.execute(text("SELECT 1"))
     return {"status": "ok"}
+
+
+@app.get("/api/health/ip")
+def health_ip(request: Request) -> dict:
+    """Renvoie l'IP que le serveur compte pour le rate-limit : contrôle de
+    déploiement (envoyer un faux `True-Client-IP` et vérifier que la valeur
+    renvoyée ne change pas — sinon TRUST_CLIENT_IP_HEADERS=0)."""
+    from .core.rate_limit import client_ip
+
+    return {"ip": client_ip(request)}
 
 
 @app.get("/api/config")
