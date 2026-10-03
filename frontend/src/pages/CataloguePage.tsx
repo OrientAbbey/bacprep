@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Lock, LockOpen, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { Consultation, EpreuveListItem, Filtres } from "../api/types";
@@ -52,6 +52,10 @@ export function CataloguePage() {
   const [corrige, setCorrige] = useState<CorrigeFiltre>("tous");
   const [acces, setAcces] = useState<AccesFiltre>("tous");
   const [initialized, setInitialized] = useState(false);
+  const [matieres, setMatieres] = useState<{ matiere: string; total: number; gratuits: number }[] | null>(null);
+  // Sans matière choisie ni recherche ni filtre d'accès : une tuile par matière
+  // (avec son nombre d'épreuves) plutôt qu'une longue liste mélangée.
+  const modeTuiles = !modeRecherche && !matiere && corrige === "tous" && acces === "tous";
 
   // Filtres dynamiques : recalculés dans le cadre de la classe courante.
   useEffect(() => {
@@ -104,6 +108,22 @@ export function CataloguePage() {
     return params;
   }
 
+  useEffect(() => {
+    if (!initialized || !modeTuiles) return;
+    const ac = new AbortController();
+    const params = new URLSearchParams();
+    if (classe) params.set("classe", classe);
+    if (filiere) params.set("filiere", filiere);
+    if (annee) params.set("annee", annee);
+    if (evaluation) params.set("evaluation", evaluation);
+    setMatieres(null);
+    api
+      .get<{ matiere: string; total: number; gratuits: number }[]>(`/api/epreuves/matieres?${params}`, undefined, ac.signal)
+      .then((m) => !ac.signal.aborted && setMatieres(m))
+      .catch(() => !ac.signal.aborted && setMatieres([]));
+    return () => ac.abort();
+  }, [initialized, modeTuiles, classe, filiere, annee, evaluation]);
+
   // Séquence des requêtes de liste : le dernier appel gagne. Une réponse
   // portant un jeton périmé ne peut plus écraser (première page) ni
   // concaténer (« Voir plus ») une liste qui correspond à d'autres filtres.
@@ -124,6 +144,12 @@ export function CataloguePage() {
   // courante (courses de réponses).
   async function loadFirstPage(signal?: AbortSignal) {
     const jeton = ++seqRef.current;
+    if (modeTuiles) {
+      setEpreuves([]);
+      setHasMore(false);
+      setChargement(false);
+      return;
+    }
     setChargement(true);
     setErreur(false);
     try {
@@ -331,8 +357,40 @@ export function CataloguePage() {
 
       <section aria-label={modeRecherche ? "Résultats de recherche" : "Épreuves"} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <h2 className="col-span-full font-mono-tag text-xs text-ink-soft">
-          {modeRecherche ? "RÉSULTATS" : "TOUTES LES ÉPREUVES"}
+          {modeRecherche ? "RÉSULTATS" : modeTuiles ? "MATIÈRES" : "ÉPREUVES"}
         </h2>
+        {!modeRecherche && matiere && (
+          <button
+            type="button"
+            onClick={() => setMatiere("")}
+            className="col-span-full min-h-[44px] w-fit text-left text-sm text-ink-soft underline"
+          >
+            ← Toutes les matières · <strong className="font-medium">{matiere}</strong>
+          </button>
+        )}
+        {modeTuiles && matieres === null && (
+          <div className="col-span-full">
+            <CatalogueSkeleton count={6} />
+          </div>
+        )}
+        {modeTuiles &&
+          matieres?.map((m) => (
+            <button
+              key={m.matiere}
+              type="button"
+              onClick={() => setMatiere(m.matiere)}
+              className="flex flex-col gap-1 rounded-lg border border-ink-soft/15 bg-paper-raised p-4 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
+            >
+              <span className="font-serif-brand text-lg leading-snug">{m.matiere}</span>
+              <span className="font-mono-tag text-[11px] text-slate">
+                {m.total} épreuve{m.total > 1 ? "s" : ""}
+                {m.gratuits > 0 ? ` · ${m.gratuits} gratuite${m.gratuits > 1 ? "s" : ""}` : ""}
+              </span>
+            </button>
+          ))}
+        {modeTuiles && matieres?.length === 0 && (
+          <p className="col-span-full text-sm text-slate">Aucune épreuve ne correspond à ces filtres.</p>
+        )}
         {erreur && !chargement && (
           <div role="alert" className="col-span-full rounded-lg border border-correction/30 bg-correction-soft p-4 text-correction">
             Le catalogue n'a pas pu être chargé.{" "}
@@ -350,10 +408,16 @@ export function CataloguePage() {
             <CatalogueSkeleton />
           </div>
         )}
-        {!chargement && epreuves.map((e) => {
+        {!chargement && epreuves.map((e, i) => {
+          // Une matière choisie : la liste (déjà triée par année) est coupée
+          // par un en-tête d'année.
+          const enteteAnnee = !modeRecherche && Boolean(matiere) && e.annee !== epreuves[i - 1]?.annee;
           return (
+            <Fragment key={e.id}>
+              {enteteAnnee && (
+                <h3 className="col-span-full mt-2 border-b border-ink-soft/15 pb-1 font-mono-tag text-xs text-ink-soft">{e.annee}</h3>
+              )}
             <button
-              key={e.id}
               onClick={() => openEpreuve(e)}
               aria-label={`Épreuve de ${e.matiere}, ${e.evaluation} ${e.annee}`}
               className="flex flex-col gap-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-4 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
@@ -408,10 +472,11 @@ export function CataloguePage() {
                 </span>
               )}
             </button>
+            </Fragment>
           );
         })}
 
-        {!chargement && epreuves.length === 0 && initialized && (
+        {!chargement && !modeTuiles && epreuves.length === 0 && initialized && (
           <p className="col-span-full text-sm text-slate">
             {modeRecherche
               ? "Aucune épreuve ne correspond à cette recherche."

@@ -91,7 +91,7 @@ export function SignalementModal({
                   size={14}
                   strokeWidth={1.75}
                   aria-hidden="true"
-                  className={motif === m.value ? "text-highlight" : "text-slate"}
+                  className={motif === m.value ? "text-highlight-text" : "text-slate"}
                 />
                 {m.label}
               </button>

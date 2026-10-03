@@ -147,7 +147,7 @@ export function NotificationsBell() {
                       <Link
                         to={`/epreuve/${n.epreuve_id}`}
                         onClick={() => setOpen(false)}
-                        className="mt-1.5 inline-block text-xs font-medium text-highlight underline hover:text-ink"
+                        className="mt-1.5 inline-block text-xs font-medium text-highlight-text underline hover:text-ink"
                       >
                         Aller à l'épreuve
                       </Link>

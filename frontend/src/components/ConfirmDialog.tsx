@@ -57,7 +57,7 @@ export function ConfirmDialog({
             size={18}
             strokeWidth={1.75}
             aria-hidden="true"
-            className={`mt-0.5 shrink-0 ${tone === "danger" ? "text-correction" : "text-highlight"}`}
+            className={`mt-0.5 shrink-0 ${tone === "danger" ? "text-correction" : "text-highlight-text"}`}
           />
           <h2 id="confirm-titre" className="font-serif-brand text-lg">
             {title}

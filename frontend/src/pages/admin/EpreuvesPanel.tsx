@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bot, Check, Loader2, Plus, Search, X } from "lucide-react";
 import { api, ApiError, ensureReferentielOption } from "../../api/client";
 import { AdminEpreuveCounts, EpreuveDetail, ReferentielOptions } from "../../api/types";
@@ -129,11 +129,14 @@ export function EpreuvesPanel({
    * Charge la liste des épreuves (limitée à SIDEBAR_LIMIT, filtrable par
    * recherche — voir `search`) ainsi que les compteurs par statut.
    */
+  // Taille courante de la liste : SIDEBAR_LIMIT, augmentée par « Charger plus ».
+  const limiteRef = useRef(SIDEBAR_LIMIT);
+
   async function loadAll(t: string, searchTerm: string, statut = "") {
     setListeChargement(true);
     setListeErreur(false);
     try {
-      const params = new URLSearchParams({ limit: String(SIDEBAR_LIMIT) });
+      const params = new URLSearchParams({ limit: String(limiteRef.current) });
       if (searchTerm.trim()) params.set("q", searchTerm.trim());
       if (statut) params.set("statut", statut);
       const list = await api.get<AdminEpreuveSummary[]>(`/api/admin/epreuves?${params}`, authHeaders(t));
@@ -150,6 +153,7 @@ export function EpreuvesPanel({
   // Recharge la liste à chaque frappe dans la recherche ou changement de
   // puces de statut (avec un léger anti-rebond pour ne pas spammer l'API).
   useEffect(() => {
+    limiteRef.current = SIDEBAR_LIMIT; // nouvelle recherche : on repart de la première page
     const timer = setTimeout(() => loadAll(token, search, statutFiltre), 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -682,7 +686,9 @@ export function EpreuvesPanel({
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-        <div className="space-y-2">
+        {/* Colonne collante à hauteur bornée : la liste défile à l'intérieur au
+            lieu d'allonger la page bien au-delà du formulaire de droite. */}
+        <div className="space-y-2 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           <button
             onClick={() => { setForm(EMPTY_FORM); setStatutForm("brouillon"); }}
             disabled={enCours !== null}
@@ -779,11 +785,17 @@ export function EpreuvesPanel({
               );
             })
           )}
-          {epreuves.length === SIDEBAR_LIMIT && (
-            <p className="px-1 text-xs text-slate">
-              Affichage limité aux {SIDEBAR_LIMIT} épreuves les plus récentes — affine la recherche pour en
-              trouver d'autres.
-            </p>
+          {epreuves.length >= limiteRef.current && (
+            <button
+              type="button"
+              onClick={() => {
+                limiteRef.current += SIDEBAR_LIMIT;
+                loadAll(token, search, statutFiltre);
+              }}
+              className="min-h-[44px] w-full rounded-full border border-ink-soft/25 text-sm"
+            >
+              Charger plus ({epreuves.length} affichées)
+            </button>
           )}
         </div>
 

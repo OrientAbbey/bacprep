@@ -9,6 +9,7 @@ import { AssistantPanel, PasteSignal } from "../components/AssistantPanel";
 import { Chronometre } from "../components/Chronometre";
 import { MarkdownContent } from "../components/MarkdownContent";
 import { NoteEditor } from "../components/NoteEditor";
+import { TailleTexte, useTailleTexte } from "../components/TailleTexte";
 import { SelectionBar } from "../components/SelectionBar";
 import { SignalementModal } from "../components/SignalementModal";
 import { ViewerSkeleton } from "../components/Skeleton";
@@ -37,7 +38,7 @@ function useIsMobile(breakpoint = 640): boolean {
 function Paywall({ necessiteConnexion }: { necessiteConnexion: boolean }) {
   return (
     <div className="mx-auto mt-10 max-w-md rounded-lg border border-ink-soft/15 bg-paper-raised p-6 text-center">
-      <Lock size={28} strokeWidth={1.5} aria-hidden="true" className="mx-auto text-highlight" />
+      <Lock size={28} strokeWidth={1.5} aria-hidden="true" className="mx-auto text-highlight-text" />
       <h1 className="mt-3 font-serif-brand text-xl">
         {necessiteConnexion ? "Cette épreuve est réservée aux comptes" : "Accès non autorisé à cette épreuve"}
       </h1>
@@ -67,6 +68,7 @@ function Paywall({ necessiteConnexion }: { necessiteConnexion: boolean }) {
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const [taille, changerTaille] = useTailleTexte();
   const [searchParams] = useSearchParams();
   // Deep-link depuis le profil : /epreuve/{id}?conv={id} rouvre l'onglet de
   // discussion exact de l'historique d'activité.
@@ -589,7 +591,10 @@ export function ViewerPage() {
             className="absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
           >
             <Watermark label={`${user?.email ?? "Consultation invitée"} · ${new Date().toLocaleString("fr-FR")}`} />
-            <div className="relative">
+            <div className="mb-2 flex justify-end print:hidden">
+              <TailleTexte taille={taille} onChange={changerTaille} />
+            </div>
+            <div className="relative" style={{ zoom: taille }}>
               <MarkdownContent content={contenuActif || ""} variant="epreuve" trackSourcePositions />
             </div>
           </div>

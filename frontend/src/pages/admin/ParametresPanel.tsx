@@ -148,7 +148,7 @@ export function ParametresPanel({ token }: { token: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Settings2 size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+        <Settings2 size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
         <h2 className="font-serif-brand text-lg">Paramètres — référentiels</h2>
         <span className="font-mono-tag text-[10px] text-slate">
           listes proposées dans les formulaires d'épreuve — s'alimentent aussi à l'usage
@@ -217,7 +217,7 @@ export function ParametresPanel({ token }: { token: string }) {
                           </span>
                           {o.en_usage > 0 && (
                             <span
-                              className="rounded-full bg-highlight-soft px-2 py-0.5 font-mono-tag text-[10px] text-highlight"
+                              className="rounded-full bg-highlight-soft px-2 py-0.5 font-mono-tag text-[10px] text-highlight-text"
                               title={`${o.en_usage} épreuve(s) utilisent encore cette valeur`}
                             >
                               {o.en_usage} ép.
@@ -228,7 +228,7 @@ export function ParametresPanel({ token }: { token: string }) {
                             onClick={() => setEnEdition({ id: o.id, code: o.code, label: o.label === o.code ? "" : o.label })}
                             title="Renommer cette option"
                             aria-label={`Renommer ${o.label}`}
-                            className="relative flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-highlight-soft hover:text-highlight after:absolute after:-inset-2 after:rounded-full after:content-['']"
+                            className="relative flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-highlight-soft hover:text-highlight-text after:absolute after:-inset-2 after:rounded-full after:content-['']"
                           >
                             <Pencil size={13} strokeWidth={1.75} aria-hidden="true" />
                           </button>

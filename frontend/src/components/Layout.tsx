@@ -1,3 +1,4 @@
+import { BottomNav } from "./BottomNav";
 import { ServeurLent } from "./ServeurLent";
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
@@ -190,7 +191,7 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
                 Abonnement
               </Link>
               {user?.is_admin && (
-                <Link to="/admin" className="rounded-lg px-3 py-2.5 font-medium text-highlight hover:bg-highlight-soft">
+                <Link to="/admin" className="rounded-lg px-3 py-2.5 font-medium text-highlight-text hover:bg-highlight-soft">
                   Admin
                 </Link>
               )}
@@ -227,8 +228,9 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
         </div>
       )}
 
-      <main className="w-full flex-1 px-4 py-6 md:px-6 lg:px-8">{children ?? <Outlet />}</main>
+      <main className="w-full flex-1 px-4 py-6 pb-24 sm:pb-6 md:px-6 lg:px-8">{children ?? <Outlet />}</main>
 
+      <BottomNav />
       <footer className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
         Copies &amp; Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)
       </footer>

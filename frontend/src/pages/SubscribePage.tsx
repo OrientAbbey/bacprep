@@ -423,7 +423,7 @@ export function SubscribePage() {
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="font-serif-brand text-base">{p.libelle}</span>
-                    {actif && <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" className="text-highlight" />}
+                    {actif && <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" className="text-highlight-text" />}
                   </span>
                   <span className={`mt-1 font-mono-tag text-sm ${actif ? "text-ink" : "text-ink-soft"}`}>
                     {p.prix} FCFA
@@ -612,7 +612,7 @@ function InfoTile({
 }) {
   return (
     <div className="flex items-start gap-2.5 rounded-lg border border-ink-soft/15 bg-paper p-3">
-      <Icon size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-highlight" />
+      <Icon size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-highlight-text" />
       <div className="min-w-0">
         <p className="font-mono-tag text-[10px] text-ink-soft">{label}</p>
         <p className="truncate text-sm font-medium text-ink">{value}</p>

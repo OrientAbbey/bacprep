@@ -489,7 +489,7 @@ function PuceAbonnement({
       title={`${label} : ${valeur}`}
       className="flex items-center gap-1.5 rounded-full border border-ink-soft/20 bg-paper px-2.5 py-1 text-xs text-ink-soft"
     >
-      <Icon size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-highlight" />
+      <Icon size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-highlight-text" />
       <span className="font-mono-tag text-[10px] text-slate">{label.toUpperCase()}</span>
       <span className="max-w-[180px] truncate font-medium text-ink">{valeur}</span>
     </span>
@@ -762,7 +762,7 @@ function PanneauDonnees({
     <div className="space-y-3">
       <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
         <p className="flex items-center gap-2 font-serif-brand text-base">
-          <Database size={16} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+          <Database size={16} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
           Mes données et confidentialité
         </p>
         <p className="mt-1 text-xs text-ink-soft">

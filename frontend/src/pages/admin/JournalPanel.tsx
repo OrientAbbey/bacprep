@@ -65,7 +65,7 @@ export function JournalPanel({
   return (
     <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
       <div className="mb-3 flex items-center gap-2">
-        <ScrollText size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+        <ScrollText size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
         <h2 className="font-serif-brand text-lg">Journal d'audit</h2>
       </div>
       {/* 20 lignes visibles ; le reste défile dans le panneau — sans borne,

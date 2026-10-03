@@ -70,7 +70,7 @@ export function ConsentModal() {
         className="w-full max-w-md rounded-lg border border-ink-soft/15 bg-paper-raised p-5 shadow-2xl"
       >
         <div className="flex items-center gap-2">
-          <Database size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+          <Database size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
           <h2 id="consent-titre" className="font-serif-brand text-lg">
             Tes données, ton choix
           </h2>
@@ -94,7 +94,7 @@ export function ConsentModal() {
             />
             <span className="min-w-0">
               <span className="flex items-center gap-1.5 text-sm font-medium">
-                <MessagesSquare size={14} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+                <MessagesSquare size={14} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
                 Mes conversations avec Tuteur IA Prep
               </span>
               <span className="mt-0.5 block text-xs text-slate">
@@ -112,7 +112,7 @@ export function ConsentModal() {
             />
             <span className="min-w-0">
               <span className="flex items-center gap-1.5 text-sm font-medium">
-                <StickyNote size={14} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+                <StickyNote size={14} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
                 Mes notes personnelles
               </span>
               <span className="mt-0.5 block text-xs text-slate">

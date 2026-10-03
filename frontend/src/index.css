@@ -34,6 +34,8 @@
   --color-highlight: #c89b3c;
   --color-highlight-soft: #f3e7c8;
   --color-highlight-ink: #241a02;
+  /* Doré pour le TEXTE : #c89b3c ne fait que 2,3:1 sur le fond papier (WCAG : 4,5:1). */
+  --color-highlight-text: #7d5f10;
   --color-correction: #a73428;
   --color-correction-soft: #f1dbd7;
   --color-valide: #2f6e4f;
@@ -50,6 +52,7 @@
   --color-ink-soft: #9ca7bf;
   --color-slate: #8791a3;
   --color-highlight: #d6ae55;
+  --color-highlight-text: #d6ae55;
   --color-highlight-soft: #3a2e12;
   --color-correction: #e0665a;
   --color-correction-soft: #332019;

@@ -142,7 +142,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
   return (
     <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
       <div className="mb-3 flex items-center gap-2">
-        <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight" />
+        <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
         <h2 className="font-serif-brand text-lg">Utilisateurs</h2>
         <span className="font-mono-tag text-[10px] text-slate">
           informations de compte et compteurs d'usage — aucune donnée secrète
@@ -173,7 +173,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                   {u.is_admin && (
                     <span
                       className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono-tag text-[10px] ${
-                        u.racine ? "bg-correction-soft text-correction" : "bg-highlight-soft text-highlight"
+                        u.racine ? "bg-correction-soft text-correction" : "bg-highlight-soft text-highlight-text"
                       }`}
                     >
                       <ShieldCheck size={10} strokeWidth={2} aria-hidden="true" />
@@ -270,7 +270,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                           type="button"
                           onClick={() => promouvoir(u)}
                           title="Promotion réservée à l'admin root"
-                          className="min-h-[44px] rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-highlight/50 hover:text-highlight"
+                          className="min-h-[44px] rounded-full border border-ink-soft/25 px-3 text-xs font-medium text-ink-soft hover:border-highlight/50 hover:text-highlight-text"
                         >
                           Promouvoir
                         </button>

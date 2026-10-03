@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import false as sql_false
+from sqlalchemy import case, false as sql_false
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -237,6 +237,36 @@ def list_epreuves(
     if user:
         covered_ids = {row[0] for row in _covered_epreuve_ids(db, user.id).all()}
     return [_to_list_item(e, covered_ids) for e in epreuves]
+
+
+@router.get("/matieres")
+def get_matieres(
+    classe: Optional[str] = None,
+    filiere: Optional[str] = None,
+    evaluation: Optional[str] = None,
+    annee: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Matières avec leur nombre d'épreuves publiées (et de gratuites) dans le
+    cadre courant — alimente les tuiles du catalogue (une matière = une tuile,
+    au lieu d'une liste dominée par une seule matière sur plusieurs années)."""
+    q = db.query(
+        EpreuveORM.matiere,
+        func.count(func.distinct(EpreuveORM.id)),
+        func.count(func.distinct(case((EpreuveORM.gratuit.is_(True), EpreuveORM.id)))),
+    ).filter(EpreuveORM.statut == "publie")
+    if classe:
+        q = q.filter(EpreuveORM.classe == classe)
+    if evaluation:
+        q = q.filter(EpreuveORM.evaluation == evaluation)
+    if annee:
+        q = q.filter(EpreuveORM.annee == annee)
+    if filiere:
+        q = q.join(EpreuveFiliereORM, EpreuveFiliereORM.epreuve_id == EpreuveORM.id).filter(
+            EpreuveFiliereORM.filiere == filiere
+        )
+    rows = q.group_by(EpreuveORM.matiere).order_by(EpreuveORM.matiere).all()
+    return [{"matiere": m, "total": t, "gratuits": g} for m, t, g in rows if m]
 
 
 @router.get("/filtres")

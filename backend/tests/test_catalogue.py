@@ -88,3 +88,10 @@ def test_navigation_primaire_inactif_zero_epreuve(client, epreuve_gratuite):
     assert primaire["actif"] is False
     assert primaire["classes"] == []
     assert sum(c["epreuves"] for c in primaire["classes"]) == 0
+
+
+def test_matieres_avec_compteurs(eleve, epreuve_gratuite):
+    r = eleve.get("/api/epreuves/matieres", params={"classe": "terminale"})
+    assert r.status_code == 200, r.text
+    m = {x["matiere"]: x for x in r.json()}
+    assert m["Mathématiques"]["total"] >= 1 and m["Mathématiques"]["gratuits"] >= 1

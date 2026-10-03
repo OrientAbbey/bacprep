@@ -165,7 +165,7 @@ export function NotificationsPanel({ token }: { token: string }) {
                 >
                   {n.actif ? "Active" : "Inactive"}
                 </span>
-                <span className="rounded-full bg-highlight-soft px-2.5 py-0.5 font-mono-tag text-[10px] text-highlight">
+                <span className="rounded-full bg-highlight-soft px-2.5 py-0.5 font-mono-tag text-[10px] text-highlight-text">
                   {TYPE_LABELS[n.type] ?? n.type}
                 </span>
               </div>

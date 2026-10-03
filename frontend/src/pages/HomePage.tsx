@@ -189,9 +189,9 @@ export function HomePage() {
         )}
         {nav && niveauActif && (
           <div className="fade-in grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-            {(niveauActif.classes ?? []).map((c) => {
+            {(niveauActif.classes ?? []).filter((c) => c.actif).map((c) => {
               const total = c.epreuves;
-              return c.actif ? (
+              return (
                 <Link
                   key={c.code}
                   to={`/secondaire/${c.code}`}
@@ -202,18 +202,6 @@ export function HomePage() {
                     {total} épreuve{total > 1 ? "s" : ""}
                   </span>
                 </Link>
-              ) : (
-                <div
-                  key={c.code}
-                  title="Aucune épreuve publiée pour cette classe pour l'instant"
-                  className="flex min-h-[104px] cursor-not-allowed flex-col justify-between rounded-lg border border-ink-soft/10 bg-paper-raised/50 p-4 opacity-45"
-                >
-                  <span className="font-serif-brand text-xl">{c.label}</span>
-                  <span className="flex items-center gap-1 font-mono-tag text-[10px] text-slate">
-                    <Lock size={11} strokeWidth={2} aria-hidden="true" />
-                    Bientôt
-                  </span>
-                </div>
               );
             })}
           </div>
@@ -231,29 +219,8 @@ export function HomePage() {
 function NiveauGrid({ niveaux, onChoose }: { niveaux: NiveauNav[]; onChoose: (n: NiveauNav) => void }) {
   return (
     <div className="fade-in mx-auto grid max-w-2xl gap-4 sm:grid-cols-2">
-      {niveaux.map((n) => {
+      {niveaux.filter((n) => n.actif).map((n) => {
         const description = NIVEAU_DESCRIPTIONS[n.code];
-        if (!n.actif) {
-          return (
-            <div
-              key={n.code}
-              title="Ce niveau n'est pas encore disponible"
-              className="flex min-h-[140px] cursor-not-allowed flex-col justify-between rounded-lg border border-ink-soft/10 bg-paper-raised/60 p-5 opacity-55"
-            >
-              <div className="flex items-center gap-3">
-                <BookOpen size={24} strokeWidth={1.5} aria-hidden="true" className="text-ink-soft" />
-                <div>
-                  <h3 className="font-serif-brand text-lg">{n.label}</h3>
-                  <p className="text-xs text-slate">Bientôt disponible</p>
-                </div>
-                <Lock size={14} strokeWidth={2} aria-hidden="true" className="ml-auto text-slate" />
-              </div>
-              <span className="font-mono-tag text-[10px] text-slate">
-                {n.classes.reduce((acc, c) => acc + c.epreuves, 0)} épreuve(s) publiée(s)
-              </span>
-            </div>
-          );
-        }
         return (
           <button
             key={n.code}
@@ -263,7 +230,7 @@ function NiveauGrid({ niveaux, onChoose }: { niveaux: NiveauNav[]; onChoose: (n:
             className="flex min-h-[140px] w-full flex-col justify-between rounded-lg border border-ink-soft/20 bg-paper-raised p-5 text-left transition-colors hover:border-highlight/60 hover:bg-highlight-soft/40 focus-visible:border-highlight/60"
           >
             <span className="flex items-center gap-3">
-              <GraduationCap size={24} strokeWidth={1.5} aria-hidden="true" className="text-highlight" />
+              <GraduationCap size={24} strokeWidth={1.5} aria-hidden="true" className="text-highlight-text" />
               <span className="block">
                 <span className="block font-serif-brand text-lg">{n.label}</span>
                 <span className="block text-xs text-slate">{description ?? `${n.classes.length} classes`}</span>
