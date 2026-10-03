@@ -21,14 +21,21 @@ function scrollIntoViewDoucement(el: HTMLElement | null) {
 
 type Scope = "epreuve" | "matiere_annee" | "matiere" | "annee" | "filiere";
 
-interface Pricing {
-  pricing: Record<Scope, number>;
-  labels: Record<Scope, string>;
-  descriptions: Record<Scope, string>;
+/** Formule d'abonnement (table `plans`, éditable dans l'admin). */
+interface Plan {
+  id: string;
+  scope: Scope;
+  libelle: string;
+  libelle_en: string;
+  description: string;
+  description_en: string;
+  prix: number;
   duree_jours: number;
 }
 
-const SCOPES: Scope[] = ["epreuve", "matiere_annee", "matiere", "annee", "filiere"];
+interface Pricing {
+  plans: Plan[];
+}
 
 /** Champs de sélection requis par scope, et leur traduction en paramètre
  * API — SOURCE DE VÉRITÉ UNIQUE pour le garde anti-course du compte
@@ -77,6 +84,7 @@ export function SubscribePage() {
   const [epreuves, setEpreuves] = useState<EpreuveListItem[]>([]);
 
   const [scope, setScope] = useState<Scope>("epreuve");
+  const [planId, setPlanId] = useState<string | null>(null);
   const [classe, setClasse] = useState("");
   const [filiere, setFiliere] = useState("");
   const [matiere, setMatiere] = useState("");
@@ -90,6 +98,8 @@ export function SubscribePage() {
   const [reference, setReference] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [erreurPricing, setErreurPricing] = useState(false);
+  // Formule choisie ; à défaut, la première formule de la portée courante.
+  const plan = pricing?.plans.find((p) => p.id === planId && p.scope === scope) ?? pricing?.plans.find((p) => p.scope === scope);
 
   const chargerTarifs = useCallback(() => {
     setErreurPricing(false);
@@ -216,7 +226,11 @@ export function SubscribePage() {
         return;
     }
     e.preventDefault();
-    setScope(SCOPES[next]);
+    const cible = pricing?.plans[next];
+    if (cible) {
+      setScope(cible.scope);
+      setPlanId(cible.id);
+    }
     radios[next]?.focus();
   }
 
@@ -263,6 +277,7 @@ export function SubscribePage() {
         matiere: ["matiere_annee", "matiere"].includes(scope) ? matiere : undefined,
         annee: ["matiere_annee", "annee"].includes(scope) ? annee : undefined,
         epreuve_id: scope === "epreuve" ? epreuveId : undefined,
+        plan_id: plan?.id,
         provider,
       });
       setReference(res.reference_agregateur);
@@ -387,16 +402,19 @@ export function SubscribePage() {
             onKeyDown={handleScopeKeyDown}
             className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           >
-            {SCOPES.map((s) => {
-              const actif = scope === s;
+            {pricing.plans.map((p) => {
+              const actif = plan?.id === p.id;
               return (
                 <button
-                  key={s}
+                  key={p.id}
                   type="button"
                   role="radio"
                   aria-checked={actif}
                   tabIndex={actif ? 0 : -1}
-                  onClick={() => setScope(s)}
+                  onClick={() => {
+                    setScope(p.scope);
+                    setPlanId(p.id);
+                  }}
                   className={`flex flex-col rounded-lg border p-4 text-left transition-colors ${
                     actif
                       ? "border-highlight bg-highlight-soft/40"
@@ -404,14 +422,14 @@ export function SubscribePage() {
                   } focus-visible:border-highlight`}
                 >
                   <span className="flex items-center justify-between gap-2">
-                    <span className="font-serif-brand text-base">{pricing.labels[s]}</span>
+                    <span className="font-serif-brand text-base">{p.libelle}</span>
                     {actif && <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" className="text-highlight" />}
                   </span>
                   <span className={`mt-1 font-mono-tag text-sm ${actif ? "text-ink" : "text-ink-soft"}`}>
-                    {pricing.pricing[s]} FCFA
-                    <span className="text-[10px] text-slate"> / {pricing.duree_jours} j</span>
+                    {p.prix} FCFA
+                    <span className="text-[10px] text-slate"> / {p.duree_jours} j</span>
                   </span>
-                  <span className="mt-1.5 text-xs text-slate">{pricing.descriptions?.[s]}</span>
+                  <span className="mt-1.5 text-xs text-slate">{p.description}</span>
                 </button>
               );
             })}
@@ -472,14 +490,12 @@ export function SubscribePage() {
               <div className="bg-highlight-soft px-6 py-5 text-center">
                 <p className="font-mono-tag text-[10px] text-ink-soft">Prix de l'abonnement</p>
                 <p className="font-serif-brand text-4xl text-ink">
-                  {pricing.pricing[scope]} <span className="text-lg font-sans font-normal text-ink-soft">FCFA</span>
+                  {plan?.prix} <span className="text-lg font-sans font-normal text-ink-soft">FCFA</span>
                 </p>
-                <p className="text-xs text-ink-soft">valable {pricing.duree_jours} jours</p>
+                <p className="text-xs text-ink-soft">valable {plan?.duree_jours} jours</p>
                 {/* Description lisible de la portée choisie (2 lignes max),
                     fournie par le backend — même vocabulaire partout. */}
-                {pricing.descriptions?.[scope] && (
-                  <p className="mx-auto mt-2 max-w-sm text-xs text-ink-soft">{pricing.descriptions[scope]}</p>
-                )}
+                {plan?.description && <p className="mx-auto mt-2 max-w-sm text-xs text-ink-soft">{plan.description}</p>}
               </div>
 
               <div className="space-y-4 p-5">

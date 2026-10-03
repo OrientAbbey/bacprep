@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..core import referentiel, store
 from ..core.config import demo_allowed
 from ..core.logging_config import get_logger
+from ..core.plans import plan_out, plan_pour, plans_actifs
 from ..core.subscriptions import SCOPE_LABELS, subs_to_out
 from ..db import get_db, utc_now
 from ..db_models import EpreuveORM, PaymentORM, SubscriptionORM
@@ -23,34 +24,15 @@ from .auth import require_user
 router = APIRouter(prefix="/api", tags=["subscriptions"])
 log = get_logger("subscriptions")
 
-PRICING = {
-    "epreuve": 400,
-    "matiere_annee": 800,
-    "matiere": 2000,
-    "annee": 3500,
-    "filiere": 6000,
-}
-
 # Les libellés de portée (SCOPE_LABELS) vivent dans core/subscriptions.py,
 # partagés avec le router me (affichage profil) — plus de définition en
 # double.
 
-# Description lisible de ce que débloque chaque portée — affichée sur les
-# cartes de prix de la page Abonnement (deux lignes max, phrase simple).
-SCOPE_DESCRIPTIONS = {
-    "epreuve": "Le sujet et le corrigé d'une seule épreuve, à ton rythme.",
-    "matiere_annee": "Toutes les épreuves d'une matière pour une année donnée — idéale pour réviser un chapitre précis.",
-    "matiere": "Toutes les années d'une même matière, séquences comme examens — pour creuser une discipline.",
-    "annee": "Toutes les matières d'une même année d'examen — pour se mettre en condition comme le jour J.",
-    "filiere": "Tout le contenu d'une série pour une classe : chaque matière, chaque année publiée.",
-}
-
-DUREE_VALIDITE = timedelta(days=365)
 WEBHOOK_MAX_AGE_SECONDS = 300  # anti-replay : notification plus vieille que 5 min rejetée
 
 
 def _pending_checkout_for(
-    db: Session, user, fields: dict, provider: str, montant: int
+    db: Session, user, fields: dict, provider: str, montant: int, duree_jours: int
 ) -> tuple[SubscriptionORM, PaymentORM]:
     """Réutilise un checkout déjà initié pour la MÊME sélection (souscription
     "annulee" + paiement "pending" jamais confirmé), plutôt que d'empiler des
@@ -76,12 +58,13 @@ def _pending_checkout_for(
             .filter(PaymentORM.subscription_id == s.id, PaymentORM.statut == "pending")
             .one_or_none()
         )
-        if payment:
+        # Même sélection ET même formule (montant et durée) : sinon on en crée un nouveau.
+        if payment and payment.montant == montant and (s.end_date - s.start_date).days == duree_jours:
             return s, payment
-    return _create_checkout(db, user, fields, provider, montant)
+    return _create_checkout(db, user, fields, provider, montant, duree_jours)
 
 
-def _create_checkout(db: Session, user, fields: dict, provider: str, montant: int) -> tuple[SubscriptionORM, PaymentORM]:
+def _create_checkout(db: Session, user, fields: dict, provider: str, montant: int, duree_jours: int) -> tuple[SubscriptionORM, PaymentORM]:
     now = utc_now()
     sub = SubscriptionORM(
         user_id=user.id,
@@ -92,7 +75,7 @@ def _create_checkout(db: Session, user, fields: dict, provider: str, montant: in
         annee=fields["annee"],
         epreuve_id=fields["epreuve_id"],
         start_date=now,
-        end_date=now + DUREE_VALIDITE,
+        end_date=now + timedelta(days=duree_jours),
         statut="annulee",  # devient "active" seulement à confirmation du webhook
     )
     db.add(sub)
@@ -156,16 +139,20 @@ def _verify_webhook_signature(payload: WebhookIn) -> bool:
 
 
 @router.get("/pricing")
-def pricing() -> dict:
-    """Grille tarifaire par portée d'abonnement (voir Module 6 du cahier
-    des charges) — endpoint public, pas besoin d'authentification. Toutes
-    les portées (hors « épreuve précise ») sont achetées dans le cadre
-    d'une classe."""
+def pricing(db: Session = Depends(get_db)) -> dict:
+    """Formules actives (table `plans`, modifiable depuis l'admin) — endpoint
+    public. Les clés `pricing`/`labels`/`descriptions`/`duree_jours` (première
+    formule de chaque portée) restent exposées pour compatibilité."""
+    plans = plans_actifs(db)
+    premiere: dict = {}
+    for p in plans:
+        premiere.setdefault(p.scope, p)
     return {
-        "pricing": PRICING,
-        "labels": SCOPE_LABELS,
-        "descriptions": SCOPE_DESCRIPTIONS,
-        "duree_jours": DUREE_VALIDITE.days,
+        "plans": [plan_out(p) for p in plans],
+        "pricing": {k: p.prix for k, p in premiere.items()},
+        "labels": {k: p.libelle for k, p in premiere.items()},
+        "descriptions": {k: p.description for k, p in premiere.items()},
+        "duree_jours": next(iter(premiere.values())).duree_jours if premiere else 365,
     }
 
 
@@ -279,8 +266,9 @@ def checkout(payload: CheckoutIn, db: Session = Depends(get_db), user=Depends(re
     devient "active" qu'à la confirmation du webhook (voir
     `simulate_webhook`), jamais à l'initiation — voir Module 7 du cahier
     des charges. Refuse (409) si la sélection est déjà accessible."""
-    if payload.scope not in PRICING:
-        raise HTTPException(400, "scope inconnu")
+    plan = plan_pour(db, payload.scope, payload.plan_id)
+    if plan is None:
+        raise HTTPException(400, "Formule inconnue ou indisponible")
     fields = _resolve_scope_fields(db, payload)
 
     # Garde-fou côté serveur (en plus du masquage côté frontend) : on ne
@@ -299,7 +287,7 @@ def checkout(payload: CheckoutIn, db: Session = Depends(get_db), user=Depends(re
     ):
         raise HTTPException(409, "Cette sélection est déjà accessible (gratuite ou déjà abonnée)")
 
-    sub, payment = _pending_checkout_for(db, user, fields, payload.provider, PRICING[payload.scope])
+    sub, payment = _pending_checkout_for(db, user, fields, payload.provider, plan.prix, plan.duree_jours)
     db.commit()
 
     log.info("Checkout créé/réutilisé: sub=%s payment=%s montant=%s classe=%s", sub.id, payment.id, payment.montant, sub.classe)

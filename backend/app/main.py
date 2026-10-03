@@ -35,6 +35,7 @@ from .routers import (
     admin_import,
     admin_misc,
     admin_notifications,
+    admin_plans,
     admin_referentiel,
     admin_sauvegardes,
     assistant,
@@ -220,6 +221,9 @@ async def lifespan(app: FastAPI):
         from .core.referentiel_options import seed_referentiel_options
 
         seed_referentiel_options(db)
+        from .core.plans import seed_plans
+
+        seed_plans(db)
     except Exception:
         log.exception("Seed referentiel_options impossible au démarrage")
     try:
@@ -365,6 +369,7 @@ app.include_router(admin_epreuves.router)
 app.include_router(admin_import.router)
 app.include_router(admin_sauvegardes.router)
 app.include_router(admin_referentiel.router)
+app.include_router(admin_plans.router)
 app.include_router(admin_notifications.router)
 app.include_router(admin_assistant.router)
 app.include_router(assistant.router)

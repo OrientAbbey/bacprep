@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import (
+    Float,
     Boolean,
     Column,
     ForeignKey,
@@ -488,3 +489,55 @@ class NotificationReadORM(Base):
     notification_id = Column(String, ForeignKey("notifications.id", ondelete="CASCADE"), primary_key=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     read_at = Column(UTCDateTime, default=utc_now)
+
+
+class PlanORM(Base):
+    """Formule d'abonnement vendue (modifiable depuis l'admin). `scope` dit
+    ce que la formule débloque (epreuve, matiere_annee, matiere, annee,
+    filiere) ; plusieurs formules peuvent partager un scope (durées/prix
+    différents). Aucune clé étrangère : supprimer une formule ne touche pas
+    aux abonnements existants (ils gardent leurs dates et leur montant)."""
+
+    __tablename__ = "plans"
+
+    id = Column(String, primary_key=True, default=_uid)
+    scope = Column(String, nullable=False, index=True)
+    libelle = Column(String, nullable=False)
+    libelle_en = Column(String, nullable=False, default="")
+    description = Column(String, nullable=False, default="")
+    description_en = Column(String, nullable=False, default="")
+    prix = Column(Integer, nullable=False)  # FCFA
+    duree_jours = Column(Integer, nullable=False, default=365)
+    actif = Column(Boolean, nullable=False, default=True)
+    ordre = Column(Integer, nullable=False, default=0)
+
+
+class EvenementORM(Base):
+    """Événement du calendrier officiel (examen, résultats, inscription),
+    saisi par l'admin : aucune date n'est codée en dur."""
+
+    __tablename__ = "evenements"
+
+    id = Column(String, primary_key=True, default=_uid)
+    titre = Column(String, nullable=False)
+    type = Column(String, nullable=False, default="examen")  # examen|resultats|inscription
+    evaluation = Column(String, nullable=False, default="")  # BAC, BEPC… ou vide = tous
+    date_debut = Column(String, nullable=False)  # AAAA-MM-JJ
+    date_fin = Column(String, nullable=False, default="")
+    lien_officiel = Column(String, nullable=False, default="")
+    visible = Column(Boolean, nullable=False, default=True)
+
+
+class EssaiORM(Base):
+    """Essai d'un élève sur une épreuve (examen blanc, ou « à revoir » si
+    `note` est vide). Sert à l'historique, aux moyennes par matière et au
+    calcul de la révision espacée (aucune table de planning)."""
+
+    __tablename__ = "essais"
+
+    id = Column(String, primary_key=True, default=_uid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    epreuve_id = Column(String, ForeignKey("epreuves.id"), nullable=False, index=True)
+    note = Column(Float, nullable=True)  # sur 20
+    duree_s = Column(Integer, nullable=True)
+    created_at = Column(UTCDateTime, default=utc_now, index=True)

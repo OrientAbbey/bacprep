@@ -159,6 +159,7 @@ class CheckoutIn(BaseModel):
     annee: Optional[str] = None
     classe: Optional[str] = None  # requis sauf pour scope="epreuve"
     epreuve_id: Optional[str] = None
+    plan_id: Optional[str] = Field(default=None, max_length=64)  # formule choisie (défaut : 1re du scope)
     # Liste fermée : la valeur part telle quelle en base et sert à
     # l'affichage du profil — on refuse tout autre libellé.
     provider: str = "orange"
