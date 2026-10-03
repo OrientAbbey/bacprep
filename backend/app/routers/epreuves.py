@@ -7,6 +7,7 @@ from sqlalchemy import false as sql_false
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..core.textsearch import contient
 from ..core import epreuve_files, referentiel, signing, store
 from ..core.logging_config import get_logger
 from ..db import get_db
@@ -138,11 +139,10 @@ def _search_filter(db: Session, query, q: str):
     """Recherche texte GLOBALE : porte sur la matière, l'évaluation et les
     séries, et NE filtre PAS par classe (l'utilisateur doit pouvoir chercher
     dans tout le catalogue, cf. prompt d'amélioration §3)."""
-    like = f"%{q}%"
-    serie_subquery = db.query(EpreuveFiliereORM.epreuve_id).filter(EpreuveFiliereORM.filiere.ilike(like))
+    serie_subquery = db.query(EpreuveFiliereORM.epreuve_id).filter(contient(EpreuveFiliereORM.filiere, q))
     return query.filter(
-        EpreuveORM.matiere.ilike(like)
-        | EpreuveORM.evaluation.ilike(like)
+        contient(EpreuveORM.matiere, q)
+        | contient(EpreuveORM.evaluation, q)
         | EpreuveORM.id.in_(serie_subquery)
     )
 

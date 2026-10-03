@@ -37,7 +37,11 @@ async function parseError(res: Response): Promise<ApiError> {
 }
 
 /** Délai au-delà duquel une requête non-SSE est abandonnée. */
-const TIMEOUT_DEFAUT_MS = 15_000;
+const TIMEOUT_DEFAUT_MS = 60_000; // démarrage à froid de Render gratuit : jusqu'à ~1 min
+
+/** Une requête qui dépasse ce délai déclenche l'évènement `serveur-lent`
+ * (bandeau « Le serveur se réveille… », voir ServeurLent). */
+const LENT_APRES_MS = 3_000;
 
 /**
  * Combine le `signal` de l'appelant avec un délai d'attente interne.
@@ -68,6 +72,11 @@ function signauxCombines(externe: AbortSignal | null | undefined) {
   };
 }
 
+/** `typeof window` : absent dans les tests (environnement node). */
+function signalerLent(delta: number) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("serveur-lent", { detail: delta }));
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const { headers, body, ...rest } = options;
   // IMPORTANT : fusionner les en-têtes (headers) après avoir étalé `rest`,
@@ -78,6 +87,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   // ou un DELETE sans corps, il annonce à tort le type de la requête et peut
   // déclencher un preflight CORS inutile.
   const comb = signauxCombines(rest.signal as AbortSignal | undefined);
+  let signaleLent = false;
+  const minuterieLent = setTimeout(() => {
+    signaleLent = true;
+    signalerLent(1);
+  }, LENT_APRES_MS);
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
@@ -98,6 +112,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw err;
   } finally {
     comb.liberer();
+    clearTimeout(minuterieLent);
+    if (signaleLent) signalerLent(-1);
   }
 
   if (!res.ok) throw await parseError(res);

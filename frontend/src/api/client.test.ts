@@ -116,10 +116,10 @@ describe("client — délai d'attente et annulation (F-06)", () => {
     );
     const promesse = api.get("/api/lent");
     const attente = promesse.catch((e) => e);
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(60_000);
     const err = await attente;
     expect(err).toBeInstanceOf(ApiTimeoutError);
-    expect((err as Error).message).toContain("15 s");
+    expect((err as Error).message).toContain("60 s");
   });
 
   it("laisse remonter l'annulation de l'appelant telle quelle", async () => {

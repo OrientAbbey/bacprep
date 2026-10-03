@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..core.textsearch import contient
 from ..core import epreuve_files, images, referentiel, referentiel_options, signing
 from ..core.logging_config import get_logger
 from ..db import get_db, utc_now
@@ -108,8 +109,7 @@ def admin_list_epreuves(
     if statut in STATUTS_VALIDES:
         query = query.filter(EpreuveORM.statut == statut)
     if q:
-        like = f"%{q}%"
-        query = query.filter((EpreuveORM.matiere.ilike(like)) | (EpreuveORM.annee.ilike(like)))
+        query = query.filter(contient(EpreuveORM.matiere, q) | contient(EpreuveORM.annee, q))
     epreuves = query.order_by(EpreuveORM.updated_at.desc()).limit(max(1, min(limit, 200))).all()
     return [
         {

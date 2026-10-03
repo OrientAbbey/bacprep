@@ -80,3 +80,14 @@ def test_websocket_refuse_une_origine_etrangere(client):
 def test_jeton_de_session_urlsafe(eleve):
     jeton = eleve.cookies.get("bacprep_session")
     assert jeton and len(jeton) >= 40
+
+
+def test_assets_haches_en_cache_immuable(client):
+    from pathlib import Path
+
+    import app.main as m
+
+    if not (m.FRONTEND_DIST / "assets").exists():
+        pytest.skip("frontend non compilé")
+    f = next(Path(m.FRONTEND_DIST / "assets").iterdir())
+    assert "immutable" in client.get(f"/assets/{f.name}").headers.get("cache-control", "")

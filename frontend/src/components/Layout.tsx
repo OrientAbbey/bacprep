@@ -1,3 +1,4 @@
+import { ServeurLent } from "./ServeurLent";
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -41,6 +42,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-paper text-ink">
+      <ServeurLent />
       <header className="sticky top-0 z-30 border-b border-ink-soft/15 bg-paper-raised">
         {/* Motif signature n°1 : bandeau tricolore, uniquement ici (AppBar) */}
         <div className="flex h-[3px] w-full" aria-hidden="true">

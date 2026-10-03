@@ -213,6 +213,9 @@ async def lifespan(app: FastAPI):
     if is_prod():
         _check_prod_config()
     Base.metadata.create_all(bind=engine)
+    from .core.textsearch import activer_unaccent
+
+    activer_unaccent()
     _ensure_users_role_column()
     _ensure_epreuve_files_sujet_index()
     _ensure_epreuve_files_document_unique()
@@ -296,6 +299,9 @@ async def security_headers(request: Request, call_next):
         # apparaissent dans la console du navigateur ; passer à
         # `Content-Security-Policy` une fois la politique validée.
         response.headers.setdefault("Content-Security-Policy-Report-Only", _CSP)
+    if request.url.path.startswith("/assets/"):
+        # Fichiers Vite au nom haché : le contenu ne change jamais sous un même nom.
+        response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     return response
 

@@ -10,14 +10,15 @@ import { ToastProvider } from "./components/Toast";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { CataloguePage } from "./pages/CataloguePage";
 import { HomePage } from "./pages/HomePage";
+import { Skeleton, ViewerSkeleton } from "./components/Skeleton";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { LoginPage } from "./pages/LoginPage";
-import { ProfilePage } from "./pages/ProfilePage";
 import { SubscribePage } from "./pages/SubscribePage";
-import { ViewerPage } from "./pages/ViewerPage";
 
 // Découpage de code : le back-office (utilisé par une poignée de personnes)
 // est chargé dynamiquement plutôt que d'alourdir le paquet initial.
+const ViewerPage = React.lazy(() => import("./pages/ViewerPage").then((m) => ({ default: m.ViewerPage })));
+const ProfilePage = React.lazy(() => import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage })));
 const AdminPage = React.lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
 
 function KickoutBanner() {
@@ -60,7 +61,14 @@ export default function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/secondaire/:classe" element={<CataloguePage />} />
                 <Route path="/catalogue" element={<CataloguePage />} />
-                <Route path="/epreuve/:id" element={<ViewerPage />} />
+                <Route
+                  path="/epreuve/:id"
+                  element={
+                    <Suspense fallback={<ViewerSkeleton />}>
+                      <ViewerPage />
+                    </Suspense>
+                  }
+                />
                 <Route path="/abonnement" element={<SubscribePage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
@@ -70,7 +78,14 @@ export default function App() {
 
               {/* Routes protégées auth avec Layout */}
               <Route element={<RequireAuth><Layout /></RequireAuth>}>
-                <Route path="/profil" element={<ProfilePage />} />
+                <Route
+                  path="/profil"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+                      <ProfilePage />
+                    </Suspense>
+                  }
+                />
               </Route>
 
               {/* Admin : RequireAdmin + Layout + Suspense */}
