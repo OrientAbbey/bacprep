@@ -1,7 +1,7 @@
 # Versions épinglées selon l'environnement de développement testé
 # (backend/.venv — régénérer avec `pip freeze` lors d'une montée de version).
-# Correction : `httpx2` (typo, paquet inexistant) → `httpx` ; pytest ajouté
-# pour la suite backend/tests/.
+# Correction : `httpx2` (typo, paquet inexistant) → `httpx` ;
+# (pytest vit dans requirements-dev.txt).
 requests==2.34.2
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
@@ -15,4 +15,3 @@ psycopg2-binary==2.9.12
 python-multipart==0.0.32
 PyYAML==6.0.2
 boto3==1.43.89
-pytest==9.1.1

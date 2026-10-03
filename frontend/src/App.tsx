@@ -1,5 +1,5 @@
 import React, { Suspense } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Outlet, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { RequireAdmin } from "./auth/RequireAdmin";
 import { RequireAuth } from "./auth/RequireAuth";
@@ -10,6 +10,7 @@ import { ToastProvider } from "./components/Toast";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { CataloguePage } from "./pages/CataloguePage";
 import { HomePage } from "./pages/HomePage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SubscribePage } from "./pages/SubscribePage";
@@ -61,6 +62,7 @@ export default function App() {
                 <Route path="/catalogue" element={<CataloguePage />} />
                 <Route path="/epreuve/:id" element={<ViewerPage />} />
                 <Route path="/abonnement" element={<SubscribePage />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
 
               {/* Routes sans Layout */}
@@ -85,7 +87,6 @@ export default function App() {
                 }
               />
 
-              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AuthProvider>
         </ErrorBoundary>
