@@ -7,6 +7,7 @@ from sqlalchemy import case, false as sql_false
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..core.assistant_context import contexte_verifie
 from ..core.textsearch import contient
 from ..core import epreuve_files, referentiel, signing, store
 from ..core.logging_config import get_logger
@@ -430,9 +431,11 @@ def create_conversation(
     persistée — 403 (le frontend fonctionne alors en mode éphémère)."""
     if user.consent_ia is False:
         raise HTTPException(403, "Tu as refusé le stockage de tes conversations IA — révoque ou modifie ton choix dans ton profil.")
-    get_public_epreuve_or_404(db, epreuve_id, user)
+    epreuve = get_public_epreuve_or_404(db, epreuve_id, user)
     try:
-        conv = store.create_conversation(db, user.id, epreuve_id, payload.contexte, payload.label)
+        conv = store.create_conversation(
+            db, user.id, epreuve_id, contexte_verifie(db, epreuve, payload.contexte), payload.label
+        )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return ConversationOut(**store.conversation_to_dict(conv))
@@ -486,7 +489,11 @@ def update_conversation(
     l'assistant), et optionnellement son libellé d'onglet et/ou son
     contexte (voir docstring de `store.update_conversation`)."""
     conv = _get_conversation_or_404(db, user.id, epreuve_id, conv_id)
-    conv = store.update_conversation(db, conv, payload.messages, payload.label, payload.contexte)
+    contexte = payload.contexte
+    epreuve = db.get(EpreuveORM, epreuve_id)
+    if contexte is not None and epreuve is not None:  # épreuve retirée : on ne touche à rien
+        contexte = contexte_verifie(db, epreuve, contexte)
+    conv = store.update_conversation(db, conv, payload.messages, payload.label, contexte)
     return ConversationOut(**store.conversation_to_dict(conv))
 
 

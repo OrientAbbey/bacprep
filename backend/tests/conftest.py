@@ -9,7 +9,9 @@ import tempfile
 # Env à positionner avant tout import d'app.* (les modules lisent os.getenv
 # à l'import pour certains réglages).
 _TMP = tempfile.mkdtemp(prefix="bacprep_test_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
+# TEST_DATABASE_URL (ex. postgresql+psycopg2://…) : exécute la suite sur un vrai
+# PostgreSQL ; le schéma est alors recréé à vide avant les tests.
+os.environ["DATABASE_URL"] = os.getenv("TEST_DATABASE_URL") or f"sqlite:///{_TMP}/test.db"
 os.environ["FILE_URL_SECRET"] = "t" * 32
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
 os.environ["PAYMENT_WEBHOOK_SECRET"] = "test-webhook-secret"
@@ -26,6 +28,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as app_main
+
+if os.environ["DATABASE_URL"].startswith("postgres"):
+    from app.db import Base, engine
+
+    Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture()

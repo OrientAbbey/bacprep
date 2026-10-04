@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from starlette.requests import ClientDisconnect
 
 from ..core import store
+from ..core.assistant_context import contexte_verifie
 from ..core.assistant import FournisseursIndisponiblesError, ask_assistant, ask_assistant_stream
 from ..core.logging_config import get_logger
 from ..core.rate_limit import SlidingWindowLimiter
@@ -163,7 +164,7 @@ async def ask_stream(payload: AskIn, db: Session = Depends(get_db), user=Depends
             raise HTTPException(400, "epreuve_id requis pour une question éphémère")
         epreuve = get_public_epreuve_or_404(db, payload.epreuve_id, user)
         _check_quotas(user.id)
-        contexte = payload.contexte
+        contexte = contexte_verifie(db, epreuve, payload.contexte)
         # Historique borné côté client, réordonné par sécurité + question.
         messages = list(payload.historique)[-20:] + [{"role": "user", "content": payload.message}]
         conv_id = None
