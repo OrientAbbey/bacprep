@@ -1,10 +1,10 @@
-import { BookOpen, Home, Tag, User } from "lucide-react";
+import { BookOpen, CalendarDays, Home, User } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
 const ONGLETS = [
   { to: "/", label: "Accueil", Icon: Home, end: true },
   { to: "/catalogue", label: "Catalogue", Icon: BookOpen, end: false },
-  { to: "/abonnement", label: "Abonnement", Icon: Tag, end: false },
+  { to: "/calendrier", label: "Calendrier", Icon: CalendarDays, end: false },
   { to: "/profil", label: "Profil", Icon: User, end: false },
 ];
 

@@ -9,6 +9,8 @@ import { AssistantPanel, PasteSignal } from "../components/AssistantPanel";
 import { Chronometre } from "../components/Chronometre";
 import { MarkdownContent } from "../components/MarkdownContent";
 import { NoteEditor } from "../components/NoteEditor";
+import { ExamenBlanc } from "../components/ExamenBlanc";
+import { ExportPdf } from "../components/ExportPdf";
 import { TailleTexte, useTailleTexte } from "../components/TailleTexte";
 import { SelectionBar } from "../components/SelectionBar";
 import { SignalementModal } from "../components/SignalementModal";
@@ -69,6 +71,8 @@ export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const [taille, changerTaille] = useTailleTexte();
+  // Examen blanc en cours : corrigé et assistant masqués.
+  const [examenEnCours, setExamenEnCours] = useState(false);
   const [searchParams] = useSearchParams();
   // Deep-link depuis le profil : /epreuve/{id}?conv={id} rouvre l'onglet de
   // discussion exact de l'historique d'activité.
@@ -267,8 +271,15 @@ export function ViewerPage() {
   // frappe destinée à ces éléments. N est réservé aux comptes (le visiteur
   // n'a pas de notes).
   useEffect(() => {
+    if (examenEnCours) {
+      setOnglet("sujet");
+      setAssistantOpen(false);
+    }
+  }, [examenEnCours]);
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (!epreuve) return;
+      if (!epreuve || examenEnCours) return;
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A") return;
@@ -285,7 +296,7 @@ export function ViewerPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [epreuve, user, sujetActifData]);
+  }, [epreuve, user, sujetActifData, examenEnCours]);
 
   function onTabsKeyDown(e: React.KeyboardEvent, current: Onglet) {
     const order: Onglet[] = ["sujet", "corrige"];
@@ -393,10 +404,23 @@ export function ViewerPage() {
           {/* Chronomètre + onglets sujet/corrigé : le chrono est proposé
               dès le chargement (activable/désactivable par l'élève), les
               onglets n'apparaissent que si un corrigé existe. */}
-          {sujetActifData?.corrige_disponible ? (
-            <div className="flex shrink-0 items-center gap-2">
-              <Chronometre dureeEpreuve={epreuve.duree || null} />
-              <div role="tablist" aria-label="Contenu de l'épreuve" className="flex rounded-full border border-ink-soft/20 p-1">
+          {/* ExamenBlanc et Chronometre restent À LA MÊME PLACE dans l'arbre quel que
+              soit l'état (sinon leur état se réinitialiserait au démarrage de
+              l'examen) ; seuls l'export PDF et les onglets Sujet/Corrigé se
+              masquent pendant l'examen. */}
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {user && <ExamenBlanc epreuveId={epreuve.id} duree={epreuve.duree} onChange={setExamenEnCours} />}
+            {!examenEnCours && (
+              <ExportPdf
+                titre={`${epreuve.matiere} — ${epreuve.evaluation} ${epreuve.annee}`}
+                sujet={sujetActifData?.contenu_markdown ?? ""}
+                corrige={sujetActifData?.corrige_markdown ?? ""}
+                identite={`${user?.email ?? "Consultation invitée"} · ${new Date().toLocaleDateString("fr-FR")}`}
+              />
+            )}
+            <Chronometre dureeEpreuve={epreuve.duree || null} />
+              {sujetActifData?.corrige_disponible && !examenEnCours && (
+            <div role="tablist" aria-label="Contenu de l'épreuve" className="flex rounded-full border border-ink-soft/20 p-1">
                 {([
                   ["sujet", "Sujet", FileText],
                   ["corrige", "Corrigé", ClipboardCheck],
@@ -420,10 +444,8 @@ export function ViewerPage() {
                   </button>
                 ))}
               </div>
-            </div>
-          ) : (
-            <Chronometre dureeEpreuve={epreuve.duree || null} />
-          )}
+            )}
+          </div>
         </div>
 
         {/* Sujets multiples : rangée d'onglets pour choisir quel sujet
@@ -607,7 +629,7 @@ export function ViewerPage() {
             <SelectionBar
               x={selection.x}
               y={selection.y}
-              peutDemander={user !== null}
+              peutDemander={user !== null && !examenEnCours}
               peutNoter={user !== null && user.consent_notes !== false}
               motifVerrou={
                 user
@@ -622,7 +644,7 @@ export function ViewerPage() {
             />
           )}
 
-          {user && !assistantOpen && <AssistantLauncherButton onClick={openAssistantGeneral} />}
+          {user && !assistantOpen && !examenEnCours && <AssistantLauncherButton onClick={openAssistantGeneral} />}
         </div>
 
         {/* Tiroir BUREAU : colonne latérale droite accolée au lecteur (pas de

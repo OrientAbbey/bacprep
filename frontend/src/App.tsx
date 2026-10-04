@@ -11,6 +11,7 @@ import { ThemeProvider } from "./theme/ThemeProvider";
 import { CataloguePage } from "./pages/CataloguePage";
 import { HomePage } from "./pages/HomePage";
 import { Skeleton, ViewerSkeleton } from "./components/Skeleton";
+import { CalendrierPage } from "./pages/CalendrierPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SubscribePage } from "./pages/SubscribePage";
@@ -70,6 +71,7 @@ export default function App() {
                   }
                 />
                 <Route path="/abonnement" element={<SubscribePage />} />
+                <Route path="/calendrier" element={<CalendrierPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
 

@@ -2,8 +2,9 @@ import { ArrowLeft, BookOpen, ChevronRight, GraduationCap, Lock, Search } from "
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { Consultation, NavigationOut, NiveauNav } from "../api/types";
+import { Consultation, Evenement, NavigationOut, NiveauNav, Revision } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { joursAvant, prochainExamen } from "../lib/calendrier";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
 import { Logo } from "../components/Logo";
@@ -45,6 +46,18 @@ export function HomePage() {
   useEffect(() => {
     chargerNav();
   }, [chargerNav]);
+
+  // Compte à rebours (prochain examen du calendrier) et révisions dues : discrets,
+  // la page reste utilisable s'ils échouent.
+  const [examen, setExamen] = useState<Evenement | null>(null);
+  const [revisions, setRevisions] = useState<Revision[]>([]);
+  useEffect(() => {
+    api.get<Evenement[]>("/api/calendrier").then((l) => setExamen(prochainExamen(l))).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!user) return setRevisions([]);
+    api.get<Revision[]>("/api/me/revisions").then(setRevisions).catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -108,6 +121,39 @@ export function HomePage() {
           </p>
         )}
       </section>
+
+      {examen && (
+        <Link
+          to="/calendrier"
+          className="mx-auto flex max-w-xl items-center justify-between gap-3 rounded-lg border border-highlight/40 bg-highlight-soft/50 px-4 py-3 text-sm"
+        >
+          <span className="min-w-0 truncate">{examen.titre}</span>
+          <strong className="font-mono-tag shrink-0 text-highlight-text">
+            {joursAvant(examen.date_debut) > 0 ? `J−${joursAvant(examen.date_debut)}` : "En cours"}
+          </strong>
+        </Link>
+      )}
+
+      {user && revisions.length > 0 && (
+        <section aria-label="À revoir aujourd'hui">
+          <h2 className="font-mono-tag mb-2 text-xs text-ink-soft">À REVOIR AUJOURD'HUI</h2>
+          <div className="scrollbar-hide flex gap-3 overflow-x-auto pb-2">
+            {revisions.map((r) => (
+              <Link
+                key={r.epreuve_id}
+                to={`/epreuve/${r.epreuve_id}`}
+                className="min-w-[180px] shrink-0 rounded-lg border border-highlight/40 bg-paper-raised p-3 text-left transition-colors hover:bg-highlight-soft/40"
+              >
+                <p className="font-serif-brand text-sm">{r.matiere}</p>
+                <p className="font-mono-tag text-[10px] text-slate">
+                  {r.evaluation} · {r.annee}
+                  {r.derniere_note !== null ? ` · dernière note ${r.derniere_note}/20` : ""}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {user && historique.length > 0 && (
         <section aria-label="Consultées récemment">

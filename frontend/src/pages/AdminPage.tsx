@@ -3,6 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
+import { CalendrierPanel } from "./admin/CalendrierPanel";
 import { EpreuvesPanel } from "./admin/EpreuvesPanel";
 import { ImportPanel } from "./admin/ImportPanel";
 import { JournalPanel } from "./admin/JournalPanel";
@@ -22,6 +23,7 @@ type Onglet =
   | "utilisateurs"
   | "parametres"
   | "formules"
+  | "calendrier"
   | "journal"
   | "signalements"
   | "notifications";
@@ -44,7 +46,7 @@ export function AdminPage() {
   // volontaire pour garder l'URL stable).
   const [tab, setTab] = useState<Onglet>(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    return (["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "formules", "journal", "signalements", "notifications"] as const).includes(t as never)
+    return (["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "formules", "calendrier", "journal", "signalements", "notifications"] as const).includes(t as never)
       ? (t as Onglet)
       : "epreuves";
   });
@@ -63,7 +65,7 @@ export function AdminPage() {
   // Navigation clavier des onglets (pattern WAI-ARIA) : flèches droite/
   // gauche, Origine (Home) et Fin circulent dans l'ordre visuel affiché.
   function onTabsKeyDown(e: React.KeyboardEvent, current: Onglet) {
-    const order: Onglet[] = ["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "formules", "notifications", "signalements", "journal"];
+    const order: Onglet[] = ["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "formules", "calendrier", "notifications", "signalements", "journal"];
     const idx = order.indexOf(current);
     let next: Onglet | null = null;
     if (e.key === "ArrowRight") next = order[(idx + 1) % order.length];
@@ -337,6 +339,7 @@ export function AdminPage() {
             ["utilisateurs", `Utilisateurs${stats?.utilisateurs ? ` (${stats.utilisateurs})` : ""}`],
             ["parametres", "Paramètres"],
             ["formules", "Formules"],
+            ["calendrier", "Calendrier"],
             ["notifications", "Notifications"],
             ["signalements", `Signalements${stats?.signalements_ouverts ? ` (${stats.signalements_ouverts})` : ""}`],
             ["journal", "Journal"],
@@ -385,6 +388,8 @@ export function AdminPage() {
           <ParametresPanel token={token} />
         ) : tab === "formules" ? (
           <PlansPanel token={token} />
+        ) : tab === "calendrier" ? (
+          <CalendrierPanel token={token} />
         ) : tab === "notifications" ? (
           <NotificationsPanel token={token} />
         ) : tab === "signalements" ? (

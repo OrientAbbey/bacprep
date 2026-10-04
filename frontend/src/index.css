@@ -409,3 +409,36 @@ body {
   background: var(--color-highlight);
   color: var(--color-highlight-ink);
 }
+
+/* Export PDF (voir components/ExportPdf.tsx) : la zone d'impression n'existe
+   qu'au moment de l'export ; à l'impression on masque toute l'application. */
+.print-zone {
+  display: none;
+}
+@media print {
+  #root {
+    display: none !important;
+  }
+  .print-zone {
+    display: block;
+    color: #000;
+    background: #fff;
+    padding: 0;
+  }
+  .print-zone h1 {
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+  }
+  .print-zone img {
+    max-width: 100%;
+    break-inside: avoid;
+  }
+  .print-pied {
+    margin-top: 2rem;
+    font-size: 0.7rem;
+    color: #555;
+  }
+  @page {
+    margin: 18mm;
+  }
+}

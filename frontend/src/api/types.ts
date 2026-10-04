@@ -395,3 +395,29 @@ export interface SauvegardeJob {
   created_at: string | null;
   finished_at: string | null;
 }
+
+export interface Evenement {
+  id: string;
+  titre: string;
+  type: "examen" | "resultats" | "inscription";
+  evaluation: string;
+  date_debut: string; // AAAA-MM-JJ
+  date_fin: string;
+  lien_officiel: string;
+  visible: boolean;
+}
+
+export interface Revision {
+  epreuve_id: string;
+  matiere: string;
+  annee: string;
+  evaluation: string;
+  classe: string;
+  derniere_note: number | null;
+  retard_jours: number;
+}
+
+export interface EssaiHistorique {
+  essais: { epreuve_id: string; matiere: string; annee: string; evaluation: string; note: number | null; duree_s: number | null; date: string }[];
+  moyennes: { matiere: string; moyenne: number; essais: number }[];
+}

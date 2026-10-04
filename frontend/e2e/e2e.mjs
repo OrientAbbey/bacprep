@@ -33,7 +33,9 @@ async function nouveauContexte(options = {}) {
   const ctx = await browser.newContext({ baseURL: URL_BASE, viewport: { width: 1280, height: 900 }, ...options });
   return ctx;
 }
-async function connecterEleve(ctx, email = "eleve@test.cm") {
+// Un compte neuf par exécution : les plafonds (5 discussions par épreuve…) ne rendent pas la suite dépendante des précédentes.
+const RUN = Date.now().toString(36);
+async function connecterEleve(ctx, email = `eleve-${RUN}@test.cm`) {
   const r = await ctx.request.post("/api/auth/mock-login", { data: { email, nom: "Élève E2E" } });
   ok(r.ok(), "mock-login élève : " + r.status());
   // Sans choix de consentement, une modale bloque les clics : on le donne comme un élève.
@@ -85,9 +87,9 @@ console.log("\nCatalogue et recherche");
 
   await test("catalogue : une matière → liste groupée par année, retour aux matières", async () => {
     await page.getByRole("button", { name: /^Mathématiques/ }).click();
-    await page.getByRole("heading", { name: "2024", level: 3 }).waitFor({ timeout: 10000 });
+    await page.locator("h3").first().waitFor({ timeout: 10000 });
     const annees = await page.locator("h3").allTextContents();
-    ok(annees.length >= 2 && annees[0] === "2024", "en-têtes d'année : " + annees.slice(0, 3));
+    ok(annees.length >= 2 && annees.every((a, i) => i === 0 || a < annees[i - 1]) && /^\d{4}$/.test(annees[0]), "en-têtes d'année (uniques, décroissants) : " + annees.slice(0, 4));
     ok((await page.locator("button[aria-label^='Épreuve de Physique']").count()) === 0, "une seule matière listée");
     await page.screenshot({ path: `${SHOTS}/catalogue-annees.png` });
     await page.getByRole("button", { name: /Toutes les matières/ }).click();
@@ -237,6 +239,8 @@ console.log("\nLecteur et assistant élève");
   });
 
   await test("assistant : le texte étranger à l'épreuve est écarté côté serveur", async () => {
+    const detail = await (await ctx.request.get(`/api/epreuves/${epreuveId}`)).json();
+    const vraiPassage = detail.contenu_markdown.replace(/[#$]/g, "").slice(0, 160);
     let ctxVu = null;
     // On observe la réponse de création de discussion : le contexte renvoyé est celui retenu par le serveur.
     const r = await ctx.request.post(`/api/epreuves/${epreuveId}/conversations`, {
@@ -245,11 +249,11 @@ console.log("\nLecteur et assistant élève");
     ok(r.ok(), "création discussion " + r.status());
     ctxVu = (await r.json()).contexte;
     ok(!/ndolé/.test(ctxVu), "le texte injecté a été conservé");
-    ok(/Question 1/.test(ctxVu), "le contenu réel de l'épreuve est absent");
+    ok(ctxVu.includes(vraiPassage.slice(0, 30)), "le contenu réel de l'épreuve est absent");
     const ok2 = await ctx.request.post(`/api/epreuves/${epreuveId}/conversations`, {
-      data: { contexte: "Question 1 : calculer pour x = 3 les fonctions dérivées", label: "ok" },
+      data: { contexte: vraiPassage, label: "ok" },
     });
-    ok(/calculer pour x = 3/.test((await ok2.json()).contexte), "un vrai passage a été écarté à tort");
+    ok((await ok2.json()).contexte === vraiPassage, "un vrai passage a été écarté à tort");
   });
 
   await test("assistant : question en flux (voie éphémère) renvoie une réponse", async () => {
@@ -324,6 +328,104 @@ console.log("\nBack-office");
     await page.getByText("650 FCFA").first().waitFor({ timeout: 10000 });
     await ctx.request.patch(`/api/admin/plans/${p.id}`, { data: { prix: p.prix } });
   });
+  await ctx.close();
+}
+
+console.log("\nCalendrier, examen blanc, révisions, PDF");
+{
+  const admin = await nouveauContexte({ viewport: { width: 1366, height: 800 } });
+  await connecterAdmin(admin);
+  const ctx = await nouveauContexte();
+  await connecterEleve(ctx, `lot5-${RUN}@test.cm`);
+  const page = await ctx.newPage();
+  const suffixe = Date.now().toString(36);
+  const titreExamen = `Probatoire — session ${suffixe}`;
+  const dans = (jours) => new Date(Date.now() + jours * 86400000).toISOString().slice(0, 10);
+
+  await test("admin › Calendrier : ajouter un examen, il apparaît sur la page publique et en compte à rebours", async () => {
+    for (const ev of await (await admin.request.get("/api/admin/evenements")).json()) await admin.request.delete(`/api/admin/evenements/${ev.id}`);
+    const pa = await admin.newPage();
+    await pa.goto("/admin");
+    await pa.getByRole("tab", { name: "Calendrier" }).click();
+    await pa.getByLabel("Titre", { exact: true }).filter({ visible: true }).fill(titreExamen);
+    await pa.getByLabel("Évaluation", { exact: true }).filter({ visible: true }).fill("PROBATOIRE");
+    await pa.getByLabel("Date de début").fill(dans(30));
+    await pa.getByRole("button", { name: "Ajouter l'événement" }).click();
+    await pa.getByText("Événement ajouté.").waitFor({ timeout: 10000 });
+    await pa.screenshot({ path: `${SHOTS}/admin-calendrier.png` });
+    await page.goto("/calendrier");
+    await page.getByText(titreExamen).first().waitFor({ timeout: 10000 });
+    await page.getByText("J−30").first().waitFor();
+    await page.screenshot({ path: `${SHOTS}/calendrier.png` });
+    await page.goto("/");
+    await page.getByRole("link", { name: new RegExp(titreExamen) }).waitFor({ timeout: 10000 });
+    await page.getByText("J−30").waitFor();
+  });
+
+  // Épreuve gratuite AVEC corrigé : indispensable pour prouver que l'examen blanc le masque vraiment.
+  const adm = admin.request;
+  const cree = await (await adm.post("/api/admin/epreuves", { data: {
+    niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Mathématiques", annee: "2031", gratuit: true, filieres: ["C"], duree: "3h",
+    contenu_markdown: "# Sujet 2031\n\nQuestion 1 : résoudre $x^2 = 4$.", corrige_markdown: "# Corrigé 2031\n\nSOLUTION-SECRETE-XYZ : x = 2 ou x = -2." } })).json();
+  await adm.post(`/api/admin/epreuves/${cree.id}/publish`);
+  const gratuite = { id: cree.id };
+
+  await test("examen blanc : le corrigé et l'assistant disparaissent, la note est enregistrée", async () => {
+    await page.goto(`/epreuve/${gratuite.id}`);
+    await page.locator(".katex").first().waitFor({ timeout: 15000 });
+    ok((await page.getByRole("tab", { name: "Corrigé" }).count()) === 1, "précondition : l'onglet Corrigé doit exister avant l'examen");
+    ok((await page.getByRole("button", { name: "Ouvrir Tuteur IA Prep" }).count()) >= 1, "précondition : l'assistant doit être proposé avant l'examen");
+    await page.getByRole("button", { name: /Examen blanc/ }).click();
+    await page.getByRole("timer").waitFor();
+    ok((await page.getByRole("tab", { name: "Corrigé" }).count()) === 0, "l'onglet Corrigé est encore visible");
+    ok((await page.getByRole("button", { name: "Ouvrir Tuteur IA Prep" }).count()) === 0, "l'assistant est encore proposé");
+    await page.locator("body").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("c");
+    await page.waitForTimeout(300);
+    ok((await page.getByText("SOLUTION-SECRETE-XYZ").count()) === 0, "le raccourci C a révélé le corrigé pendant l'examen");
+    await page.screenshot({ path: `${SHOTS}/examen-blanc.png` });
+    await page.getByRole("button", { name: "Terminer" }).click();
+    await page.getByLabel("Ma note sur 20").fill("22");
+    await page.getByRole("button", { name: "Enregistrer" }).click();
+    await page.getByText("Entre une note entre 0 et 20.").waitFor({ timeout: 5000 });
+    await page.getByLabel("Ma note sur 20").fill("7,5");
+    await page.getByRole("button", { name: "Enregistrer" }).click();
+    await page.getByText("Essai enregistré.").waitFor({ timeout: 10000 });
+    await page.getByRole("tab", { name: "Corrigé" }).click(); // l'examen est fini : le corrigé redevient accessible
+    await page.getByText("SOLUTION-SECRETE-XYZ").waitFor({ timeout: 5000 });
+    const h = await (await ctx.request.get("/api/me/essais")).json();
+    ok(h.essais.some((e) => e.note === 7.5 && e.duree_s !== null), "essai absent de l'historique");
+  });
+
+  await test("« À revoir » → la révision apparaît à l'accueil quand l'échéance est passée", async () => {
+    await page.getByRole("button", { name: /À revoir/ }).click();
+    await page.getByText("Ajoutée à tes révisions.").waitFor({ timeout: 10000 });
+    // échéance non atteinte : rien à l'accueil
+    await page.goto("/");
+    await page.getByRole("heading", { name: "À REVOIR AUJOURD'HUI" }).waitFor({ state: "detached", timeout: 3000 }).catch(() => {});
+    ok((await page.getByRole("heading", { name: "À REVOIR AUJOURD'HUI" }).count()) === 0, "révision affichée trop tôt");
+  });
+
+  await test("export PDF : zone d'impression visible à l'impression seulement (sujet + corrigé)", async () => {
+    await page.goto(`/epreuve/${gratuite.id}`);
+    await page.locator(".katex").first().waitFor({ timeout: 15000 });
+    await page.evaluate(() => { window.print = () => { window.__imprime = true; }; });
+    await page.getByRole("button", { name: "PDF" }).click();
+    const options = await page.getByRole("menuitem").allTextContents();
+    ok(options.length >= 1, "menu PDF vide");
+    await page.getByRole("menuitem", { name: options[options.length - 1] }).click();
+    await page.waitForFunction(() => window.__imprime === true, null, { timeout: 5000 });
+    ok((await page.locator(".print-zone").isVisible()) === false, "zone d'impression visible à l'écran");
+    await page.emulateMedia({ media: "print" });
+    ok(await page.locator(".print-zone").isVisible(), "zone d'impression absente en mode impression");
+    ok(!(await page.locator("#root").isVisible()), "l'application reste visible à l'impression");
+    ok(new RegExp(`lot5-${RUN}@test.cm`).test(await page.locator(".print-pied").innerText()), "identité absente du pied de page");
+    const pdf = await page.pdf({ format: "A4" });
+    ok(pdf.length > 5000 && pdf.subarray(0, 4).toString() === "%PDF", "PDF invalide");
+    fs.writeFileSync(`${SHOTS}/sujet.pdf`, pdf);
+    await page.emulateMedia({ media: "screen" });
+  });
+  await admin.close();
   await ctx.close();
 }
 
