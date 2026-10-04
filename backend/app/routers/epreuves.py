@@ -287,7 +287,7 @@ def get_filtres(
     if evaluation:
         base = base.filter(EpreuveORM.evaluation == evaluation)
 
-    ids = base.with_entities(EpreuveORM.id).subquery()
+    ids = base.with_entities(EpreuveORM.id).scalar_subquery()
     filieres = [
         row[0]
         for row in db.query(EpreuveFiliereORM.filiere)
