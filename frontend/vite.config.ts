@@ -1,9 +1,77 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: "autoUpdate",
+      manifest: {
+        name: "Copies & Corrigés — BacPrep Cameroun",
+        short_name: "Corrigés",
+        description: "Épreuves et corrigés du secondaire camerounais, disponibles hors-ligne.",
+        lang: "fr",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        background_color: "#f6f2e7",
+        theme_color: "#1b2a4a",
+        icons: [
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+      },
+      workbox: {
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
+        // Coque de l'application (JS/CSS/polices/icônes) précachée : l'app démarre sans réseau.
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // Le back-office (478 Ko) ne sert pas aux élèves : chargé à la demande, jamais précaché.
+        globIgnores: ["**/AdminPage-*.js"],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//, /^\/ws\//],
+        runtimeCaching: [
+          // Épreuve ouverte ou « téléchargée » : réseau d'abord (3 s max — utile sur
+          // connexion lente), repli sur la copie locale. Ne met en cache que les 200.
+          {
+            urlPattern: ({ url }) => /^\/api\/epreuves\/[^/]+$/.test(url.pathname),
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "epreuves",
+              networkTimeoutSeconds: 3,
+              matchOptions: { ignoreVary: true },
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 3600 },
+            },
+          },
+          // Images d'épreuve : les jetons d'URL expirent en 15 min, donc le jeton
+          // (?token=…) est ignoré à la lecture du cache.
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/files/"),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "epreuves-images",
+              matchOptions: { ignoreSearch: true, ignoreVary: true },
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 300, maxAgeSeconds: 30 * 24 * 3600 },
+            },
+          },
+          // Profil connecté : l'élève reste « connecté » à l'ouverture hors-ligne.
+          {
+            urlPattern: ({ url }) => url.pathname === "/api/auth/me",
+            handler: "NetworkFirst",
+            options: { cacheName: "session", networkTimeoutSeconds: 3, cacheableResponse: { statuses: [200] } },
+          },
+        ],
+      },
+    }),
+  ],
   server: {
     port: 5173,
   },

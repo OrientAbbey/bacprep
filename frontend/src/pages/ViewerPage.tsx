@@ -11,6 +11,7 @@ import { MarkdownContent } from "../components/MarkdownContent";
 import { NoteEditor } from "../components/NoteEditor";
 import { ExamenBlanc } from "../components/ExamenBlanc";
 import { ExportPdf } from "../components/ExportPdf";
+import { TelechargerHorsLigne } from "../components/TelechargerHorsLigne";
 import { TailleTexte, useTailleTexte } from "../components/TailleTexte";
 import { SelectionBar } from "../components/SelectionBar";
 import { SignalementModal } from "../components/SignalementModal";
@@ -411,6 +412,7 @@ export function ViewerPage() {
               masquent pendant l'examen. */}
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {user && <ExamenBlanc epreuveId={epreuve.id} duree={epreuve.duree} onChange={setExamenEnCours} />}
+            {user && !examenEnCours && <TelechargerHorsLigne id={epreuve.id} matiere={epreuve.matiere} annee={epreuve.annee} evaluation={epreuve.evaluation} />}
             {!examenEnCours && (
               <ExportPdf
                 titre={`${epreuve.matiere} — ${epreuve.evaluation} ${epreuve.annee}`}

@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { api, ApiError, BASE_URL } from "../api/client";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n";
+import { viderHorsLigne } from "../lib/horsLigne";
 
 export interface User {
   id: string;
@@ -150,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     closeSocket(true);
     await api.post("/api/auth/logout");
+    await viderHorsLigne(); // copies locales d'épreuves : un autre élève peut utiliser cet appareil
     setUser(null);
     showToast(t("Déconnexion réussie."), "info");
   };

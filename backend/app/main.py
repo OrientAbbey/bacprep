@@ -301,6 +301,10 @@ async def security_headers(request: Request, call_next):
         # apparaissent dans la console du navigateur ; passer à
         # `Content-Security-Policy` une fois la politique validée.
         response.headers.setdefault("Content-Security-Policy-Report-Only", _CSP)
+    if request.url.path in ("/sw.js", "/registerSW.js", "/manifest.webmanifest", "/index.html", "/"):
+        # Le service worker et le manifeste doivent toujours être revalidés : un
+        # sw.js mis en cache trop longtemps retarde les mises à jour de l'application.
+        response.headers["Cache-Control"] = "no-cache"
     if request.url.path.startswith("/assets/"):
         # Fichiers Vite au nom haché : le contenu ne change jamais sous un même nom.
         response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")

@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { Consultation, Evenement, NavigationOut, NiveauNav, Revision } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { joursAvant, prochainExamen } from "../lib/calendrier";
+import { listeHorsLigne } from "../lib/horsLigne";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
 import { Logo } from "../components/Logo";
@@ -51,6 +52,7 @@ export function HomePage() {
   // Compte à rebours (prochain examen du calendrier) et révisions dues : discrets,
   // la page reste utilisable s'ils échouent.
   const [examen, setExamen] = useState<Evenement | null>(null);
+  const [hors] = useState(listeHorsLigne);
   const [revisions, setRevisions] = useState<Revision[]>([]);
   useEffect(() => {
     api.get<Evenement[]>("/api/calendrier").then((l) => setExamen(prochainExamen(l))).catch(() => {});
@@ -119,6 +121,26 @@ export function HomePage() {
           </p>
         )}
       </section>
+
+      {hors.length > 0 && (
+        <section aria-label={t("Disponibles hors-ligne")}>
+          <h2 className="font-mono-tag mb-2 text-xs text-ink-soft">{t("DISPONIBLES HORS-LIGNE")}</h2>
+          <div className="scrollbar-hide flex gap-3 overflow-x-auto pb-2">
+            {hors.map((e) => (
+              <Link
+                key={e.id}
+                to={`/epreuve/${e.id}`}
+                className="min-w-[180px] shrink-0 rounded-lg border border-ink-soft/15 bg-paper-raised p-3 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40"
+              >
+                <p className="font-serif-brand text-sm">{e.matiere}</p>
+                <p className="font-mono-tag text-[10px] text-slate">
+                  {e.evaluation} · {e.annee}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {examen && (
         <Link

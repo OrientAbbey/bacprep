@@ -30,7 +30,9 @@ const browser = await chromium.launch({
 });
 
 async function nouveauContexte(options = {}) {
-  const ctx = await browser.newContext({ baseURL: URL_BASE, viewport: { width: 1280, height: 900 }, ...options });
+  // serviceWorkers: "block" par défaut — page.route() n'intercepte pas les requêtes servies par un service worker ;
+  // seul le scénario PWA l'autorise.
+  const ctx = await browser.newContext({ baseURL: URL_BASE, viewport: { width: 1280, height: 900 }, serviceWorkers: "block", ...options });
   return ctx;
 }
 // Un compte neuf par exécution : les plafonds (5 discussions par épreuve…) ne rendent pas la suite dépendante des précédentes.
@@ -481,6 +483,96 @@ console.log("\nTraduction FR/EN");
     ok((await page.getByText("Subject and correction of a single paper").count()) + (await page.getByText("Subject and correction").count()) >= 0, "");
     await page.getByText("Subject, one year").first().waitFor({ timeout: 5000 });
   });
+  await ctx.close();
+}
+
+console.log("\nPWA et lecture hors-ligne");
+{
+  const admin = await nouveauContexte();
+  await connecterAdmin(admin);
+  const ctx = await nouveauContexte({ serviceWorkers: "allow" });
+  await connecterEleve(ctx, `pwa-${RUN}@test.cm`);
+  const page = await ctx.newPage();
+
+  // Épreuve gratuite AVEC image : le texte et l'image doivent rester lisibles sans réseau.
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const cree = await (await admin.request.post("/api/admin/epreuves", { data: {
+    niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Chimie", annee: "2032", gratuit: true, filieres: ["C"], duree: "2h",
+    contenu_markdown: "# Chimie 2032\n\nTEXTE-HORS-LIGNE-ABC : dosage d'un acide." } })).json();
+  const img = await (await admin.request.post(`/api/admin/epreuves/${cree.id}/images`, { multipart: { cible: "sujet", file: { name: "schema.png", mimeType: "image/png", buffer: PNG } } })).json();
+  ok(img.url, "envoi d'image refusé : " + JSON.stringify(img));
+  await admin.request.put(`/api/admin/epreuves/${cree.id}`, { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Chimie", annee: "2032", gratuit: true, filieres: ["C"], duree: "2h",
+    contenu_markdown: `# Chimie 2032\n\nTEXTE-HORS-LIGNE-ABC : dosage d'un acide.\n\n![Schéma du dosage](${img.url})` } });
+  await admin.request.post(`/api/admin/epreuves/${cree.id}/publish`);
+
+  await test("manifeste installable, icônes et service worker servis correctement", async () => {
+    const m = await ctx.request.get("/manifest.webmanifest");
+    ok(m.ok(), "manifeste : " + m.status());
+    const man = await m.json();
+    ok(man.display === "standalone" && man.start_url === "/" && man.icons.length >= 3, "manifeste incomplet");
+    ok(man.icons.some((i) => i.purpose === "maskable"), "pas d'icône maskable");
+    for (const i of man.icons) ok((await ctx.request.get(i.src)).ok(), "icône absente : " + i.src);
+    const sw = await ctx.request.get("/sw.js");
+    ok(sw.ok() && /javascript/.test(sw.headers()["content-type"]), "sw.js : " + sw.headers()["content-type"]);
+    ok(/no-cache/.test(sw.headers()["cache-control"] ?? ""), "sw.js doit être revalidé : " + sw.headers()["cache-control"]);
+    const html = await (await ctx.request.get("/")).text();
+    ok(/<meta name="description"/.test(html) && /og:title/.test(html) && /rel="manifest"/.test(html), "balises description / Open Graph / manifest absentes");
+  });
+
+  await test("service worker installé et actif, coque de l'application précachée", async () => {
+    await page.goto("/");
+    await page.waitForFunction(() => navigator.serviceWorker.getRegistration().then((r) => !!r && !!r.active), null, { timeout: 20000 });
+    await page.reload();
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20000 });
+    const noms = await page.evaluate(() => caches.keys());
+    ok(noms.some((n) => /precache/.test(n)), "pas de précache : " + noms);
+    const admin = await page.evaluate(async () => (await (await caches.open((await caches.keys()).find((n) => /precache/.test(n)))).keys()).map((r) => r.url).filter((u) => /AdminPage/.test(u)));
+    ok(admin.length === 0, "le back-office ne doit pas être précaché : " + admin);
+  });
+
+  await test("téléchargement hors-ligne : épreuve + image mises de côté, copie signalée", async () => {
+    await page.goto(`/epreuve/${cree.id}`);
+    await page.getByText("TEXTE-HORS-LIGNE-ABC").waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /^Hors-ligne$/ }).click();
+    await page.getByText("Épreuve disponible hors-ligne.").waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: "Hors-ligne ✓" }).waitFor();
+    const etat = await page.evaluate(async () => ({
+      detail: !!(await (await caches.open("epreuves")).match(location.origin + "/api/epreuves/" + location.pathname.split("/").pop())),
+      images: (await (await caches.open("epreuves-images")).keys()).length,
+      liste: JSON.parse(localStorage.getItem("bacprep-hors-ligne") ?? "[]").length,
+    }));
+    ok(etat.detail && etat.images >= 1 && etat.liste === 1, "copie locale incomplète : " + JSON.stringify(etat));
+  });
+
+  await test("SANS RÉSEAU : l'épreuve s'ouvre depuis le cache, texte et image compris", async () => {
+    await ctx.setOffline(true);
+    await page.goto(`/epreuve/${cree.id}`);
+    await page.getByText("TEXTE-HORS-LIGNE-ABC").waitFor({ timeout: 20000 });
+    await page.getByRole("status").filter({ hasText: "hors-ligne" }).waitFor({ timeout: 5000 });
+    const img = page.getByRole("img", { name: "Schéma du dosage" });
+    await img.waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => [...document.images].some((i) => i.alt === "Schéma du dosage" && i.complete && i.naturalWidth > 0), null, { timeout: 10000 });
+    await page.screenshot({ path: `${SHOTS}/hors-ligne.png` });
+  });
+
+  await test("SANS RÉSEAU : une épreuve jamais téléchargée n'apparaît pas, l'accueil liste les copies", async () => {
+    await page.goto("/");
+    await page.getByRole("heading", { name: "DISPONIBLES HORS-LIGNE" }).waitFor({ timeout: 15000 });
+    await page.getByRole("link", { name: /Chimie/ }).waitFor();
+    await ctx.setOffline(false);
+  });
+
+  await test("déconnexion : copies locales et caches purgés (appareil partagé)", async () => {
+    await page.goto(`/epreuve/${cree.id}`);
+    await page.getByText("TEXTE-HORS-LIGNE-ABC").waitFor({ timeout: 15000 });
+    await page.goto("/profil");
+    await page.getByRole("button", { name: /Se déconnecter|Sign out/ }).first().click();
+    await page.getByText("Déconnexion réussie.").waitFor({ timeout: 10000 });
+    await page.waitForTimeout(500);
+    const apres = await page.evaluate(async () => ({ liste: localStorage.getItem("bacprep-hors-ligne"), caches: (await caches.keys()).filter((n) => ["epreuves", "epreuves-images", "session"].includes(n)) }));
+    ok(apres.liste === null && apres.caches.length === 0, "copies non purgées : " + JSON.stringify(apres));
+  });
+  await admin.close();
   await ctx.close();
 }
 
