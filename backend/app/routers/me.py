@@ -11,6 +11,7 @@ from ..db_models import (
     AIConversationORM,
     ConsultationORM,
     EpreuveORM,
+    EssaiORM,
     KickoutNoticeORM,
     NoteORM,
     NotificationReadORM,
@@ -244,6 +245,7 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
         c.epreuve_id
         for c in db.query(AIConversationORM).filter(AIConversationORM.user_id == user.id).all()
     }
+    epreuves_ids |= {t.epreuve_id for t in db.query(EssaiORM).filter(EssaiORM.user_id == user.id).all()}
     epreuves = {
         e.id: {"matiere": e.matiere, "annee": e.annee, "classe": e.classe, "evaluation": e.evaluation}
         for e in db.query(EpreuveORM).filter(EpreuveORM.id.in_(list(epreuves_ids) or [""])).all()
@@ -271,6 +273,10 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
         "consultations": [
             {"epreuve_id": c.epreuve_id, "epreuve": epreuves.get(c.epreuve_id), "consulted_at": c.consulted_at}
             for c in db.query(ConsultationORM).filter(ConsultationORM.user_id == user.id).all()
+        ],
+        "essais": [
+            {"epreuve_id": t.epreuve_id, "epreuve": epreuves.get(t.epreuve_id), "note": t.note, "duree_s": t.duree_s, "date": t.created_at}
+            for t in db.query(EssaiORM).filter(EssaiORM.user_id == user.id).all()
         ],
         "abonnements": [
             {"id": s.id, "scope": scope_of(s), "statut": s.statut, "start_date": s.start_date, "end_date": s.end_date}
@@ -305,6 +311,7 @@ def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) 
     db.query(NoteORM).filter(NoteORM.user_id == u_id).delete()
     db.query(AIConversationORM).filter(AIConversationORM.user_id == u_id).delete()
     db.query(ConsultationORM).filter(ConsultationORM.user_id == u_id).delete()
+    db.query(EssaiORM).filter(EssaiORM.user_id == u_id).delete()
     # Ordre important : les paiements référencent les abonnements
     # (payments.subscription_id → subscriptions.id, FK RESTRICT) — il faut
     # donc purger les paiements AVANT les abonnements, sinon le DELETE des

@@ -21,6 +21,7 @@ from ..db_models import (
     AdminAIConversationORM,
     AIConversationORM,
     ConsultationORM,
+    EssaiORM,
     EpreuveFiliereORM,
     EpreuveFileORM,
     EpreuveORM,
@@ -522,6 +523,7 @@ def admin_delete_epreuve(epreuve_id: str, db: Session = Depends(get_db), lock=De
     db.query(AIConversationORM).filter(AIConversationORM.epreuve_id == epreuve_id).delete()
     db.query(AdminAIConversationORM).filter(AdminAIConversationORM.epreuve_id == epreuve_id).delete()
     db.query(ConsultationORM).filter(ConsultationORM.epreuve_id == epreuve_id).delete()
+    db.query(EssaiORM).filter(EssaiORM.epreuve_id == epreuve_id).delete()
     db.query(NoteORM).filter(NoteORM.epreuve_id == epreuve_id).delete()
     db.query(SignalementORM).filter(SignalementORM.epreuve_id == epreuve_id).delete()
     # Les notifications liées perdent leur cible mais restent diffusées :
