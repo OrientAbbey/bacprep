@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { useModalFocus } from "../lib/useModalFocus";
+import { t } from "../i18n";
 
 /**
  * Consentement granulaire recueilli À LA PREMIÈRE CONNEXION (pratique RGPD :
@@ -72,7 +73,7 @@ export function ConsentModal() {
         <div className="flex items-center gap-2">
           <Database size={18} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
           <h2 id="consent-titre" className="font-serif-brand text-lg">
-            Tes données, ton choix
+            {t("Tes données, ton choix")}
           </h2>
         </div>
         <p className="mt-2 text-sm text-ink-soft">
@@ -83,7 +84,7 @@ export function ConsentModal() {
         </p>
 
         <fieldset className="mt-4 space-y-2">
-          <legend className="font-mono-tag text-xs text-ink-soft">CE QUE TU AUTORISES</legend>
+          <legend className="font-mono-tag text-xs text-ink-soft">{t("CE QUE TU AUTORISES")}</legend>
 
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink-soft/15 bg-paper p-3">
             <input
@@ -95,10 +96,10 @@ export function ConsentModal() {
             <span className="min-w-0">
               <span className="flex items-center gap-1.5 text-sm font-medium">
                 <MessagesSquare size={14} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
-                Mes conversations avec Tuteur IA Prep
+                {t("Mes conversations avec Tuteur IA Prep")}
               </span>
               <span className="mt-0.5 block text-xs text-slate">
-                Retrouve tes discussions et leurs onglets à ta prochaine visite.
+                {t("Retrouve tes discussions et leurs onglets à ta prochaine visite.")}
               </span>
             </span>
           </label>
@@ -113,10 +114,10 @@ export function ConsentModal() {
             <span className="min-w-0">
               <span className="flex items-center gap-1.5 text-sm font-medium">
                 <StickyNote size={14} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
-                Mes notes personnelles
+                {t("Mes notes personnelles")}
               </span>
               <span className="mt-0.5 block text-xs text-slate">
-                Garde tes notes liées aux épreuves, consultables depuis ton profil.
+                {t("Garde tes notes liées aux épreuves, consultables depuis ton profil.")}
               </span>
             </span>
           </label>
@@ -135,10 +136,10 @@ export function ConsentModal() {
           disabled={envoi}
           className="mt-4 min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper hover:opacity-90 disabled:opacity-50"
         >
-          {envoi ? "Enregistrement…" : erreur ? "Réessayer" : "Confirmer mes choix"}
+          {envoi ? t("Enregistrement…") : erreur ? t("Réessayer") : t("Confirmer mes choix")}
         </button>
         <p className="mt-2 text-center font-mono-tag text-[10px] text-slate">
-          TU PEUX REFUSER LES DEUX ET CONTINUER SANS RIEN STOCKER.
+          {t("TU PEUX REFUSER LES DEUX ET CONTINUER SANS RIEN STOCKER.")}
         </p>
       </div>
     </div>

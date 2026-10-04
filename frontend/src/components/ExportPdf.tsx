@@ -2,6 +2,7 @@ import { Printer } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { MarkdownContent } from "./MarkdownContent";
+import { t } from "../i18n";
 
 export type ChoixPdf = "sujet" | "corrige" | "les-deux";
 
@@ -37,7 +38,7 @@ export function ExportPdf({
     };
   }, [choix]);
 
-  const options: [ChoixPdf, string][] = [["sujet", "Sujet"], ...(corrige ? ([["corrige", "Corrigé"], ["les-deux", "Sujet et corrigé"]] as [ChoixPdf, string][]) : [])];
+  const options: [ChoixPdf, string][] = [["sujet", t("Sujet")], ...(corrige ? ([["corrige", t("Corrigé")], ["les-deux", t("Sujet et corrigé")]] as [ChoixPdf, string][]) : [])];
 
   return (
     <>
@@ -77,7 +78,7 @@ export function ExportPdf({
             {choix === "les-deux" && <hr />}
             {(choix === "corrige" || choix === "les-deux") && (
               <>
-                <h2>Corrigé</h2>
+                <h2>{t("Corrigé")}</h2>
                 <MarkdownContent content={corrige} variant="epreuve" />
               </>
             )}

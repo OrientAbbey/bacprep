@@ -1,4 +1,5 @@
 import { MessageCircle, StickyNote } from "lucide-react";
+import { t } from "../i18n";
 
 /** Barre flottante à deux actions qui apparaît sur une sélection de texte
  * du lecteur : « Demander » (ouvre Tuteur IA Prep sur ce passage) et
@@ -18,7 +19,7 @@ export function SelectionBar({
   onNote,
   peutDemander = true,
   peutNoter = true,
-  motifVerrou = "Connecte-toi pour utiliser cette fonctionnalité",
+  motifVerrou = t("Connecte-toi pour utiliser cette fonctionnalité"),
 }: {
   x: number;
   y: number;
@@ -42,7 +43,7 @@ export function SelectionBar({
   return (
     <div
       role="toolbar"
-      aria-label="Actions sur la sélection"
+      aria-label={t("Actions sur la sélection")}
       style={{ position: "fixed", left: clampedX, top: clampedY, zIndex: 50 }}
       className="flex items-center gap-1 rounded-full border border-ink-soft/20 bg-paper-raised p-1 shadow-lg"
     >
@@ -50,27 +51,27 @@ export function SelectionBar({
         type="button"
         onClick={onAsk}
         disabled={!peutDemander}
-        aria-label="Demander à Tuteur IA Prep sur ce passage"
-        title={peutDemander ? "Demander à Tuteur IA Prep sur ce passage" : motifVerrou}
+        aria-label={t("Demander à Tuteur IA Prep sur ce passage")}
+        title={peutDemander ? t("Demander à Tuteur IA Prep sur ce passage") : motifVerrou}
         className={`flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
           peutDemander ? "verrou-ink" : "verrou-ink cursor-not-allowed opacity-50"
         }`}
       >
         <MessageCircle size={14} strokeWidth={1.75} aria-hidden="true" />
-        Demander
+        {t("Demander")}
       </button>
       <button
         type="button"
         onClick={onNote}
         disabled={!peutNoter}
-        aria-label="Prendre une note sur ce passage"
+        aria-label={t("Prendre une note sur ce passage")}
         title={peutNoter ? "Prendre une note sur ce passage" : motifVerrou}
         className={`flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
           peutNoter ? "verrou-valide" : "verrou-valide cursor-not-allowed opacity-50"
         }`}
       >
         <StickyNote size={14} strokeWidth={1.75} aria-hidden="true" />
-        Prendre une note
+        {t("Prendre une note")}
       </button>
     </div>
   );

@@ -17,6 +17,7 @@ import { SignalementModal } from "../components/SignalementModal";
 import { ViewerSkeleton } from "../components/Skeleton";
 import { Watermark } from "../components/Watermark";
 import { extractSourceMarkdownForSelection } from "../lib/markdownSource";
+import { locale, t } from "../i18n";
 
 type Onglet = "sujet" | "corrige";
 
@@ -42,25 +43,25 @@ function Paywall({ necessiteConnexion }: { necessiteConnexion: boolean }) {
     <div className="mx-auto mt-10 max-w-md rounded-lg border border-ink-soft/15 bg-paper-raised p-6 text-center">
       <Lock size={28} strokeWidth={1.5} aria-hidden="true" className="mx-auto text-highlight-text" />
       <h1 className="mt-3 font-serif-brand text-xl">
-        {necessiteConnexion ? "Cette épreuve est réservée aux comptes" : "Accès non autorisé à cette épreuve"}
+        {necessiteConnexion ? t("Cette épreuve est réservée aux comptes") : t("Accès non autorisé à cette épreuve")}
       </h1>
       <p className="mt-2 text-sm text-ink-soft">
         {necessiteConnexion
-          ? "Connecte-toi pour la consulter, ou découvre les abonnements qui ouvrent tout le catalogue."
-          : "Un abonnement couvrant cette filière/matière/année est requis."}
+          ? t("Connecte-toi pour la consulter, ou découvre les abonnements qui ouvrent tout le catalogue.")
+          : t("Un abonnement couvrant cette filière/matière/année est requis.")}
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">
         <Link
           to="/connexion"
           className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium leading-[44px] text-paper hover:opacity-90"
         >
-          Se connecter
+          {t("Se connecter")}
         </Link>
         <Link
           to="/abonnement"
           className="min-h-[44px] rounded-full border border-ink-soft/25 px-5 text-sm font-medium leading-[44px] text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
         >
-          Voir les abonnements
+          {t("Voir les abonnements")}
         </Link>
       </div>
     </div>
@@ -353,7 +354,7 @@ export function ViewerPage() {
       >
         Cette épreuve n'a pas pu être chargée (elle a peut-être été retirée).{" "}
         <button type="button" onClick={() => window.location.reload()} className="underline">
-          Réessayer
+          {t("Réessayer")}
         </button>
       </div>
     );
@@ -394,8 +395,8 @@ export function ViewerPage() {
               type="button"
               onClick={() => user && setSignalementOuvert(true)}
               disabled={!user}
-              title={user ? "Signaler un problème sur cette épreuve" : "Connecte-toi pour signaler un problème"}
-              aria-label="Signaler un problème sur cette épreuve"
+              title={user ? t("Signaler un problème sur cette épreuve") : t("Connecte-toi pour signaler un problème")}
+              aria-label={t("Signaler un problème sur cette épreuve")}
               className={`p-1.5 text-correction ${user ? "hover:text-correction/75" : "cursor-not-allowed opacity-50"}`}
             >
               <Flag size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -415,15 +416,15 @@ export function ViewerPage() {
                 titre={`${epreuve.matiere} — ${epreuve.evaluation} ${epreuve.annee}`}
                 sujet={sujetActifData?.contenu_markdown ?? ""}
                 corrige={sujetActifData?.corrige_markdown ?? ""}
-                identite={`${user?.email ?? "Consultation invitée"} · ${new Date().toLocaleDateString("fr-FR")}`}
+                identite={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleDateString(locale())}`}
               />
             )}
             <Chronometre dureeEpreuve={epreuve.duree || null} />
               {sujetActifData?.corrige_disponible && !examenEnCours && (
-            <div role="tablist" aria-label="Contenu de l'épreuve" className="flex rounded-full border border-ink-soft/20 p-1">
+            <div role="tablist" aria-label={t("Contenu de l'épreuve")} className="flex rounded-full border border-ink-soft/20 p-1">
                 {([
                   ["sujet", "Sujet", FileText],
-                  ["corrige", "Corrigé", ClipboardCheck],
+                  ["corrige", t("Corrigé"), ClipboardCheck],
                 ] as [Onglet, string, typeof FileText][]).map(([o, label, Icon]) => (
                   <button
                     key={o}
@@ -454,7 +455,7 @@ export function ViewerPage() {
         {nbSujets > 1 && (
           <div
             role="tablist"
-            aria-label="Sujets de l'épreuve"
+            aria-label={t("Sujets de l'épreuve")}
             className="mb-3 flex flex-wrap items-center gap-1.5"
           >
             {(epreuve.sujets ?? []).map((s, i) => {
@@ -473,7 +474,7 @@ export function ViewerPage() {
                     setOnglet("sujet");
                   }}
                   onKeyDown={(e) => onSujetsKeyDown(e, s.index)}
-                  title={`Afficher le sujet ${i + 1}`}
+                  title={t("Afficher le sujet {n}", { n: i + 1 })}
                   className={`flex min-h-[44px] items-center rounded-full px-4 py-1.5 text-sm transition-colors ${
                     actif ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/40"
                   }`}
@@ -499,18 +500,18 @@ export function ViewerPage() {
                 className="shrink-0 text-slate transition-transform group-open:rotate-90"
               />
               <span className="truncate font-mono-tag text-[10px] uppercase tracking-wide text-ink-soft">
-                {epreuve.evaluation} {epreuve.annee} · SÉRIES {epreuve.filieres.join(",")}
+                {epreuve.evaluation} {epreuve.annee} · {t("SÉRIES")} {epreuve.filieres.join(",")}
               </span>
               {!user && (
                 <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-highlight/40 px-2 py-0.5 font-mono-tag text-[10px] text-ink-soft">
                   <Lock size={9} strokeWidth={2} aria-hidden="true" className="text-slate" />
-                  Visiteur
+                  {t("Visiteur")}
                 </span>
               )}
             </summary>
             <div className="border-t border-ink-soft/15 px-4 py-3">
               <p className="font-mono-tag text-xs text-slate">
-                {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · SÉRIES{" "}
+                {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · {t("SÉRIES")}{" "}
                 {epreuve.filieres.join(",")}
                 {epreuve.duree ? ` · ${epreuve.duree}` : ""}
               </p>
@@ -522,13 +523,13 @@ export function ViewerPage() {
                   </p>
                   <ul className="mt-2 flex flex-wrap gap-2">
                     {[
-                      "Tuteur IA Prep — poser des questions",
+                      t("Tuteur IA Prep — poser des questions"),
                       "Notes personnelles",
-                      "Signaler un problème",
+                      t("Signaler un problème"),
                     ].map((libelle) => (
                       <li
                         key={libelle}
-                        title="Connecte-toi pour utiliser cette fonctionnalité"
+                        title={t("Connecte-toi pour utiliser cette fonctionnalité")}
                         className="flex min-h-[44px] cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 text-xs text-ink-soft"
                       >
                         <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
@@ -540,7 +541,7 @@ export function ViewerPage() {
                     to="/connexion"
                     className="mt-2 inline-flex min-h-[44px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
                   >
-                    Se connecter pour tout débloquer
+                    {t("Se connecter pour tout débloquer")}
                   </Link>
                 </div>
               )}
@@ -549,7 +550,7 @@ export function ViewerPage() {
         ) : (
           <>
             <p className="font-mono-tag text-xs text-slate">
-              {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · SÉRIES{" "}
+              {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · {t("SÉRIES")}{" "}
               {epreuve.filieres.join(",")}
               {epreuve.duree ? ` · ${epreuve.duree}` : ""}
             </p>
@@ -569,13 +570,13 @@ export function ViewerPage() {
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {[
-                    "Tuteur IA Prep — poser des questions",
+                    t("Tuteur IA Prep — poser des questions"),
                     "Notes personnelles",
-                    "Signaler un problème",
+                    t("Signaler un problème"),
                   ].map((libelle) => (
                     <li
                       key={libelle}
-                      title="Connecte-toi pour utiliser cette fonctionnalité"
+                      title={t("Connecte-toi pour utiliser cette fonctionnalité")}
                       className="flex min-h-[44px] cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 text-xs text-ink-soft"
                     >
                       <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
@@ -587,7 +588,7 @@ export function ViewerPage() {
                   to="/connexion"
                   className="mt-2 inline-flex min-h-[44px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
                 >
-                  Se connecter pour tout débloquer
+                  {t("Se connecter pour tout débloquer")}
                 </Link>
               </div>
             )}
@@ -612,7 +613,7 @@ export function ViewerPage() {
             onContextMenu={(e) => e.preventDefault()}
             className="absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
           >
-            <Watermark label={`${user?.email ?? "Consultation invitée"} · ${new Date().toLocaleString("fr-FR")}`} />
+            <Watermark label={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleString(locale())}`} />
             <div className="mb-2 flex justify-end print:hidden">
               <TailleTexte taille={taille} onChange={changerTaille} />
             </div>
@@ -633,8 +634,8 @@ export function ViewerPage() {
               peutNoter={user !== null && user.consent_notes !== false}
               motifVerrou={
                 user
-                  ? "Tu as refusé le stockage de tes notes — modifiable dans ton profil"
-                  : "Connecte-toi pour utiliser cette fonctionnalité"
+                  ? t("Tu as refusé le stockage de tes notes — modifiable dans ton profil")
+                  : t("Connecte-toi pour utiliser cette fonctionnalité")
               }
               onAsk={() => askAbout(selection.markdown)}
               onNote={() => {

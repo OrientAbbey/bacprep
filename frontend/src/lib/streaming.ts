@@ -1,5 +1,6 @@
 import { BASE_URL } from "../api/client";
 import type { Conversation } from "../components/AssistantPanel";
+import { t } from "../i18n";
 
 /**
  * Consomme un flux Server-Sent Events produit par un endpoint `POST` qui
@@ -39,7 +40,7 @@ export async function streamEventSource<T>(
     // (le message explicite d'un HTTPException FastAPI) sont attachés à
     // l'erreur pour que le panneau affiche la VRAIE raison (ex. « épreuve
     // retirée » en 403) au lieu d'un statut brut.
-    const err = new Error(`Le serveur a répondu ${res.status}.`) as Error & {
+    const err = new Error(t("Le serveur a répondu {s}.", { s: res.status })) as Error & {
       status?: number;
       detail?: unknown;
     };

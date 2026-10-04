@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { foldText } from "../lib/text";
+import { t } from "../i18n";
 
 export interface ComboOption {
   value: string;
@@ -85,7 +86,7 @@ export function Combobox({
   }, [options, query]);
 
   const navigable: { value: string; label: string }[] = useMemo(
-    () => [{ value: "", label: "Tous" }, ...filtered],
+    () => [{ value: "", label: t("Tous") }, ...filtered],
     [filtered]
   );
 
@@ -173,12 +174,12 @@ export function Combobox({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`${label} : ${selected ? selected.label : "Tous"}`}
+        aria-label={t("{label} : {valeur}", { label, valeur: selected ? selected.label : t("Tous") })}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onTriggerKeyDown}
         className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 py-2 text-left text-sm text-ink transition-colors hover:border-highlight/50"
       >
-        <span className="truncate">{selected ? selected.label : "Tous"}</span>
+        <span className="truncate">{selected ? selected.label : t("Tous")}</span>
         <ChevronDown size={16} strokeWidth={1.75} className="shrink-0 text-ink-soft" aria-hidden="true" />
       </button>
 
@@ -207,7 +208,7 @@ export function Combobox({
             className="w-full border-b border-ink-soft/15 bg-transparent px-3 py-2 text-sm text-ink outline-none"
           />
           {listeVide ? (
-            <p className="px-3 py-3 text-sm text-slate">Aucun résultat</p>
+            <p className="px-3 py-3 text-sm text-slate">{t("Aucun résultat")}</p>
           ) : (
             <ul ref={listRef} id={listboxId} role="listbox" aria-label={label} className="max-h-64 overflow-y-auto py-1">
               {navigable.map((o, i) => (

@@ -9,6 +9,7 @@ import { Combobox } from "../components/Combobox";
 import { Skeleton } from "../components/Skeleton";
 import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
 import { foldText } from "../lib/text";
+import { getLang, t } from "../i18n";
 
 /** Fait défiler doucement un élément nouvellement apparu dans le champ de
  * vision (respecte prefers-reduced-motion : déplacement instantané). */
@@ -249,20 +250,18 @@ export function SubscribePage() {
    * courante débloque — accompagne (sans le remplacer) le détail en
    * tuiles ci-dessous. */
   function summarySentence(): string {
+    const m = matiere || "…";
+    const an = annee || "…";
+    const f = filiere || "…";
     if (scope === "epreuve" && selectedEpreuve) {
-      return `Débloque le sujet${selectedEpreuve.corrige_disponible ? " et le corrigé" : ""} de ${selectedEpreuve.matiere} — ${selectedEpreuve.annee}.`;
+      const corr = selectedEpreuve.corrige_disponible ? ` ${t("et le corrigé")}` : "";
+      return t("Débloque le sujet{corr} de {matiere} — {annee}.", { corr, matiere: selectedEpreuve.matiere, annee: selectedEpreuve.annee });
     }
-    const ctx = classe ? ` (classe de ${classeLabel(classe)})` : "";
-    if (scope === "matiere_annee") {
-      return `Débloque toutes les épreuves de ${matiere || "…"} pour l'année ${annee || "…"}, série ${filiere || "…"}${ctx}.`;
-    }
-    if (scope === "matiere") {
-      return `Débloque toutes les épreuves de ${matiere || "…"} (toutes années), série ${filiere || "…"}${ctx}.`;
-    }
-    if (scope === "annee") {
-      return `Débloque toutes les épreuves de l'année ${annee || "…"} (toutes matières), série ${filiere || "…"}${ctx}.`;
-    }
-    return `Débloque tout le contenu de la série ${filiere || "…"} en ${classe ? classeLabel(classe) : "…"} — toutes matières, toutes années.`;
+    const ctx = classe ? ` (${classeLabel(classe)})` : "";
+    if (scope === "matiere_annee") return t("Débloque toutes les épreuves de {matiere} pour l'année {annee}, série {filiere}{ctx}.", { matiere: m, annee: an, filiere: f, ctx });
+    if (scope === "matiere") return t("Débloque toutes les épreuves de {matiere} (toutes années), série {filiere}{ctx}.", { matiere: m, filiere: f, ctx });
+    if (scope === "annee") return t("Débloque toutes les épreuves de l'année {annee} (toutes matières), série {filiere}{ctx}.", { annee: an, filiere: f, ctx });
+    return t("Débloque tout le contenu de la série {filiere} en {classe} — toutes matières, toutes années.", { filiere: f, classe: classe ? classeLabel(classe) : "…" });
   }
 
   /** Lance le paiement simulé pour la sélection courante. Le backend
@@ -283,7 +282,7 @@ export function SubscribePage() {
       setReference(res.reference_agregateur);
       setStep("pending");
     } catch {
-      setErreur("Cette sélection est déjà accessible, ou une erreur est survenue — réessaie.");
+      setErreur(t("Cette sélection est déjà accessible, ou une erreur est survenue — réessaie."));
     }
   }
 
@@ -293,7 +292,7 @@ export function SubscribePage() {
       await api.post("/api/payments/simulate-webhook", { reference_agregateur: reference });
       setStep("confirmed");
     } catch {
-      setErreur("La confirmation du paiement a échoué — réessaie.");
+      setErreur(t("La confirmation du paiement a échoué — réessaie."));
     }
   }
 
@@ -305,7 +304,7 @@ export function SubscribePage() {
       >
         La grille tarifaire n'a pas pu être chargée.{" "}
         <button type="button" onClick={chargerTarifs} className="underline">
-          Réessayer
+          {t("Réessayer")}
         </button>
       </div>
     );
@@ -334,7 +333,7 @@ export function SubscribePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-serif-brand text-2xl">S'abonner</h1>
+      <h1 className="font-serif-brand text-2xl">{t("S'abonner")}</h1>
 
       {step === "confirmed" ? (
         <div
@@ -342,28 +341,28 @@ export function SubscribePage() {
           tabIndex={-1}
           className="space-y-4 rounded-lg border border-valide/30 bg-valide-soft p-6 text-valide"
         >
-          <p className="font-medium">Paiement confirmé — ton abonnement est actif.</p>
+          <p className="font-medium">{t("Paiement confirmé — ton abonnement est actif.")}</p>
           <div className="flex flex-wrap gap-2">
             {scope === "epreuve" && epreuveId ? (
               <Link
                 to={`/epreuve/${epreuveId}`}
                 className="min-h-[44px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
               >
-                Ouvrir l'épreuve
+                {t("Ouvrir l'épreuve")}
               </Link>
             ) : (
               <Link
                 to="/catalogue"
                 className="min-h-[44px] rounded-full bg-valide px-4 py-2 text-sm font-medium text-paper"
               >
-                Voir le catalogue
+                {t("Voir le catalogue")}
               </Link>
             )}
             <Link
               to="/profil"
               className="min-h-[44px] rounded-full border border-valide/40 px-4 py-2 text-sm font-medium text-valide"
             >
-              Aller à mon profil
+              {t("Aller à mon profil")}
             </Link>
           </div>
         </div>
@@ -383,7 +382,7 @@ export function SubscribePage() {
             onClick={simulatePayment}
             className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper"
           >
-            Simuler la confirmation du paiement
+            {t("Simuler la confirmation du paiement")}
           </button>
         </div>
       ) : (
@@ -398,7 +397,7 @@ export function SubscribePage() {
           <div
             ref={scopeGroupRef}
             role="radiogroup"
-            aria-label="Type d'abonnement"
+            aria-label={t("Type d'abonnement")}
             onKeyDown={handleScopeKeyDown}
             className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           >
@@ -422,14 +421,14 @@ export function SubscribePage() {
                   } focus-visible:border-highlight`}
                 >
                   <span className="flex items-center justify-between gap-2">
-                    <span className="font-serif-brand text-base">{p.libelle}</span>
+                    <span className="font-serif-brand text-base">{(getLang() === "en" && p.libelle_en) || p.libelle}</span>
                     {actif && <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" className="text-highlight-text" />}
                   </span>
                   <span className={`mt-1 font-mono-tag text-sm ${actif ? "text-ink" : "text-ink-soft"}`}>
                     {p.prix} FCFA
                     <span className="text-[10px] text-slate"> / {p.duree_jours} j</span>
                   </span>
-                  <span className="mt-1.5 text-xs text-slate">{p.description}</span>
+                  <span className="mt-1.5 text-xs text-slate">{(getLang() === "en" && p.description_en) || p.description}</span>
                 </button>
               );
             })}
@@ -454,14 +453,14 @@ export function SubscribePage() {
                 options={CLASSES_SECONDAIRE.map((c) => ({ value: c.code, label: c.label }))}
               />
               <Combobox
-                label="Série"
+                label={t("Série")}
                 value={filiere}
                 onChange={setFiliere}
                 options={filtres.filieres.map((f) => ({ value: f, label: f }))}
               />
               {["matiere_annee", "matiere"].includes(scope) && (
                 <Combobox
-                  label="Matière"
+                  label={t("Matière")}
                   value={matiere}
                   onChange={setMatiere}
                   options={filtres.matieres.map((m) => ({ value: m, label: m }))}
@@ -469,7 +468,7 @@ export function SubscribePage() {
               )}
               {["matiere_annee", "annee"].includes(scope) && (
                 <Combobox
-                  label="Année"
+                  label={t("Année")}
                   value={annee}
                   onChange={setAnnee}
                   options={filtres.annees.map((a) => ({ value: a, label: a }))}
@@ -488,14 +487,14 @@ export function SubscribePage() {
           {selectionComplete && (
             <div ref={recapRef} className="overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised shadow-sm">
               <div className="bg-highlight-soft px-6 py-5 text-center">
-                <p className="font-mono-tag text-[10px] text-ink-soft">Prix de l'abonnement</p>
+                <p className="font-mono-tag text-[10px] text-ink-soft">{t("Prix de l'abonnement")}</p>
                 <p className="font-serif-brand text-4xl text-ink">
-                  {plan?.prix} <span className="text-lg font-sans font-normal text-ink-soft">FCFA</span>
+                  {plan?.prix} <span className="text-lg font-sans font-normal text-ink-soft">{t("FCFA")}</span>
                 </p>
                 <p className="text-xs text-ink-soft">valable {plan?.duree_jours} jours</p>
                 {/* Description lisible de la portée choisie (2 lignes max),
                     fournie par le backend — même vocabulaire partout. */}
-                {plan?.description && <p className="mx-auto mt-2 max-w-sm text-xs text-ink-soft">{plan.description}</p>}
+                {plan?.description && <p className="mx-auto mt-2 max-w-sm text-xs text-ink-soft">{(getLang() === "en" && plan.description_en) || plan.description}</p>}
               </div>
 
               <div className="space-y-4 p-5">
@@ -503,21 +502,21 @@ export function SubscribePage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   {scope !== "epreuve" && <InfoTile icon={GraduationCap} label="Classe" value={classe ? classeLabel(classe) : "—"} />}
-                  {scope !== "epreuve" && <InfoTile icon={GraduationCap} label="Série" value={filiere || "—"} />}
+                  {scope !== "epreuve" && <InfoTile icon={GraduationCap} label={t("Série")} value={filiere || "—"} />}
                   {scope === "epreuve" && selectedEpreuve && (
-                    <InfoTile icon={GraduationCap} label="Séries" value={selectedEpreuve.filieres.join(", ")} />
+                    <InfoTile icon={GraduationCap} label={t("Séries")} value={selectedEpreuve.filieres.join(", ")} />
                   )}
                   {["matiere_annee", "matiere"].includes(scope) && (
-                    <InfoTile icon={BookOpen} label="Matière" value={matiere || "—"} />
+                    <InfoTile icon={BookOpen} label={t("Matière")} value={matiere || "—"} />
                   )}
                   {scope === "epreuve" && selectedEpreuve && (
-                    <InfoTile icon={BookOpen} label="Matière" value={selectedEpreuve.matiere} />
+                    <InfoTile icon={BookOpen} label={t("Matière")} value={selectedEpreuve.matiere} />
                   )}
                   {["matiere_annee", "annee"].includes(scope) && (
-                    <InfoTile icon={Calendar} label="Année" value={annee || "—"} />
+                    <InfoTile icon={Calendar} label={t("Année")} value={annee || "—"} />
                   )}
                   {scope === "epreuve" && selectedEpreuve && (
-                    <InfoTile icon={Calendar} label="Année" value={selectedEpreuve.annee} />
+                    <InfoTile icon={Calendar} label={t("Année")} value={selectedEpreuve.annee} />
                   )}
                   <InfoTile icon={Layers} label="Épreuves couvertes" value={String(count ?? "…")} />
                 </div>
@@ -537,14 +536,14 @@ export function SubscribePage() {
                   !user ? (
                     <div className="space-y-3 border-t border-dashed border-ink-soft/20 pt-4">
                       <p className="text-sm text-ink-soft">
-                        La souscription nécessite un compte — tes abonnements suivent ton profil.
+                        {t("La souscription nécessite un compte — tes abonnements suivent ton profil.")}
                       </p>
                       <button
                         type="button"
                         onClick={() => navigate("/connexion", { state: { from: location } })}
                         className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper hover:opacity-90"
                       >
-                        Se connecter pour souscrire
+                        {t("Se connecter pour souscrire")}
                       </button>
                     </div>
                   ) : (
@@ -572,7 +571,7 @@ export function SubscribePage() {
                         onClick={startCheckout}
                         className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper"
                       >
-                        Continuer vers le paiement
+                        {t("Continuer vers le paiement")}
                       </button>
                     </div>
                   )

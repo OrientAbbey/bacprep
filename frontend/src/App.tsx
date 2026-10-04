@@ -15,6 +15,7 @@ import { CalendrierPage } from "./pages/CalendrierPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SubscribePage } from "./pages/SubscribePage";
+import { t } from "./i18n";
 
 // Découpage de code : le back-office (utilisé par une poignée de personnes)
 // est chargé dynamiquement plutôt que d'alourdir le paquet initial.
@@ -29,7 +30,7 @@ function KickoutBanner() {
     <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between bg-correction px-4 py-2 text-sm text-paper">
       <span>{kickoutMessage}</span>
       <button onClick={clearKickoutMessage} className="underline">
-        Fermer
+        {t("Fermer")}
       </button>
     </div>
   );
@@ -96,7 +97,7 @@ export default function App() {
                 element={
                   <RequireAdmin>
                     <Layout>
-                      <Suspense fallback={<p className="text-sm text-slate">Chargement…</p>}>
+                      <Suspense fallback={<p className="text-sm text-slate">{t("Chargement…")}</p>}>
                         <AdminPage />
                       </Suspense>
                     </Layout>

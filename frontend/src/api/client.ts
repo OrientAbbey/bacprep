@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 export class ApiError extends Error {
@@ -14,7 +15,7 @@ export class ApiError extends Error {
  * l'interface puisse expliquer la cause au lieu d'afficher un échec opaque. */
 export class ApiTimeoutError extends Error {
   constructor(ms: number) {
-    super(`Le serveur n'a pas répondu dans le délai imparti (${Math.round(ms / 1000)} s).`);
+    super(t("Le serveur n'a pas répondu dans le délai imparti ({s} s).", { s: Math.round(ms / 1000) }));
     this.name = "ApiTimeoutError";
   }
 }

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { NotificationsEleve } from "../api/types";
 import { formatRelativeTime } from "../lib/time";
+import { t } from "../i18n";
 
 /** Pixelle le badge en « 9+ » au-delà de ce seuil (l'œil lit mieux un
  * seuil qu'un grand nombre). */
@@ -86,7 +87,7 @@ export function NotificationsBell() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Fermer les notifications" : "Ouvrir les notifications"}
+        aria-label={open ? t("Fermer les notifications") : t("Ouvrir les notifications")}
         aria-expanded={open}
         aria-haspopup="true"
         className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
@@ -105,25 +106,25 @@ export function NotificationsBell() {
       {open && (
         <div
           role="dialog"
-          aria-label="Notifications"
+          aria-label={t("Notifications")}
           className="absolute right-0 top-12 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised shadow-xl"
         >
           <div className="flex items-center justify-between border-b border-ink-soft/15 px-4 py-3">
-            <p className="font-serif-brand text-sm">Notifications</p>
+            <p className="font-serif-brand text-sm">{t("Notifications")}</p>
             {non_lues > 0 && (
               <button
                 type="button"
                 onClick={toutMarquerLu}
                 className="min-h-[32px] rounded-full border border-valide/40 px-3 text-xs font-medium text-valide hover:bg-valide-soft/40"
               >
-                Tout marquer comme lu
+                {t("Tout marquer comme lu")}
               </button>
             )}
           </div>
 
           {items.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-slate">
-              Aucune notification pour l'instant.
+              {t("Aucune notification pour l'instant.")}
             </p>
           ) : (
             <ul className="max-h-80 divide-y divide-ink-soft/10 overflow-y-auto">
@@ -149,7 +150,7 @@ export function NotificationsBell() {
                         onClick={() => setOpen(false)}
                         className="mt-1.5 inline-block text-xs font-medium text-highlight-text underline hover:text-ink"
                       >
-                        Aller à l'épreuve
+                        {t("Aller à l'épreuve")}
                       </Link>
                     )}
                   </div>

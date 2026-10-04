@@ -2,6 +2,7 @@ import { Pause, Play, RotateCcw, Timer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dureeEnMinutes, formaterDurée } from "../lib/chronometre";
 import { useToast } from "./Toast";
+import { t } from "../i18n";
 
 /**
  * Chronomètre de traitement d'une épreuve, pliable dans l'en-tête du lecteur.
@@ -41,7 +42,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
   function demarrer() {
     const m = Number(minutes);
     if (!Number.isFinite(m) || m <= 0) {
-      showToast("Saisis un temps en minutes pour lancer le chronomètre.", "error");
+      showToast(t("Saisis un temps en minutes pour lancer le chronomètre."), "error");
       return;
     }
     stopCount();
@@ -100,11 +101,11 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
           setPanneauOuvert((o) => !o);
           if (tourne && restant !== null) setExpire(false);
         }}
-        title={restant !== null ? `Temps restant : ${formaterDurée(restant)}` : "Chronomètre de traitement"}
+        title={restant !== null ? t("Temps restant : {t}", { t: formaterDurée(restant) }) : t("Chronomètre de traitement")}
         aria-label={
           restant !== null
-            ? `Chronomètre, temps restant ${formaterDurée(restant)}`
-            : "Chronomètre de traitement du sujet"
+            ? t("Chronomètre, temps restant {t}", { t: formaterDurée(restant) })
+            : t("Chronomètre de traitement du sujet")
         }
         aria-expanded={panneauOuvert}
         aria-haspopup="dialog"
@@ -123,15 +124,15 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
       {panneauOuvert && (
         <div
           role="dialog"
-          aria-label="Chronomètre de traitement"
+          aria-label={t("Chronomètre de traitement")}
           className="absolute right-0 z-30 mt-2 w-64 rounded-lg border border-ink-soft/15 bg-paper-raised p-4 shadow-lg"
         >
           <div className="flex items-start justify-between gap-2">
-            <p className="font-serif-brand text-sm">Chronomètre</p>
+            <p className="font-serif-brand text-sm">{t("Chronomètre")}</p>
             <button
               type="button"
               onClick={fermer}
-              aria-label="Fermer le chronomètre"
+              aria-label={t("Fermer le chronomètre")}
               className="rounded p-1 text-slate hover:bg-highlight-soft/40 hover:text-ink"
             >
               <X size={14} strokeWidth={1.75} aria-hidden="true" />
@@ -141,7 +142,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
           {restant === null ? (
             <>
               <label htmlFor="chrono-minutes" className="mt-3 block font-mono-tag text-[10px] text-ink-soft">
-                Temps pour traiter ce sujet (minutes)
+                {t("Temps pour traiter ce sujet (minutes)")}
               </label>
               <div className="mt-1 flex gap-2">
                 <input
@@ -151,23 +152,23 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
                   max={24 * 60}
                   value={minutes}
                   onChange={(e) => setMinutes(e.target.value)}
-                  placeholder="ex. 180"
+                  placeholder={t("ex. 180")}
                   className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper px-3 text-sm"
                 />
                 <button
                   type="button"
                   onClick={demarrer}
                   disabled={!valide}
-                  title="Lancer le compte à rebours"
-                  aria-label="Lancer le compte à rebours"
+                  title={t("Lancer le compte à rebours")}
+                  aria-label={t("Lancer le compte à rebours")}
                   className="flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-4 text-sm font-medium text-paper hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Play size={14} strokeWidth={1.75} aria-hidden="true" />
-                  Démarrer
+                  {t("Démarrer")}
                 </button>
               </div>
               <p className="mt-2 font-mono-tag text-[10px] text-slate">
-                À zéro, le chrono passe au rouge et une notification apparaît.
+                {t("À zéro, le chrono passe au rouge et une notification apparaît.")}
               </p>
             </>
           ) : (
@@ -181,7 +182,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
               >
                 {formaterDurée(restant)}
               </p>
-              {expire && <p className="mt-1 text-center text-sm text-correction">Temps écoulé !</p>}
+              {expire && <p className="mt-1 text-center text-sm text-correction">{t("Temps écoulé !")}</p>}
               <div className="mt-3 flex justify-center gap-2">
                 {tourne ? (
                   <button
@@ -193,7 +194,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
                     className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-4 text-sm text-ink hover:bg-highlight-soft/40"
                   >
                     <Pause size={14} strokeWidth={1.75} aria-hidden="true" />
-                    Pause
+                    {t("Pause")}
                   </button>
                 ) : (
                   <button
@@ -203,7 +204,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
                     className="flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-4 text-sm font-medium text-paper hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Play size={14} strokeWidth={1.75} aria-hidden="true" />
-                    Reprendre
+                    {t("Reprendre")}
                   </button>
                 )}
                 <button
@@ -212,7 +213,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
                   className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-4 text-sm text-ink hover:bg-highlight-soft/40"
                 >
                   <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" />
-                  Réinitialiser
+                  {t("Réinitialiser")}
                 </button>
               </div>
             </>

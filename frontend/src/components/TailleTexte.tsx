@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { t } from "../i18n";
 
 const TAILLES = [0.9, 1, 1.15, 1.3];
 const CLE = "bacprep-taille-texte";
@@ -28,11 +29,11 @@ export function useTailleTexte(): [number, (delta: -1 | 1) => void] {
 
 export function TailleTexte({ taille, onChange }: { taille: number; onChange: (d: -1 | 1) => void }) {
   return (
-    <div role="group" aria-label="Taille du texte" className="flex items-center rounded-full border border-ink-soft/20 text-sm">
-      <button type="button" onClick={() => onChange(-1)} disabled={taille <= TAILLES[0]} aria-label="Réduire le texte" className="min-h-[44px] min-w-[44px] disabled:opacity-40">
+    <div role="group" aria-label={t("Taille du texte")} className="flex items-center rounded-full border border-ink-soft/20 text-sm">
+      <button type="button" onClick={() => onChange(-1)} disabled={taille <= TAILLES[0]} aria-label={t("Réduire le texte")} className="min-h-[44px] min-w-[44px] disabled:opacity-40">
         A−
       </button>
-      <button type="button" onClick={() => onChange(1)} disabled={taille >= TAILLES[TAILLES.length - 1]} aria-label="Agrandir le texte" className="min-h-[44px] min-w-[44px] text-base disabled:opacity-40">
+      <button type="button" onClick={() => onChange(1)} disabled={taille >= TAILLES[TAILLES.length - 1]} aria-label={t("Agrandir le texte")} className="min-h-[44px] min-w-[44px] text-base disabled:opacity-40">
         A+
       </button>
     </div>

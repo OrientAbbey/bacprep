@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { dureeEnMinutes, formaterDurée } from "../lib/chronometre";
 import { useToast } from "./Toast";
+import { t } from "../i18n";
 
 /**
  * Examen blanc : compte à rebours à la durée officielle, corrigé et assistant
@@ -36,7 +37,7 @@ export function ExamenBlanc({
 
   useEffect(() => {
     if (phase === "composition" && restant <= 0) {
-      showToast("Temps écoulé ! Entre ta note pour enregistrer l'essai.", "success");
+      showToast(t("Temps écoulé ! Entre ta note pour enregistrer l'essai."), "success");
       setPhase("note");
     }
   }, [phase, restant, showToast]);
@@ -54,18 +55,18 @@ export function ExamenBlanc({
         duree_s: phase === "note" ? Math.round((Date.now() - debut.current) / 1000) : undefined,
       })
       .then(() => {
-        showToast(valeur === null ? "Ajoutée à tes révisions." : "Essai enregistré.", "success");
+        showToast(valeur === null ? t("Ajoutée à tes révisions.") : t("Essai enregistré."), "success");
         setPhase("repos");
         setNote("");
       })
-      .catch(() => showToast("Enregistrement impossible — réessaie.", "error"));
+      .catch(() => showToast(t("Enregistrement impossible — réessaie."), "error"));
 
   if (phase === "composition")
     return (
-      <div role="timer" aria-label="Examen blanc en cours" className="flex items-center gap-2 text-sm">
+      <div role="timer" aria-label={t("Examen blanc en cours")} className="flex items-center gap-2 text-sm">
         <span className={`font-mono-tag tabular-nums ${restant < 300 ? "text-correction" : ""}`}>{formaterDurée(restant)}</span>
         <button onClick={() => setPhase("note")} className="min-h-[44px] rounded-full bg-ink px-4 text-paper">
-          Terminer
+          {t("Terminer")}
         </button>
       </div>
     );
@@ -77,38 +78,38 @@ export function ExamenBlanc({
         onSubmit={(e) => {
           e.preventDefault();
           const v = Number(note.replace(",", "."));
-          if (note.trim() === "" || !Number.isFinite(v) || v < 0 || v > 20) return showToast("Entre une note entre 0 et 20.", "error");
+          if (note.trim() === "" || !Number.isFinite(v) || v < 0 || v > 20) return showToast(t("Entre une note entre 0 et 20."), "error");
           enregistrer(v);
         }}
       >
         <label className="flex items-center gap-1">
-          Ma note
+          {t("Ma note")}
           <input
             autoFocus
             inputMode="decimal"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             className="w-16 rounded border border-ink-soft/30 bg-paper px-2 py-1.5"
-            aria-label="Ma note sur 20"
+            aria-label={t("Ma note sur 20")}
           />
           /20
         </label>
         <button type="submit" className="min-h-[44px] rounded-full bg-ink px-4 text-paper">
-          Enregistrer
+          {t("Enregistrer")}
         </button>
         <button type="button" onClick={() => setPhase("repos")} className="min-h-[44px] px-2 text-ink-soft underline">
-          Ignorer
+          {t("Ignorer")}
         </button>
       </form>
     );
 
   return (
     <div className="flex items-center gap-1">
-      <button onClick={demarrer} title="Compte à rebours, sans corrigé ni assistant" className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
+      <button onClick={demarrer} title={t("Compte à rebours, sans corrigé ni assistant")} className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
         <ClipboardCheck size={14} aria-hidden="true" /> Examen blanc
       </button>
-      <button onClick={() => enregistrer(null)} title="Revenir sur cette épreuve dans quelques jours" className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
-        <RotateCcw size={14} aria-hidden="true" /> À revoir
+      <button onClick={() => enregistrer(null)} title={t("Revenir sur cette épreuve dans quelques jours")} className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
+        <RotateCcw size={14} aria-hidden="true" /> {t("À revoir")}
       </button>
     </div>
   );

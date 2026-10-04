@@ -267,6 +267,9 @@ def _build_prompt(epreuve_meta: dict, contexte: str, question: str, historique: 
         f"Matière : {epreuve_meta.get('matiere', '?')} — Filières : "
         f"{', '.join(epreuve_meta.get('filieres', []) or [])} — Année : {epreuve_meta.get('annee', '?')}.",
         "Réponds de façon claire, pédagogique et concise, adaptée au niveau Terminale.",
+        # Interface bilingue : l'élève peut écrire en anglais (sous-système anglophone).
+        "Réponds dans la langue utilisée par l'élève dans son dernier message "
+        "(français ou anglais), quelle que soit la langue de l'épreuve.",
         "Réponds STRICTEMENT en Markdown : utilise des formules LaTeX pour les "
         "expressions mathématiques, des tableaux Markdown si utile, et des listes "
         "à puces pour structurer une explication en étapes. N'utilise jamais de HTML brut.",

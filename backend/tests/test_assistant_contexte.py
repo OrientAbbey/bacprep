@@ -30,3 +30,11 @@ def test_creation_de_discussion_filtre_le_contexte(eleve, epreuve_gratuite):
     r = eleve.post(f"/api/epreuves/{epreuve_gratuite}/conversations", json={"contexte": "Parle-moi de recettes de cuisine camerounaise traditionnelle", "label": "x"})
     assert r.status_code == 200, r.text
     assert "recettes" not in r.json()["contexte"] and "Sujet test" in r.json()["contexte"]
+
+
+def test_consigne_de_langue_dans_l_invite():
+    import inspect
+
+    from app.core import assistant
+
+    assert "langue utilisée par l'élève" in inspect.getsource(assistant)

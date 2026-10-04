@@ -1,4 +1,6 @@
-const rtf = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
+import { getLang } from "../i18n";
+
+const rtf = new Intl.RelativeTimeFormat(getLang(), { numeric: "auto" });
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 31_536_000],

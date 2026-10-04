@@ -28,6 +28,7 @@ import { useToast } from "../components/Toast";
 import { CLASSES_SECONDAIRE, NIVEAUX, classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
 import { getInitials } from "../lib/initials";
+import { locale, t } from "../i18n";
 
 interface Profil {
   email: string;
@@ -52,10 +53,10 @@ const ICONE_ACTIVITE: Record<string, typeof Activity> = {
 type OngletProfil = "abonnements" | "notes" | "activite" | "donnees";
 
 const ONGLETS_PROFIL: [OngletProfil, string][] = [
-  ["abonnements", "Abonnements"],
-  ["notes", "Mes notes"],
-  ["activite", "Activité"],
-  ["donnees", "Confidentialité"],
+  ["abonnements", t("Abonnements")],
+  ["notes", t("Mes notes")],
+  ["activite", t("Activité")],
+  ["donnees", t("Confidentialité")],
 ];
 
 export function ProfilePage() {
@@ -175,7 +176,7 @@ export function ProfilePage() {
     } catch {
       // Avant : try/finally sans catch — un échec laissait la modale
       // ouverte sans aucun retour.
-      showToast("Le profil n'a pas pu être enregistré — réessaie.", "error");
+      showToast(t("Le profil n'a pas pu être enregistré — réessaie."), "error");
     } finally {
       setSavingProfil(false);
     }
@@ -184,14 +185,14 @@ export function ProfilePage() {
   function cancel(subId: string) {
     setConfirmation({
       titre: "Annuler cet abonnement ?",
-      message: "L'accès sera révoqué immédiatement.",
+      message: t("L'accès sera révoqué immédiatement."),
       tone: "danger",
       action: async () => {
         try {
           await api.post(`/api/subscriptions/${subId}/cancel`);
           await refresh();
         } catch {
-          showToast("L'annulation a échoué — réessaie.", "error");
+          showToast(t("L'annulation a échoué — réessaie."), "error");
         }
       },
     });
@@ -199,15 +200,15 @@ export function ProfilePage() {
 
   function deleteNote(id: string) {
     setConfirmation({
-      titre: "Supprimer cette note ?",
-      message: "Supprimer définitivement cette note ?",
+      titre: t("Supprimer cette note ?"),
+      message: t("Supprimer définitivement cette note ?"),
       tone: "danger",
       action: async () => {
         try {
           await api.del(`/api/me/notes/${id}`);
           setNotes((prev) => prev.filter((n) => n.id !== id));
         } catch {
-          showToast("La note n'a pas pu être supprimée — réessaie.", "error");
+          showToast(t("La note n'a pas pu être supprimée — réessaie."), "error");
         }
       },
     });
@@ -218,9 +219,9 @@ export function ProfilePage() {
     try {
       await api.put("/api/me/consentement", { partage_conversations_ia: ia, partage_notes: notesOk });
       await refreshConsentement();
-      showToast("Choix de confidentialité mis à jour.", "success");
+      showToast(t("Choix de confidentialité mis à jour."), "success");
     } catch {
-      showToast("Le choix n'a pas pu être enregistré — réessaie.", "error");
+      showToast(t("Le choix n'a pas pu être enregistré — réessaie."), "error");
     } finally {
       setSavingConsent(false);
     }
@@ -278,7 +279,7 @@ export function ProfilePage() {
           </span>
         ) : null}
         <p className="mt-3 text-sm text-slate">
-          Membre depuis le {new Date(profil.membre_depuis).toLocaleDateString("fr-FR")}
+          {t("Membre depuis le {d}", { d: new Date(profil.membre_depuis).toLocaleDateString(locale()) })}
         </p>
         <p className="mt-1 text-sm text-slate">
           Total dépensé : {profil.total_depense_fcfa} FCFA
@@ -294,7 +295,7 @@ export function ProfilePage() {
             className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2"
           >
             <label className="block">
-              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Nom</span>
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{t("Nom")}</span>
               <input
                 value={form.nom}
                 onChange={(e) => setForm((f) => ({ ...f, nom: e.target.value }))}
@@ -302,16 +303,16 @@ export function ProfilePage() {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Établissement</span>
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{t("Établissement")}</span>
               <input
                 value={form.etablissement}
                 onChange={(e) => setForm((f) => ({ ...f, etablissement: e.target.value }))}
-                placeholder="ex. Collège/CUSS de Yaoundé"
+                placeholder={t("ex. Collège/CUSS de Yaoundé")}
                 className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
               />
             </label>
             <label className="block">
-              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Niveau</span>
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{t("Niveau")}</span>
               <select
                 value={form.niveau}
                 onChange={(e) => setForm((f) => ({ ...f, niveau: e.target.value }))}
@@ -326,7 +327,7 @@ export function ProfilePage() {
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">Classe</span>
+              <span className="mb-1 block font-mono-tag text-[10px] text-ink-soft">{t("Classe")}</span>
               <select
                 value={form.classe}
                 onChange={(e) => setForm((f) => ({ ...f, classe: e.target.value }))}
@@ -353,7 +354,7 @@ export function ProfilePage() {
                 onClick={() => setFormOuvert(false)}
                 className="min-h-[44px] rounded-full border border-ink-soft/25 px-4 text-sm text-ink-soft"
               >
-                Annuler
+                {t("Annuler")}
               </button>
             </div>
           </form>
@@ -372,7 +373,7 @@ export function ProfilePage() {
               className="ml-auto flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50"
             >
               <Pencil size={12} strokeWidth={1.75} aria-hidden="true" />
-              {profil.classe || profil.etablissement ? "Modifier" : "Compléter mes infos"}
+              {profil.classe || profil.etablissement ? "Modifier" : t("Compléter mes infos")}
             </button>
           </div>
         )}
@@ -381,7 +382,7 @@ export function ProfilePage() {
           onClick={logout}
           className="mt-4 min-h-[44px] rounded-full border border-correction/40 px-5 text-sm font-medium text-correction"
         >
-          Se déconnecter
+          {t("Se déconnecter")}
         </button>
       </div>
       </aside>
@@ -393,7 +394,7 @@ export function ProfilePage() {
       {erreurChargement && <ErreurChargement onReessayer={refresh} />}
       <div
         role="tablist"
-        aria-label="Sections du profil"
+        aria-label={t("Sections du profil")}
         className="flex w-fit flex-wrap gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]"
       >
         {ONGLETS_PROFIL.map(([v, label]) => (
@@ -503,14 +504,14 @@ function ErreurChargement({ onReessayer }: { onReessayer: () => void }) {
       role="alert"
       className="rounded-lg border border-correction/30 bg-correction-soft/40 p-4 text-sm"
     >
-      <p className="font-medium text-ink">Le chargement a échoué.</p>
-      <p className="mt-1 text-ink-soft">Vérifie ta connexion puis réessaie.</p>
+      <p className="font-medium text-ink">{t("Le chargement a échoué.")}</p>
+      <p className="mt-1 text-ink-soft">{t("Vérifie ta connexion puis réessaie.")}</p>
       <button
         type="button"
         onClick={onReessayer}
         className="mt-3 min-h-[44px] rounded-full border border-correction/40 px-5 text-sm font-medium text-correction hover:bg-correction-soft/40"
       >
-        Réessayer
+        {t("Réessayer")}
       </button>
     </div>
   );
@@ -530,12 +531,12 @@ function PanneauAbonnements({
   if (abonnements.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-ink-soft/25 bg-paper-raised p-6 text-center">
-        <p className="text-sm text-ink-soft">Aucun abonnement actif pour l'instant.</p>
+        <p className="text-sm text-ink-soft">{t("Aucun abonnement actif pour l'instant.")}</p>
         <Link
           to="/abonnement"
           className="mt-3 inline-flex min-h-[44px] items-center rounded-full bg-ink px-5 text-sm font-medium text-paper hover:opacity-90"
         >
-          Découvrir les forfaits
+          {t("Découvrir les forfaits")}
         </Link>
       </div>
     );
@@ -555,12 +556,12 @@ function PanneauAbonnements({
             {/* Bandeau : portée + statut */}
             <div className="flex flex-wrap items-center justify-between gap-2 bg-highlight-soft/60 px-4 py-3">
               <div className="min-w-0">
-                <p className="font-mono-tag text-[10px] text-ink-soft">ABONNEMENT ACTIF</p>
+                <p className="font-mono-tag text-[10px] text-ink-soft">{t("ABONNEMENT ACTIF")}</p>
                 <p className="truncate font-serif-brand text-lg leading-tight">{s.scope_label}</p>
               </div>
               <span className="flex shrink-0 items-center gap-1 rounded-full bg-valide px-2.5 py-1 font-mono-tag text-[10px] text-paper">
                 <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
-                Active
+                {t("Active")}
               </span>
             </div>
 
@@ -571,7 +572,7 @@ function PanneauAbonnements({
                   <span className={expireBientot ? "font-medium text-correction" : "font-medium text-ink"}>
                     {joursRestants > 0 ? `${joursRestants} jour${joursRestants > 1 ? "s" : ""} restant${joursRestants > 1 ? "s" : ""}` : "Expire aujourd'hui"}
                   </span>
-                  <span className="text-slate">jusqu'au {new Date(s.end_date).toLocaleDateString("fr-FR")}</span>
+                  <span className="text-slate">{t("jusqu'au {d}", { d: new Date(s.end_date).toLocaleDateString(locale()) })}</span>
                 </div>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-soft/15" role="presentation">
                   <div
@@ -588,9 +589,9 @@ function PanneauAbonnements({
                 ) : (
                   <>
                     <PuceAbonnement icone={GraduationCap} label="Classe" valeur={classeLabel(s.classe)} />
-                    <PuceAbonnement icone={GraduationCap} label="Série" valeur={s.filiere} />
-                    {s.matiere !== "ALL" && <PuceAbonnement icone={BookOpen} label="Matière" valeur={s.matiere} />}
-                    {s.annee !== "ALL" && <PuceAbonnement icone={Calendar} label="Année" valeur={s.annee} />}
+                    <PuceAbonnement icone={GraduationCap} label={t("Série")} valeur={s.filiere} />
+                    {s.matiere !== "ALL" && <PuceAbonnement icone={BookOpen} label={t("Matière")} valeur={s.matiere} />}
+                    {s.annee !== "ALL" && <PuceAbonnement icone={Calendar} label={t("Année")} valeur={s.annee} />}
                   </>
                 )}
               </div>
@@ -612,7 +613,7 @@ function PanneauAbonnements({
                   onClick={() => onAnnuler(s.id)}
                   className="min-h-[44px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction-soft/40"
                 >
-                  Annuler cet abonnement
+                  {t("Annuler cet abonnement")}
                 </button>
               </div>
             </div>
@@ -638,7 +639,7 @@ function PanneauNotes({
   if (notes.length === 0) {
     return (
       <p className="text-sm text-slate">
-        Aucune note pour l'instant — sélectionne un passage dans une épreuve et clique « Prendre une note ».
+        {t("Aucune note pour l'instant — sélectionne un passage dans une épreuve et clique « Prendre une note ».")}
       </p>
     );
   }
@@ -654,8 +655,8 @@ function PanneauNotes({
               <button
                 type="button"
                 onClick={() => onEditer(n)}
-                aria-label="Modifier la note"
-                title="Modifier"
+                aria-label={t("Modifier la note")}
+                title={t("Modifier")}
                 className="relative p-1.5 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
               >
                 <Edit3 size={15} strokeWidth={1.75} aria-hidden="true" />
@@ -663,8 +664,8 @@ function PanneauNotes({
               <button
                 type="button"
                 onClick={() => onSupprimer(n.id)}
-                aria-label="Supprimer la note"
-                title="Supprimer"
+                aria-label={t("Supprimer la note")}
+                title={t("Supprimer")}
                 className="relative p-1.5 text-ink-soft hover:text-correction after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
               >
                 <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
@@ -683,7 +684,7 @@ function PanneauNotes({
               <>
                 {" · "}
                 <Link to={`/epreuve/${n.epreuve_id}`} className="underline hover:text-ink">
-                  ouvrir l'épreuve
+                  {t("ouvrir l'épreuve")}
                 </Link>
               </>
             )}
@@ -700,7 +701,7 @@ function PanneauNotes({
  * ProfilePage (É20). */
 function PanneauActivite({ activite }: { activite: ActiviteItem[] }) {
   if (activite.length === 0) {
-    return <p className="text-sm text-slate">Aucune activité enregistrée.</p>;
+    return <p className="text-sm text-slate">{t("Aucune activité enregistrée.")}</p>;
   }
   return (
     <div className="space-y-1">
@@ -763,7 +764,7 @@ function PanneauDonnees({
       <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
         <p className="flex items-center gap-2 font-serif-brand text-base">
           <Database size={16} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
-          Mes données et confidentialité
+          {t("Mes données et confidentialité")}
         </p>
         <p className="mt-1 text-xs text-ink-soft">
           Tu décides de ce qui est conservé sur nos serveurs. Un refus est effectif
@@ -777,7 +778,7 @@ function PanneauDonnees({
               onChange={(e) => onConsentIa(e.target.checked)}
               className="h-4 w-4 accent-[var(--color-highlight)]"
             />
-            Stocker mes conversations IA (refus = discussions éphémères, rien n'est enregistré)
+            {t("Stocker mes conversations IA (refus = discussions éphémères, rien n'est enregistré)")}
           </label>
           <label className="flex cursor-pointer items-center gap-3 text-sm">
             <input
@@ -786,7 +787,7 @@ function PanneauDonnees({
               onChange={(e) => onConsentNotes(e.target.checked)}
               className="h-4 w-4 accent-[var(--color-highlight)]"
             />
-            Stocker mes notes personnelles (refus = la prise de note est masquée)
+            {t("Stocker mes notes personnelles (refus = la prise de note est masquée)")}
           </label>
         </div>
         {choixModifies && (

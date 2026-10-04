@@ -1,4 +1,5 @@
 import type { Evenement } from "../api/types";
+import { locale } from "../i18n";
 
 /** Date locale AAAA-MM-JJ → minuit local (évite le décalage UTC de `new Date("AAAA-MM-JJ")`). */
 export function dateLocale(iso: string): Date {
@@ -22,5 +23,5 @@ export function prochainExamen(evenements: Evenement[], maintenant: Date = new D
 }
 
 export function formaterDate(iso: string): string {
-  return dateLocale(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  return dateLocale(iso).toLocaleDateString(locale(), { day: "numeric", month: "long", year: "numeric" });
 }

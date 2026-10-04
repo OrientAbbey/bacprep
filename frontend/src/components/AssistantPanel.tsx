@@ -7,11 +7,12 @@ import { getInitials } from "../lib/initials";
 import { delaiReconnexion, streamAssistantAsk, type AssistantAskPayload } from "../lib/streaming";
 import { MarkdownContent } from "./MarkdownContent";
 import { useToast } from "./Toast";
+import { t } from "../i18n";
 
 /** Nom du produit assistant (en-tête du panneau, bouton lanceur) et
  * signature affichée sur chacune de ses réponses. */
-export const ASSISTANT_TITRE = "Tuteur IA Prep";
-export const ASSISTANT_SIGNATURE = "Assistant Pédagogique";
+export const ASSISTANT_TITRE = t("Tuteur IA Prep");
+export const ASSISTANT_SIGNATURE = t("Assistant Pédagogique");
 
 export interface Message {
   role: "user" | "assistant";
@@ -236,7 +237,7 @@ export function AssistantPanel({
             {
               id: "ephemere",
               epreuve_id: epreuveId,
-              label: pendingContext ? "Passage : " + resumeLabel(pendingContext) : "Discussion éphémère",
+              label: pendingContext ? "Passage : " + resumeLabel(pendingContext) : t("Discussion éphémère"),
               contexte: pendingContext ?? fullEpreuveContext,
               messages: [],
               created_at: new Date().toISOString(),
@@ -333,7 +334,7 @@ export function AssistantPanel({
 
   async function createConversation(contexte: string, label: string) {
     if (conversations.length >= MAX_CONVERSATIONS) {
-      showToast("Limite de discussions atteinte pour cette épreuve (5).", "error");
+      showToast(t("Limite de discussions atteinte pour cette épreuve (5)."), "error");
       return;
     }
     if (ephemere) {
@@ -364,11 +365,11 @@ export function AssistantPanel({
         // Refus de consentement enregistré pendant la session : bascule
         // silencieuse en éphémère au prochain rendu (l'utilisateur voit un
         // toast explicite).
-        showToast("Stockage des discussions refusé — mode éphémère (rien n'est enregistré).", "info");
+        showToast(t("Stockage des discussions refusé — mode éphémère (rien n'est enregistré)."), "info");
         return;
       }
       if (err instanceof ApiError && err.status === 409) return;
-      showToast("La discussion n'a pas pu être créée — réessaie.", "error");
+      showToast(t("La discussion n'a pas pu être créée — réessaie."), "error");
     }
   }
 
@@ -383,7 +384,7 @@ export function AssistantPanel({
       try {
         await api.del(`/api/epreuves/${epreuveId}/conversations/${id}`);
       } catch {
-        showToast("La discussion n'a pas pu être fermée — réessaie.", "error");
+        showToast(t("La discussion n'a pas pu être fermée — réessaie."), "error");
         return;
       }
       setConversations((prev) => prev.filter((c) => c.id !== id));
@@ -561,9 +562,9 @@ export function AssistantPanel({
             // serveur (corps `detail`) prime sur un message générique.
             erreurFinale =
               status === 404
-                ? "Cette discussion n'existe plus (elle a peut-être été fermée)."
+                ? t("Cette discussion n'existe plus (elle a peut-être été fermée).")
                 : (detailServeur(err) ??
-                  (err instanceof Error ? err.message : "Requête refusée."));
+                  (err instanceof Error ? err.message : t("Requête refusée.")));
             break;
           }
           // Transitoire (réseau, 5xx) : on le note mais on laisse la
@@ -637,12 +638,12 @@ export function AssistantPanel({
           // serveur porte la VRAIE raison — on l'affiche telle quelle.
           erreurFinale =
             detailServeur(err) ??
-            (err instanceof Error ? err.message : "Requête refusée.");
+            (err instanceof Error ? err.message : t("Requête refusée."));
           break;
         }
         // Panne transport ou 5xx transitoire : boucle de reconnexion.
         erreurFinale =
-          err instanceof TypeError ? "Connexion au serveur interrompue." : err instanceof Error ? err.message : "Connexion interrompue pendant la réponse.";
+          err instanceof TypeError ? "Connexion au serveur interrompue." : err instanceof Error ? err.message : t("Connexion interrompue pendant la réponse.");
       }
 
       if (gotDone) {
@@ -666,7 +667,7 @@ export function AssistantPanel({
     setReconnectAttempt(0);
     setSending(false);
     if (!aReussi) {
-      setErreurStream(erreurFinale ?? "La réponse n'a pas pu être reçue — réessaie.");
+      setErreurStream(erreurFinale ?? t("La réponse n'a pas pu être reçue — réessaie."));
     }
   }
 
@@ -732,7 +733,7 @@ export function AssistantPanel({
             <div className="min-w-0">
               <h2 className="font-serif-brand text-sm leading-tight">{ASSISTANT_TITRE}</h2>
               <p className="font-mono-tag text-[10px] text-slate">
-                {ephemere ? `${ASSISTANT_SIGNATURE} · éphémère (non enregistré)` : ASSISTANT_SIGNATURE}
+                {ephemere ? t("{nom} · éphémère (non enregistré)", { nom: ASSISTANT_SIGNATURE }) : ASSISTANT_SIGNATURE}
               </p>
             </div>
             <div className="flex shrink-0 items-center">
@@ -740,8 +741,8 @@ export function AssistantPanel({
                 type="button"
                 disabled={conversations.length >= MAX_CONVERSATIONS}
                 onClick={() => createConversation(fullEpreuveContext, labelUnique("Discussion générale", conversations))}
-                title="Nouvelle discussion"
-                aria-label="Nouvelle discussion"
+                title={t("Nouvelle discussion")}
+                aria-label={t("Nouvelle discussion")}
                 className="relative flex h-8 w-8 items-center justify-center rounded-full border border-ink-soft/25 text-ink-soft after:absolute after:-inset-1.5 after:rounded-full after:content-[''] disabled:opacity-40"
               >
                 <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -749,8 +750,8 @@ export function AssistantPanel({
               <button
                 type="button"
                 onClick={onClose}
-                title="Fermer l'assistant"
-                aria-label="Fermer l'assistant"
+                title={t("Fermer l'assistant")}
+                aria-label={t("Fermer l'assistant")}
                 className="relative p-1 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:content-['']"
               >
                 <X size={18} strokeWidth={1.75} aria-hidden="true" />
@@ -770,13 +771,13 @@ export function AssistantPanel({
         <div
           ref={scrollRef}
           role="log"
-          aria-label={`Discussion avec ${ASSISTANT_TITRE}`}
+          aria-label={t("Discussion avec {nom}", { nom: ASSISTANT_TITRE })}
           className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-4"
         >
-          {loading && <p className="text-sm text-slate">Chargement…</p>}
+          {loading && <p className="text-sm text-slate">{t("Chargement…")}</p>}
           {erreurChargement && !loading && (
             <p className="rounded-lg border border-correction/30 bg-correction-soft p-3 text-sm text-correction">
-              Les discussions n'ont pas pu être chargées — ferme et rouvre le panneau.
+              {t("Les discussions n'ont pas pu être chargées — ferme et rouvre le panneau.")}
             </p>
           )}
 
@@ -793,7 +794,7 @@ export function AssistantPanel({
                 ) : (
                   <ChevronRight size={12} strokeWidth={2} aria-hidden="true" />
                 )}
-                {contexteEstLong ? "Contexte (épreuve entière)" : "Passage sélectionné"}
+                {contexteEstLong ? t("Contexte (épreuve entière)") : t("Passage sélectionné")}
               </button>
               {/* Replié : une seule ligne d'aperçu, pour laisser le maximum
                   de place à la discussion ; déplié : contenu complet. */}
@@ -810,9 +811,9 @@ export function AssistantPanel({
           {active && active.messages.length === 0 && (
             <div className="pt-6 text-center">
               <Bot size={28} strokeWidth={1.5} aria-hidden="true" className="mx-auto text-slate" />
-              <p className="mt-2 text-sm font-medium">Pose ta première question</p>
+              <p className="mt-2 text-sm font-medium">{t("Pose ta première question")}</p>
               <p className="mt-1 text-xs text-slate">
-                Demande une explication, une méthode, ou la correction d'un exercice de cette épreuve.
+                {t("Demande une explication, une méthode, ou la correction d'un exercice de cette épreuve.")}
               </p>
             </div>
           )}
@@ -849,8 +850,8 @@ export function AssistantPanel({
                 <Avatar role="assistant" nom={ASSISTANT_SIGNATURE} />
                 <p className="text-sm text-slate">
                   {reconnectAttempt > 0
-                    ? `Connexion instable — reconnexion (${reconnectAttempt}/3)…`
-                    : `${ASSISTANT_SIGNATURE} réfléchit…`}
+                    ? t("Connexion instable — reconnexion ({n}/3)…", { n: reconnectAttempt })
+                    : t("{nom} réfléchit…", { nom: ASSISTANT_SIGNATURE })}
                 </p>
               </div>
             )}
@@ -921,7 +922,7 @@ function ConversationTabs({
   }
 
   return (
-    <div role="tablist" aria-label="Discussions ouvertes" className="scrollbar-hover flex gap-1.5 overflow-x-auto px-3 py-2">
+    <div role="tablist" aria-label={t("Discussions ouvertes")} className="scrollbar-hover flex gap-1.5 overflow-x-auto px-3 py-2">
       {conversations.map((c) => {
         const active = activeId === c.id;
         return (
@@ -947,7 +948,7 @@ function ConversationTabs({
             </button>
             <button
               type="button"
-              aria-label={`Fermer la discussion ${c.label}`}
+              aria-label={t("Fermer la discussion {label}", { label: t(c.label) })}
               onClick={() => {
                 onClose(c.id);
                 requestAnimationFrame(() => focusTab(activeId ?? ""));
@@ -1031,7 +1032,7 @@ function ChatBubble({
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               rows={3}
-              aria-label="Modifier ta question"
+              aria-label={t("Modifier ta question")}
               className="w-full resize-y rounded-[2px] border border-ink-soft/20 bg-paper-raised px-3 py-2 text-sm text-ink outline-none"
             />
             <div className="mt-2 flex items-center gap-2">
@@ -1042,14 +1043,14 @@ function ChatBubble({
                 className="inline-flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-4 text-xs font-medium text-paper disabled:opacity-40"
               >
                 <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-                Valider
+                {t("Valider")}
               </button>
               <button
                 type="button"
                 onClick={() => setEditing(false)}
                 className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-ink-soft/25 px-4 text-xs text-ink-soft hover:text-ink"
               >
-                Annuler
+                {t("Annuler")}
               </button>
             </div>
           </div>
@@ -1069,11 +1070,11 @@ function ChatBubble({
               <button
                 type="button"
                 onClick={demarrerEdition}
-                title="Modifier ta question et régénérer la réponse"
+                title={t("Modifier ta question et régénérer la réponse")}
                 className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
               >
                 <Pencil size={11} strokeWidth={1.75} aria-hidden="true" />
-                Modifier
+                {t("Modifier")}
               </button>
             )}
             {/* Sauvegarde d'une réponse en note personnelle (uniquement les
@@ -1083,11 +1084,11 @@ function ChatBubble({
               <button
                 type="button"
                 onClick={() => onSaveAsNote(m.content, questionContexte)}
-                title="Sauvegarder cette réponse dans tes notes"
+                title={t("Sauvegarder cette réponse dans tes notes")}
                 className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
               >
                 <StickyNote size={11} strokeWidth={1.75} aria-hidden="true" />
-                Sauvegarder en note
+                {t("Sauvegarder en note")}
               </button>
             )}
             {/* Relance de la dernière question (dernière bulle seulement). */}
@@ -1095,11 +1096,11 @@ function ChatBubble({
               <button
                 type="button"
                 onClick={onRegenerer}
-                title="Relancer la même question"
+                title={t("Relancer la même question")}
                 className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
               >
                 <RotateCcw size={11} strokeWidth={1.75} aria-hidden="true" />
-                Réessayer
+                {t("Réessayer")}
               </button>
             )}
           </div>
@@ -1143,8 +1144,8 @@ function MessageComposer({
           value={input}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Pose ta question… (Maj+Entrée pour une nouvelle ligne)"
-          aria-label="Question à Tuteur IA Prep"
+          placeholder={t("Pose ta question… (Maj+Entrée pour une nouvelle ligne)")}
+          aria-label={t("Question à Tuteur IA Prep")}
           rows={1}
           style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
           className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
@@ -1153,7 +1154,7 @@ function MessageComposer({
           type="button"
           onClick={onSend}
           disabled={!input.trim()}
-          aria-label="Envoyer"
+          aria-label={t("Envoyer")}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
         >
           <Send size={18} strokeWidth={1.75} aria-hidden="true" />

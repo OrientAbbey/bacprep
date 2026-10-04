@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { api, ApiError, BASE_URL } from "../api/client";
 import { useToast } from "../components/Toast";
+import { t } from "../i18n";
 
 export interface User {
   id: string;
@@ -70,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "kicked_out") {
-          setKickoutMessage(data.message || "Votre session a été fermée.");
+          setKickoutMessage(data.message || t("Votre session a été fermée."));
           intentionalClose.current = true; // plus de session à surveiller
           setUser(null);
         }
@@ -150,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     closeSocket(true);
     await api.post("/api/auth/logout");
     setUser(null);
-    showToast("Déconnexion réussie.", "info");
+    showToast(t("Déconnexion réussie."), "info");
   };
 
   const refreshConsentement = useCallback(async (): Promise<User | null> => {

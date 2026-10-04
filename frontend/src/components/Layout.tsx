@@ -1,3 +1,4 @@
+import { LangSwitch } from "../i18nProvider";
 import { BottomNav } from "./BottomNav";
 import { ServeurLent } from "./ServeurLent";
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
@@ -8,6 +9,7 @@ import { useTheme } from "../theme/ThemeProvider";
 import { getInitials } from "../lib/initials";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
+import { t } from "../i18n";
 
 export function Layout({ children }: { children?: React.ReactNode }) {
   const navigate = useNavigate();
@@ -56,9 +58,9 @@ export function Layout({ children }: { children?: React.ReactNode }) {
             tout l'écran, le contenu n'est limé au centre que par la grille de
             sa propre page. */}
         <div className="flex w-full items-center gap-3 px-4 py-3 md:px-6 lg:px-8">
-          <Link to="/" aria-label="Accueil" className="flex items-center gap-2">
+          <Link to="/" aria-label={t("Accueil")} className="flex items-center gap-2">
             <Logo size={32} />
-            <span className="hidden font-serif-brand text-lg sm:inline">Copies &amp; Corrigés</span>
+            <span className="hidden font-serif-brand text-lg sm:inline">{t("Copies & Corrigés")}</span>
           </Link>
 
           <form onSubmit={submitSearch} className="mx-auto hidden max-w-xs flex-1 md:block">
@@ -72,8 +74,8 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Rechercher…"
-                aria-label="Recherche globale"
+                placeholder={t("Rechercher…")}
+                aria-label={t("Recherche globale")}
                 className="min-h-[44px] w-full rounded-full border border-ink-soft/25 bg-paper px-3 pl-9 text-xs"
               />
             </div>
@@ -84,7 +86,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
-              aria-label="Ouvrir le menu"
+              aria-label={t("Ouvrir le menu")}
               aria-expanded={menuOpen}
               className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft sm:hidden after:absolute after:-inset-1 after:rounded-full after:content-['']"
             >
@@ -94,10 +96,10 @@ export function Layout({ children }: { children?: React.ReactNode }) {
             {/* Navigation BUREAU (visible dès sm) */}
             <div className="hidden items-center gap-4 sm:flex">
               <Link to="/" className="hover:text-ink">
-                Accueil
+                {t("Accueil")}
               </Link>
               <Link to="/abonnement" className="hover:text-ink">
-                Abonnement
+                {t("Abonnement")}
               </Link>
               {/* Console admin : réservée aux comptes de la liste blanche
                   (is_admin calculé serveur) — le lien ne s'affiche même pas
@@ -105,7 +107,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                   le jeton admin vérifié à chaque appel API. */}
               {user?.is_admin && (
                 <Link to="/admin" className="hover:text-ink">
-                  Admin
+                  {t("Admin")}
                 </Link>
               )}
 
@@ -114,7 +116,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                   <NotificationsBell />
                   <Link
                     to="/profil"
-                    aria-label={`Profil de ${user.nom}`}
+                    aria-label={t("Profil de {nom}", { nom: user.nom })}
                     title={user.nom}
                     className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper after:absolute after:-inset-1 after:rounded-full after:content-['']"
                   >
@@ -127,15 +129,16 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                   state={{ from: location }}
                   className="min-h-[44px] rounded-full bg-ink px-4 text-sm font-medium leading-[44px] text-paper hover:opacity-90"
                 >
-                  Connexion
+                  {t("Connexion")}
                 </Link>
               )}
             </div>
 
+            <LangSwitch />
             <button
               type="button"
               onClick={toggleTheme}
-              aria-label="Changer de thème"
+              aria-label={t("Changer de thème")}
               className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
             >
               {theme === "dark" ? (
@@ -151,15 +154,15 @@ export function Layout({ children }: { children?: React.ReactNode }) {
       {/* Tiroir de navigation MOBILE : Accueil, Abonnement, Admin (si admin),
           recherche et compte — masqué à partir de sm (papillon bureau). */}
       {menuOpen && (
-        <div className="fixed inset-0 z-50 sm:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+        <div className="fixed inset-0 z-50 sm:hidden" role="dialog" aria-modal="true" aria-label={t("Menu")}>
           <div className="absolute inset-0 bg-ink/40" onClick={() => setMenuOpen(false)} aria-hidden="true" />
           <div className="absolute inset-y-0 right-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto border-l border-ink-soft/15 bg-paper p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <p className="font-serif-brand text-sm">Navigation</p>
+              <p className="font-serif-brand text-sm">{t("Navigation")}</p>
               <button
                 type="button"
                 onClick={() => setMenuOpen(false)}
-                aria-label="Fermer le menu"
+                aria-label={t("Fermer le menu")}
 className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
               >
                 <X size={18} strokeWidth={1.75} aria-hidden="true" />
@@ -176,8 +179,8 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Rechercher une épreuve…"
-                aria-label="Recherche globale"
+                placeholder={t("Rechercher une épreuve…")}
+                aria-label={t("Recherche globale")}
                 autoFocus
                 className="min-h-[44px] w-full rounded-full border border-ink-soft/25 bg-paper-raised px-3 pl-9 text-sm"
               />
@@ -185,14 +188,14 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
 
             <nav className="flex flex-col gap-1">
               <Link to="/" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                Accueil
+                {t("Accueil")}
               </Link>
               <Link to="/abonnement" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                Abonnement
+                {t("Abonnement")}
               </Link>
               {user?.is_admin && (
                 <Link to="/admin" className="rounded-lg px-3 py-2.5 font-medium text-highlight-text hover:bg-highlight-soft">
-                  Admin
+                  {t("Admin")}
                 </Link>
               )}
             </nav>
@@ -202,7 +205,7 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
                 <>
                   <div className="mb-3 flex items-center gap-2.5 px-3">
                     <NotificationsBell />
-                    <span className="font-mono-tag text-[10px] text-slate">Notifications</span>
+                    <span className="font-mono-tag text-[10px] text-slate">{t("Notifications")}</span>
                   </div>
                   <Link to="/profil" className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
                     <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper">
@@ -210,7 +213,7 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium">{user.nom || user.email}</span>
-                      <span className="block font-mono-tag text-[10px] text-slate">Mon profil</span>
+                      <span className="block font-mono-tag text-[10px] text-slate">{t("Mon profil")}</span>
                     </span>
                   </Link>
                 </>
@@ -220,7 +223,7 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
                   state={{ from: location }}
                   className="flex min-h-[44px] items-center justify-center rounded-full bg-ink text-sm font-medium text-paper hover:opacity-90"
                 >
-                  Connexion
+                  {t("Connexion")}
                 </Link>
               )}
             </div>
@@ -232,7 +235,7 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
 
       <BottomNav />
       <footer className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
-        Copies &amp; Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)
+        {t("Copies & Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)")}
       </footer>
     </div>
   );

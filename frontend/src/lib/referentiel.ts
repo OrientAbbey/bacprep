@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 // Miroir frontend de backend/app/core/referentiel.py — classifications
 // indicatives du système scolaire camerounais (secondaire complet).
 
@@ -17,7 +18,7 @@ export function classeLabel(code: string): string {
 
 export const NIVEAUX = [
   { code: "SECONDAIRE", label: "Secondaire" },
-  { code: "PRIMAIRE", label: "Primaire (réservé)" },
+  { code: "PRIMAIRE", label: t("Primaire (réservé)") },
 ] as const;
 
 /** Types d'évaluation connus — miroir de backend/app/core/referentiel.py:EVALUATIONS */

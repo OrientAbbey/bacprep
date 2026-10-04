@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ZoomIn, ZoomOut, X } from "lucide-react";
+import { t } from "../i18n";
 
 /**
  * Visionneuse plein écran d'une image (loupe). Clic sur une image d'épreuve
@@ -30,7 +31,7 @@ export function ImageLightbox({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={alt ? `Image : ${alt}` : "Image de l'épreuve"}
+      aria-label={alt ? `Image : ${alt}` : t("Image de l'épreuve")}
       onClick={onClose}
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
     >
@@ -42,7 +43,7 @@ export function ImageLightbox({
           src={src}
           alt={alt || ""}
           onClick={() => setZoomed((z) => !z)}
-          title={zoomed ? "Réduire (touche Échap pour fermer)" : "Agrandir (touche Échap pour fermer)"}
+          title={zoomed ? t("Réduire (touche Échap pour fermer)") : t("Agrandir (touche Échap pour fermer)")}
           className={`rounded-lg object-contain shadow-2xl transition-transform duration-200 ${
             zoomed ? "max-h-none max-w-none scale-[1.9] cursor-zoom-out" : "max-h-[86vh] max-w-[86vw] cursor-zoom-in"
           }`}
@@ -51,8 +52,8 @@ export function ImageLightbox({
           <button
             type="button"
             onClick={() => setZoomed((z) => !z)}
-            title={zoomed ? "Réduire" : "Agrandir"}
-            aria-label={zoomed ? "Réduire l'image" : "Agrandir l'image"}
+            title={zoomed ? t("Réduire") : "Agrandir"}
+            aria-label={zoomed ? t("Réduire l'image") : "Agrandir l'image"}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white transition-colors hover:bg-black/85"
           >
             {zoomed ? <ZoomOut size={18} strokeWidth={2} aria-hidden="true" /> : <ZoomIn size={18} strokeWidth={2} aria-hidden="true" />}
@@ -60,8 +61,8 @@ export function ImageLightbox({
           <button
             type="button"
             onClick={onClose}
-            title="Fermer (touche Échap)"
-            aria-label="Fermer la visionneuse d'image"
+            title={t("Fermer (touche Échap)")}
+            aria-label={t("Fermer la visionneuse d'image")}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white transition-colors hover:bg-black/85"
           >
             <X size={18} strokeWidth={2} aria-hidden="true" />

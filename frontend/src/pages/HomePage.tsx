@@ -8,6 +8,7 @@ import { joursAvant, prochainExamen } from "../lib/calendrier";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
 import { Logo } from "../components/Logo";
+import { t } from "../i18n";
 
 /**
  * Accueil public, organisé en DECK séquentiel (pas tout en même temps) :
@@ -81,11 +82,8 @@ export function HomePage() {
         <div className="mb-4 flex justify-center">
           <Logo size={56} />
         </div>
-        <h1 className="font-serif-brand text-3xl">Copies &amp; Corrigés</h1>
-        <p className="mx-auto mt-2 max-w-xl text-sm text-ink-soft">
-          Épreuves et corrigés du secondaire camerounais — de la 6e à la Terminale :
-          séquences, compositions, BEPC, Probatoire, BAC et examens blancs.
-        </p>
+        <h1 className="font-serif-brand text-3xl">{t("Copies & Corrigés")}</h1>
+        <p className="mx-auto mt-2 max-w-xl text-sm text-ink-soft">{t("Épreuves et corrigés du secondaire camerounais — de la 6e à la Terminale : séquences, compositions, BEPC, Probatoire, BAC et examens blancs.")}</p>
 
         <form onSubmit={submitSearch} className="mx-auto mt-6 flex max-w-xl gap-2">
           <div className="relative flex-1">
@@ -98,8 +96,8 @@ export function HomePage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher dans tout le catalogue (matière, série, examen…)"
-              aria-label="Recherche globale"
+              placeholder={t("Rechercher dans tout le catalogue (matière, série, examen…)")}
+              aria-label={t("Recherche globale")}
               className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised pl-10 pr-4 text-sm"
             />
           </div>
@@ -107,17 +105,17 @@ export function HomePage() {
             type="submit"
             className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper"
           >
-            Rechercher
+            {t("Rechercher")}
           </button>
         </form>
 
         {!user && (
           <p className="mt-3 text-xs text-slate">
-            Consultation libre du catalogue —{" "}
+            {t("Consultation libre du catalogue —")}{" "}
             <Link to="/connexion" className="underline hover:text-ink">
-              se connecter
+              {t("se connecter")}
             </Link>{" "}
-            pour ouvrir les épreuves.
+            {t("pour ouvrir les épreuves.")}
           </p>
         )}
       </section>
@@ -135,8 +133,8 @@ export function HomePage() {
       )}
 
       {user && revisions.length > 0 && (
-        <section aria-label="À revoir aujourd'hui">
-          <h2 className="font-mono-tag mb-2 text-xs text-ink-soft">À REVOIR AUJOURD'HUI</h2>
+        <section aria-label={t("À revoir aujourd'hui")}>
+          <h2 className="font-mono-tag mb-2 text-xs text-ink-soft">{t("À REVOIR AUJOURD'HUI")}</h2>
           <div className="scrollbar-hide flex gap-3 overflow-x-auto pb-2">
             {revisions.map((r) => (
               <Link
@@ -147,7 +145,7 @@ export function HomePage() {
                 <p className="font-serif-brand text-sm">{r.matiere}</p>
                 <p className="font-mono-tag text-[10px] text-slate">
                   {r.evaluation} · {r.annee}
-                  {r.derniere_note !== null ? ` · dernière note ${r.derniere_note}/20` : ""}
+                  {r.derniere_note !== null ? t(" · dernière note {n}/20", { n: r.derniere_note }) : ""}
                 </p>
               </Link>
             ))}
@@ -156,11 +154,11 @@ export function HomePage() {
       )}
 
       {user && historique.length > 0 && (
-        <section aria-label="Consultées récemment">
+        <section aria-label={t("Consultées récemment")}>
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="font-mono-tag text-xs text-ink-soft">CONSULTÉES RÉCEMMENT</h2>
+            <h2 className="font-mono-tag text-xs text-ink-soft">{t("CONSULTÉES RÉCEMMENT")}</h2>
             <Link to="/profil" className="text-xs text-ink-soft underline-offset-2 hover:text-ink hover:underline">
-              Tout voir dans ton profil
+              {t("Tout voir dans ton profil")}
             </Link>
           </div>
           <div className="scrollbar-hide flex gap-3 overflow-x-auto pb-2">
@@ -185,13 +183,13 @@ export function HomePage() {
       <section>
         <div className="mb-4 flex items-center justify-between gap-3">
           {niveauActif ? (
-            <nav aria-label="Fil d'Ariane" className="flex min-w-0 items-center gap-1 font-mono-tag text-xs">
+            <nav aria-label={t("Fil d'Ariane")} className="flex min-w-0 items-center gap-1 font-mono-tag text-xs">
               <button
                 type="button"
                 onClick={() => setNiveauActif(null)}
                 className="shrink-0 text-ink-soft underline-offset-2 hover:text-ink hover:underline focus-visible:text-ink"
               >
-                Niveaux
+                {t("Niveaux")}
               </button>
               <ChevronRight size={12} strokeWidth={2} aria-hidden="true" className="shrink-0 text-slate" />
               <span aria-current="page" className="truncate text-ink-soft">
@@ -199,17 +197,17 @@ export function HomePage() {
               </span>
             </nav>
           ) : (
-            <h2 className="font-mono-tag text-xs text-ink-soft">QUE SOUHAITEZ-VOUS CONSULTER ?</h2>
+            <h2 className="font-mono-tag text-xs text-ink-soft">{t("QUE SOUHAITEZ-VOUS CONSULTER ?")}</h2>
           )}
           {niveauActif && (
             <button
               type="button"
               onClick={() => setNiveauActif(null)}
-              aria-label="Revenir à la sélection des niveaux"
+              aria-label={t("Revenir à la sélection des niveaux")}
               className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
             >
               <ArrowLeft size={14} strokeWidth={1.75} aria-hidden="true" />
-              Niveaux
+              {t("Niveaux")}
             </button>
           )}
         </div>
@@ -217,14 +215,14 @@ export function HomePage() {
         {navErreur && (
           <div role="alert" className="mx-auto max-w-md rounded-lg border border-correction/30 bg-correction-soft p-5 text-center">
             <p className="text-sm text-correction">
-              Impossible de charger les niveaux. Vérifiez votre connexion puis réessayez.
+              {t("Impossible de charger les niveaux. Vérifiez votre connexion puis réessayez.")}
             </p>
             <button
               type="button"
               onClick={chargerNav}
               className="mt-3 min-h-[44px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction hover:text-paper"
             >
-              Réessayer
+              {t("Réessayer")}
             </button>
           </div>
         )}
@@ -245,7 +243,7 @@ export function HomePage() {
                 >
                   <span className="font-serif-brand text-xl">{c.label}</span>
                   <span className="font-mono-tag text-[10px] text-slate">
-                    {total} épreuve{total > 1 ? "s" : ""}
+                    {t(total > 1 ? "{n} épreuves" : "{n} épreuve", { n: total })}
                   </span>
                 </Link>
               );
@@ -272,18 +270,18 @@ function NiveauGrid({ niveaux, onChoose }: { niveaux: NiveauNav[]; onChoose: (n:
             key={n.code}
             type="button"
             onClick={() => onChoose(n)}
-            aria-label={`Consulter le niveau ${n.label}`}
+            aria-label={t("Consulter le niveau {n}", { n: t(n.label) })}
             className="flex min-h-[140px] w-full flex-col justify-between rounded-lg border border-ink-soft/20 bg-paper-raised p-5 text-left transition-colors hover:border-highlight/60 hover:bg-highlight-soft/40 focus-visible:border-highlight/60"
           >
             <span className="flex items-center gap-3">
               <GraduationCap size={24} strokeWidth={1.5} aria-hidden="true" className="text-highlight-text" />
               <span className="block">
-                <span className="block font-serif-brand text-lg">{n.label}</span>
+                <span className="block font-serif-brand text-lg">{t(n.label)}</span>
                 <span className="block text-xs text-slate">{description ?? `${n.classes.length} classes`}</span>
               </span>
             </span>
             <span className="font-mono-tag text-[10px] text-slate">
-              {n.classes.reduce((acc, c) => acc + c.epreuves, 0)} épreuve(s) publiée(s)
+              {t("{n} épreuve(s) publiée(s)", { n: n.classes.reduce((acc, c) => acc + c.epreuves, 0) })}
             </span>
           </button>
         );

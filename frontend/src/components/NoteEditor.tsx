@@ -5,6 +5,7 @@ import type { Note } from "../api/types";
 import { useModalFocus } from "../lib/useModalFocus";
 import { MarkdownContent } from "./MarkdownContent";
 import { useToast } from "./Toast";
+import { t } from "../i18n";
 
 /**
  * Éditeur de note personnelle, en modale. Deux usages :
@@ -59,11 +60,11 @@ export function NoteEditor({
           contenu,
         });
       }
-      showToast(edition ? "Note modifiée." : "Note enregistrée — retrouvable dans ton profil.", "success");
+      showToast(edition ? t("Note modifiée.") : t("Note enregistrée — retrouvable dans ton profil."), "success");
       onSaved?.();
       onClose();
     } catch {
-      showToast("Échec de l'enregistrement de la note.", "error");
+      showToast(t("Échec de l'enregistrement de la note."), "error");
     } finally {
       setSaving(false);
     }
@@ -87,7 +88,7 @@ export function NoteEditor({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Fermer l'éditeur"
+            aria-label={t("Fermer l'éditeur")}
             className="relative p-1 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
           >
             <X size={18} strokeWidth={1.75} aria-hidden="true" />
@@ -97,14 +98,14 @@ export function NoteEditor({
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           {contexte.trim() && (
             <div className="rounded-lg border-l-4 border-highlight bg-highlight-soft/40 px-3 py-2">
-              <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">Passage associé</p>
+              <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">{t("Passage associé")}</p>
               <p className="line-clamp-3 text-xs text-ink-soft">{contexte.replace(/\s+/g, " ")}</p>
             </div>
           )}
 
           <div className="flex items-center justify-between">
             <p className="font-mono-tag text-[10px] text-ink-soft">
-              {apercu ? "Aperçu rendu" : "Contenu (Markdown, formules $...$ acceptées)"}
+              {apercu ? t("Aperçu rendu") : t("Contenu (Markdown, formules $...$ acceptées)")}
             </p>
             <button
               type="button"
@@ -112,7 +113,7 @@ export function NoteEditor({
               className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50"
             >
               {apercu ? <Pencil size={13} strokeWidth={1.75} aria-hidden="true" /> : <Eye size={13} strokeWidth={1.75} aria-hidden="true" />}
-              {apercu ? "Écrire" : "Aperçu"}
+              {apercu ? "Écrire" : t("Aperçu")}
             </button>
           </div>
 
@@ -123,7 +124,7 @@ export function NoteEditor({
               </div>
             ) : (
               <p className="min-h-[160px] rounded-md border border-ink-soft/15 bg-paper p-3 text-sm text-slate">
-                Rien à prévisualiser pour l'instant — repasse en mode « Écrire ».
+                {t("Rien à prévisualiser pour l'instant — repasse en mode « Écrire ».")}
               </p>
             )
           ) : (
@@ -131,7 +132,7 @@ export function NoteEditor({
               value={contenu}
               onChange={(e) => setContenu(e.target.value)}
               rows={7}
-              placeholder="Rédige ta note ici — définition, méthode, réponse de l'assistant…"
+              placeholder={t("Rédige ta note ici — définition, méthode, réponse de l'assistant…")}
               className="w-full rounded-md border border-ink-soft/25 bg-paper p-3 font-mono text-sm"
             />
           )}
@@ -143,7 +144,7 @@ export function NoteEditor({
             onClick={onClose}
             className="min-h-[44px] rounded-full border border-ink-soft/25 px-4 text-sm text-ink-soft"
           >
-            Annuler
+            {t("Annuler")}
           </button>
           <button
             type="button"

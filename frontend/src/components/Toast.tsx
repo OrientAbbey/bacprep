@@ -1,5 +1,6 @@
 import { CheckCircle2, Info, X, XCircle } from "lucide-react";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { t } from "../i18n";
 
 type ToastKind = "success" | "error" | "info";
 
@@ -52,12 +53,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const id = nextId.current++;
     setToasts((prev) => [...prev, { id, message, kind }]);
     const timer = setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
+      setToasts((prev) => prev.filter((x) => x.id !== id));
     }, AUTO_DISMISS_MS);
     timersRef.current.push(timer);
   }, []);
 
-  const dismiss = (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id));
+  const dismiss = (id: number) => setToasts((prev) => prev.filter((x) => x.id !== id));
 
   return (
     <ToastContext.Provider value={{ showToast }}>
@@ -67,20 +68,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         aria-live="polite"
         aria-atomic="true"
       >
-        {toasts.map((t) => {
-          const Icon = KIND_ICON[t.kind];
+        {toasts.map((toast) => {
+          const Icon = KIND_ICON[toast.kind];
           return (
             <div
-              key={t.id}
+              key={toast.id}
               role="status"
-              className={`pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-lg ${KIND_STYLES[t.kind]}`}
+              className={`pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-lg ${KIND_STYLES[toast.kind]}`}
             >
               <Icon size={16} strokeWidth={2} />
-              <p className="flex-1">{t.message}</p>
+              <p className="flex-1">{toast.message}</p>
               <button
                 type="button"
-                onClick={() => dismiss(t.id)}
-                aria-label="Fermer la notification"
+                onClick={() => dismiss(toast.id)}
+                aria-label={t("Fermer la notification")}
                 className="shrink-0 opacity-70 hover:opacity-100"
               >
                 <X size={14} strokeWidth={2} />

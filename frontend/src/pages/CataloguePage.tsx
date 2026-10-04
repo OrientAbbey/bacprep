@@ -8,6 +8,7 @@ import { MetaBadge } from "../components/MetaBadge";
 import { CatalogueSkeleton } from "../components/Skeleton";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
+import { t } from "../i18n";
 
 type CorrigeFiltre = "tous" | "avec" | "sans";
 type AccesFiltre = "tous" | "gratuit" | "ouvert" | "payant";
@@ -228,16 +229,16 @@ export function CataloguePage() {
         <div>
           {modeRecherche ? (
             <>
-              <h1 className="font-serif-brand text-2xl">Recherche dans tout le catalogue</h1>
+              <h1 className="font-serif-brand text-2xl">{t("Recherche dans tout le catalogue")}</h1>
               <p className="text-sm text-ink-soft">
-                Résultats pour «&nbsp;<strong>{query}</strong>&nbsp;» — toutes classes confondues.
+                {t("Résultats pour «\u00a0{q}\u00a0» — toutes classes confondues.", { q: query })}
               </p>
             </>
           ) : (
             <>
               <h1 className="font-serif-brand text-2xl">Classe de {classeLabel(classe ?? "")}</h1>
               <p className="text-sm text-ink-soft">
-                Épreuves publiées — filtre par série, matière, année et évaluation.
+                {t("Épreuves publiées — filtre par série, matière, année et évaluation.")}
               </p>
             </>
           )}
@@ -247,7 +248,7 @@ export function CataloguePage() {
           className="flex min-h-[40px] items-center gap-2 rounded-full border border-ink-soft/25 px-4 text-sm hover:bg-highlight-soft/40"
         >
           <ArrowLeft size={16} strokeWidth={1.75} aria-hidden="true" />
-          Accueil
+          {t("Accueil")}
         </button>
       </div>
 
@@ -264,31 +265,31 @@ export function CataloguePage() {
           <input
             value={champRecherche}
             onChange={(e) => setChampRecherche(e.target.value)}
-            placeholder="Rechercher dans tout le catalogue (matière, série, examen…)"
-            aria-label="Recherche globale"
+            placeholder={t("Rechercher dans tout le catalogue (matière, série, examen…)")}
+            aria-label={t("Recherche globale")}
             className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised pl-10 pr-4 text-sm"
           />
         </div>
         <button type="submit" className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper">
-          Rechercher
+          {t("Rechercher")}
         </button>
       </form>
 
       <div className="flex flex-wrap gap-4">
         <Combobox
-          label="Série"
+          label={t("Série")}
           value={filiere}
           onChange={setFiliere}
           options={filtres.filieres.map((f) => ({ value: f, label: f }))}
         />
         <Combobox
-          label="Matière"
+          label={t("Matière")}
           value={matiere}
           onChange={setMatiere}
           options={filtres.matieres.map((m) => ({ value: m, label: m }))}
         />
         <Combobox
-          label="Année"
+          label={t("Année")}
           value={annee}
           onChange={setAnnee}
           options={filtres.annees.map((a) => ({ value: a, label: a }))}
@@ -304,8 +305,8 @@ export function CataloguePage() {
       {/* Un libellé unique par groupe (pas répété sur chaque bouton) ;
           les boutons ne portent que la valeur capitalisée. */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
-        <span className="font-mono-tag text-[10px] text-ink-soft">Corrigé</span>
-        <div role="group" aria-label="Filtre par disponibilité du corrigé" className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
+        <span className="font-mono-tag text-[10px] text-ink-soft">{t("Corrigé")}</span>
+        <div role="group" aria-label={t("Filtre par disponibilité du corrigé")} className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
           {([["tous", "Tous"], ["avec", "Avec"], ["sans", "Sans"]] as [CorrigeFiltre, string][]).map(([v, label]) => (
             <button
               key={v}
@@ -313,12 +314,12 @@ export function CataloguePage() {
               aria-pressed={corrige === v}
               className={`min-h-[44px] rounded-full px-3 py-1.5 ${corrige === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
-        <span className="font-mono-tag text-[10px] text-ink-soft">Accès</span>
-        <div role="group" aria-label="Filtre par type d'accès" className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
+        <span className="font-mono-tag text-[10px] text-ink-soft">{t("Accès")}</span>
+        <div role="group" aria-label={t("Filtre par type d'accès")} className="flex gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px]">
           {([["tous", "Tous"], ["gratuit", "Gratuit"], ["ouvert", "Ouvert"], ["payant", "Payant"]] as [AccesFiltre, string][]).map(([v, label]) => (
             <button
               key={v}
@@ -326,7 +327,7 @@ export function CataloguePage() {
               aria-pressed={acces === v}
               className={`min-h-[44px] rounded-full px-3 py-1.5 ${acces === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
@@ -334,13 +335,13 @@ export function CataloguePage() {
 
       {historique.length > 0 && !modeRecherche && (
         <section>
-          <h2 className="mb-2 font-mono-tag text-xs text-ink-soft">Consultées récemment</h2>
+          <h2 className="mb-2 font-mono-tag text-xs text-ink-soft">{t("Consultées récemment")}</h2>
           <div className="scrollbar-hide flex gap-3 overflow-x-auto pb-2">
             {historique.map((h) => (
               <button
                 key={h.epreuve_id}
                 onClick={() => navigate(`/epreuve/${h.epreuve_id}`)}
-                aria-label={`Épreuve de ${h.matiere}, ${h.classe ? `${classeLabel(h.classe)} ` : ""}${h.annee}`}
+                aria-label={t("Épreuve de {matiere}, {detail}", { matiere: h.matiere, detail: `${h.classe ? `${classeLabel(h.classe)} ` : ""}${h.annee}` })}
                 className="min-w-[180px] shrink-0 rounded-lg border border-ink-soft/15 bg-paper-raised p-3 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
               >
                 <span className="block font-serif-brand text-sm">{h.matiere}</span>
@@ -357,7 +358,7 @@ export function CataloguePage() {
 
       <section aria-label={modeRecherche ? "Résultats de recherche" : "Épreuves"} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <h2 className="col-span-full font-mono-tag text-xs text-ink-soft">
-          {modeRecherche ? "RÉSULTATS" : modeTuiles ? "MATIÈRES" : "ÉPREUVES"}
+          {modeRecherche ? t("RÉSULTATS") : modeTuiles ? t("MATIÈRES") : t("ÉPREUVES")}
         </h2>
         {!modeRecherche && matiere && (
           <button
@@ -383,13 +384,13 @@ export function CataloguePage() {
             >
               <span className="font-serif-brand text-lg leading-snug">{m.matiere}</span>
               <span className="font-mono-tag text-[11px] text-slate">
-                {m.total} épreuve{m.total > 1 ? "s" : ""}
-                {m.gratuits > 0 ? ` · ${m.gratuits} gratuite${m.gratuits > 1 ? "s" : ""}` : ""}
+                {t(m.total > 1 ? "{n} épreuves" : "{n} épreuve", { n: m.total })}
+                {m.gratuits > 0 ? ` · ${t(m.gratuits > 1 ? "{n} gratuites" : "{n} gratuite", { n: m.gratuits })}` : ""}
               </span>
             </button>
           ))}
         {modeTuiles && matieres?.length === 0 && (
-          <p className="col-span-full text-sm text-slate">Aucune épreuve ne correspond à ces filtres.</p>
+          <p className="col-span-full text-sm text-slate">{t("Aucune épreuve ne correspond à ces filtres.")}</p>
         )}
         {erreur && !chargement && (
           <div role="alert" className="col-span-full rounded-lg border border-correction/30 bg-correction-soft p-4 text-correction">
@@ -399,7 +400,7 @@ export function CataloguePage() {
               onClick={() => loadFirstPage()}
               className="underline"
             >
-              Réessayer
+              {t("Réessayer")}
             </button>
           </div>
         )}
@@ -419,26 +420,26 @@ export function CataloguePage() {
               )}
             <button
               onClick={() => openEpreuve(e)}
-              aria-label={`Épreuve de ${e.matiere}, ${e.evaluation} ${e.annee}`}
+              aria-label={t("Épreuve de {matiere}, {detail}", { matiere: e.matiere, detail: `${e.evaluation} ${e.annee}` })}
               className="flex flex-col gap-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-4 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
             >
               <span className="flex items-start justify-between gap-2">
                 <span className="block font-serif-brand text-lg leading-snug">{e.matiere}</span>
                 {e.acces === "gratuit" && (
-                  <MetaBadge variant="pill" tone="valide" title="Contenu gratuit de découverte">
-                    Gratuit
+                  <MetaBadge variant="pill" tone="valide" title={t("Contenu gratuit de découverte")}>
+                    {t("Gratuit")}
                   </MetaBadge>
                 )}
                 {e.acces === "ouvert" && (
-                  <MetaBadge variant="pill" tone="valide" title="Déjà débloquée par ton abonnement">
+                  <MetaBadge variant="pill" tone="valide" title={t("Déjà débloquée par ton abonnement")}>
                     <LockOpen size={12} strokeWidth={2} aria-hidden="true" />
-                    Ouvert
+                    {t("Ouvert")}
                   </MetaBadge>
                 )}
                 {e.acces === "payant" && (
-                  <MetaBadge variant="pill" tone="correction" title="Abonnement requis">
+                  <MetaBadge variant="pill" tone="correction" title={t("Abonnement requis")}>
                     <Lock size={12} strokeWidth={2} aria-hidden="true" />
-                    Payant
+                    {t("Payant")}
                   </MetaBadge>
                 )}
               </span>
@@ -459,9 +460,9 @@ export function CataloguePage() {
               <span className="flex flex-wrap items-center gap-1.5">
                 <MetaBadge>{e.filieres.join(",")}</MetaBadge>
                 {e.corrige_disponible && (
-                  <MetaBadge tone="valide" title="Le corrigé de cette épreuve est disponible">
+                  <MetaBadge tone="valide" title={t("Le corrigé de cette épreuve est disponible")}>
                     <Check size={12} strokeWidth={2} aria-hidden="true" />
-                    Corrigé
+                    {t("Corrigé")}
                   </MetaBadge>
                 )}
               </span>
@@ -479,21 +480,21 @@ export function CataloguePage() {
         {!chargement && !modeTuiles && epreuves.length === 0 && initialized && (
           <p className="col-span-full text-sm text-slate">
             {modeRecherche
-              ? "Aucune épreuve ne correspond à cette recherche."
-              : "Aucune épreuve ne correspond à ces filtres."}
+              ? t("Aucune épreuve ne correspond à cette recherche.")
+              : t("Aucune épreuve ne correspond à ces filtres.")}
           </p>
         )}
       </section>
 
       {erreurSuite && (
         <div role="alert" className="flex items-center justify-center gap-3 text-sm text-correction">
-          <span>Le chargement des épreuves supplémentaires a échoué.</span>
+          <span>{t("Le chargement des épreuves supplémentaires a échoué.")}</span>
           <button
             type="button"
             onClick={loadMore}
             className="underline"
           >
-            Réessayer
+            {t("Réessayer")}
           </button>
         </div>
       )}

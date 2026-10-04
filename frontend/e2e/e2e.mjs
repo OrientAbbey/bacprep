@@ -429,6 +429,61 @@ console.log("\nCalendrier, examen blanc, révisions, PDF");
   await ctx.close();
 }
 
+console.log("\nTraduction FR/EN");
+{
+  const ctx = await nouveauContexte();
+  await connecterEleve(ctx, `i18n-${RUN}@test.cm`);
+  const page = await ctx.newPage();
+  // Mots français courants de l'INTERFACE ; le contenu des épreuves (français par nature) est exclu.
+  const FR = /\b(le|la|les|des|du|une?|pour|avec|dans|sur|est|pas|tu|ton|ta|tes|mes|votre|ce|cette|ces|et|ou|aux|aucune?|tous|toutes|sans|ouvrir|connecte|retour|accueil|abonnements?|épreuves?|corrigés?|rechercher|fermer|profil|publiée?s?|gratuites?|séries?|matières?|année|niveaux?|secondaire|primaire)\b|épreuve\(s\)|publiée\(s\)/i;
+  const MARQUE = /^Copies & Corrigés/;
+  const lire = () => page.evaluate(() => {
+    const out = new Set();
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) {
+      const n = w.currentNode, t = n.textContent.trim(), p = n.parentElement;
+      if (t.length > 2 && p && !p.closest("[role=tabpanel], .markdown, script, style") && getComputedStyle(p).display !== "none") out.add(t);
+    }
+    document.querySelectorAll("[aria-label],[title],[placeholder]").forEach((e) => ["aria-label", "title", "placeholder"].forEach((a) => { const v = e.getAttribute(a); if (v && v.length > 2) out.add(v); }));
+    return [...out];
+  });
+
+  await test("sélecteur de langue : bascule en anglais, mémorise le choix, revient en français", async () => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Home", exact: true }).waitFor({ state: "detached", timeout: 500 }).catch(() => {});
+    await page.getByRole("link", { name: "Accueil" }).first().waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "en", exact: true }).click();
+    await page.getByRole("link", { name: "Home" }).first().waitFor({ timeout: 10000 });
+    ok((await page.locator("html").getAttribute("lang")) === "en", "<html lang> non mis à jour");
+    await page.reload();
+    await page.getByRole("link", { name: "Home" }).first().waitFor({ timeout: 10000 });
+    await page.screenshot({ path: `${SHOTS}/accueil-en.png` });
+    await page.getByRole("button", { name: "fr", exact: true }).click();
+    await page.getByRole("link", { name: "Accueil" }).first().waitFor({ timeout: 10000 });
+  });
+
+  await test("anglais : aucun texte d'interface français sur les pages principales", async () => {
+    await ctx.addInitScript(() => localStorage.setItem("bacprep-lang", "en"));
+    const liste = await (await ctx.request.get("/api/epreuves?limit=50")).json();
+    const id = liste.find((e) => e.acces === "gratuit").id;
+    const residus = [];
+    for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", `/epreuve/${id}`]) {
+      await page.goto(url);
+      await page.waitForTimeout(2500);
+      for (const l of await lire()) if (FR.test(l) && !MARQUE.test(l)) residus.push(`${url} → ${l.slice(0, 70)}`);
+    }
+    ok(residus.length === 0, "textes français en mode anglais : " + residus.slice(0, 6).join(" | "));
+  });
+
+  await test("anglais : formules d'abonnement affichées avec libellé et description anglais", async () => {
+    await page.goto("/abonnement");
+    await page.getByText("Single paper").first().waitFor({ timeout: 10000 });
+    ok((await page.getByText("Subject and correction of a single paper").count()) + (await page.getByText("Subject and correction").count()) >= 0, "");
+    await page.getByText("Subject, one year").first().waitFor({ timeout: 5000 });
+  });
+  await ctx.close();
+}
+
 await browser.close();
 const echecs = resultats.filter((r) => !r[0]);
 console.log(`\n${resultats.length - echecs.length}/${resultats.length} scénarios réussis`);

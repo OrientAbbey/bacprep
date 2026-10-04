@@ -5,6 +5,7 @@ import type { MotifSignalement } from "../api/types";
 import { MOTIFS } from "../lib/motifs";
 import { useModalFocus } from "../lib/useModalFocus";
 import { useToast } from "./Toast";
+import { t } from "../i18n";
 
 /**
  * Modale de signalement d'un problème sur une épreuve (bouton drapeau du
@@ -32,14 +33,14 @@ export function SignalementModal({
     setSending(true);
     try {
       await api.post(`/api/epreuves/${epreuveId}/signalements`, { motif, message: message.trim() });
-      showToast("Signalement envoyé — merci, l'équipe va vérifier le contenu.", "success");
+      showToast(t("Signalement envoyé — merci, l'équipe va vérifier le contenu."), "success");
       onClose();
     } catch (err: unknown) {
       const detail = (err as { detail?: unknown }).detail;
       showToast(
         typeof detail === "string"
           ? detail
-          : "Le signalement n'a pas pu être envoyé — réessaie.",
+          : t("Le signalement n'a pas pu être envoyé — réessaie."),
         "error"
       );
     } finally {
@@ -53,7 +54,7 @@ export function SignalementModal({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Signaler un problème"
+      aria-label={t("Signaler un problème")}
     >
       <div
         ref={dialogRef}
@@ -61,11 +62,11 @@ export function SignalementModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-ink-soft/15 px-4 py-3">
-          <p className="font-serif-brand text-lg">Signaler un problème</p>
+          <p className="font-serif-brand text-lg">{t("Signaler un problème")}</p>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Fermer"
+            aria-label={t("Fermer")}
             className="relative p-1 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
           >
             <X size={18} strokeWidth={1.75} aria-hidden="true" />
@@ -73,8 +74,8 @@ export function SignalementModal({
         </div>
 
         <div className="space-y-3 p-4">
-          <p className="font-mono-tag text-[10px] text-ink-soft">Quel est le problème ?</p>
-          <div role="radiogroup" aria-label="Motif du signalement" className="space-y-1.5">
+          <p className="font-mono-tag text-[10px] text-ink-soft">{t("Quel est le problème ?")}</p>
+          <div role="radiogroup" aria-label={t("Motif du signalement")} className="space-y-1.5">
             {MOTIFS.map((m) => (
               <button
                 key={m.value}
@@ -102,7 +103,7 @@ export function SignalementModal({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             rows={3}
-            placeholder="Détails (optionnel) — question concernée, ce qui cloche…"
+            placeholder={t("Détails (optionnel) — question concernée, ce qui cloche…")}
             className="w-full rounded-md border border-ink-soft/25 bg-paper p-3 text-sm"
           />
         </div>
@@ -113,7 +114,7 @@ export function SignalementModal({
             onClick={onClose}
             className="min-h-[44px] rounded-full border border-ink-soft/25 px-4 text-sm text-ink-soft"
           >
-            Annuler
+            {t("Annuler")}
           </button>
           <button
             type="button"
@@ -122,7 +123,7 @@ export function SignalementModal({
             className="flex min-h-[44px] items-center gap-2 rounded-full bg-ink px-5 text-sm font-medium text-paper disabled:opacity-50"
           >
             <Send size={15} strokeWidth={1.75} aria-hidden="true" />
-            Envoyer
+            {t("Envoyer")}
           </button>
         </div>
       </div>
