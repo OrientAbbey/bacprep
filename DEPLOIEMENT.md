@@ -236,6 +236,30 @@ console `/admin` (et promouvoir d'autres comptes en **admin délégué** depuis 
 table Utilisateurs — les deux doivent AUSSI se connecter comme élève : le
 lien admin n'apparaît que pour ces comptes).
 
+## Mise en service de la refonte d'octobre 2026 (à faire une fois)
+
+Les nouvelles variables sont déjà dans `render.yaml` (valeurs par défaut) ; seuls les secrets se saisissent dans Render.
+
+1. **Tables nouvelles** (`plans`, `evenements`, `essais`) : créées automatiquement au démarrage ; les
+   formules par défaut sont insérées si la table `plans` est vide. **Aucune table existante n'est modifiée.**
+2. **Recherche sans accents** : l'extension PostgreSQL `unaccent` est activée au démarrage
+   (`CREATE EXTENSION IF NOT EXISTS unaccent`, extension « de confiance » : testée avec un rôle non
+   superutilisateur). Si l'activation échoue, la recherche reste sensible aux accents (avertissement dans les logs).
+3. **IP cliente** : après déploiement, appeler `GET /api/health/ip` avec un faux en-tête
+   `True-Client-IP: 1.2.3.4`. Si la réponse renvoie `1.2.3.4`, l'en-tête est forgeable : mettre
+   `TRUST_CLIENT_IP_HEADERS=0` dans Render (les limiteurs se rabattent sur `X-Forwarded-For`).
+4. **Sauvegarde hebdomadaire** : définir `CRON_TOKEN` dans Render (≥ 24 caractères, p. ex.
+   `python -c "import secrets;print(secrets.token_urlsafe(32))"`) et le même secret `CRON_TOKEN` dans
+   GitHub (Settings › Secrets › Actions). Variable GitHub facultative `APP_URL` si l'adresse change.
+   Les exports s'accumulent dans le stockage objet : les supprimer depuis l'onglet « Sauvegardes » (Tigris
+   gratuit : 5 Go).
+5. **Keep-alive Supabase** : le workflow `keepalive.yml` appelle `/api/health` chaque jour (SELECT 1).
+   Render, lui, interroge `/api/health/live` (sans base).
+6. **Déploiement après CI** : `autoDeployTrigger: checksPass` ne s'applique qu'à un service géré par le
+   Blueprint ; sinon, dans le tableau de bord : Settings › Build & Deploy › Auto-Deploy = « After CI Checks Pass ».
+7. **Journaux** : `LOG_FORMAT=json` (une ligne JSON par requête, sans IP ni corps ; identifiant dans `X-Request-ID`).
+8. **Paiement** : en pause, voir `PAIEMENT.md`. Laisser `DEMO_MODE=false` en production.
+
 ## Déploiement Render
 
 Le `render.yaml` décrit un **service unifié** (un seul Web Service Python /

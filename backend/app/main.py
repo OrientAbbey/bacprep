@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,11 +29,12 @@ from fastapi.staticfiles import StaticFiles
 from .core import store
 from .core.catalogue import seed_database_if_empty
 from .core.config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
-from .core.logging_config import get_logger, setup_logging
+from .core.logging_config import log_json_actif, get_logger, setup_logging
 from .db import Base, SessionLocal, engine
 from .routers import (
     admin_assistant,
     calendrier,
+    cron,
     essais,
     admin_epreuves,
     admin_import,
@@ -290,6 +293,34 @@ _CSP = (
 
 
 @app.middleware("http")
+async def journal_requete(request: Request, call_next):
+    """Mode LOG_FORMAT=json : une ligne par requête (méthode, chemin, statut,
+    durée, identifiant de requête). Ni IP, ni requête, ni corps : pas de donnée
+    personnelle dans les journaux. L'identifiant revient dans `X-Request-ID`
+    pour relier un signalement d'erreur à sa ligne de log."""
+    if not log_json_actif():
+        return await call_next(request)
+    import secrets
+    import time
+
+    rid = secrets.token_hex(6)
+    debut = time.perf_counter()
+    statut = 500
+    try:
+        response = await call_next(request)
+        statut = response.status_code
+        response.headers["X-Request-ID"] = rid
+        return response
+    finally:
+        chemin = request.url.path
+        if not (chemin.startswith("/assets/") or chemin == "/api/admin/heartbeat"):
+            logging.getLogger("bacprep.requete").info(
+                "requête",
+                extra={"requete_id": rid, "methode": request.method, "chemin": chemin, "statut": statut, "duree_ms": round((time.perf_counter() - debut) * 1000)},
+            )
+
+
+@app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -385,6 +416,7 @@ app.include_router(admin_plans.router)
 app.include_router(calendrier.public)
 app.include_router(calendrier.admin)
 app.include_router(essais.router)
+app.include_router(cron.router)
 app.include_router(admin_notifications.router)
 app.include_router(admin_assistant.router)
 app.include_router(assistant.router)
@@ -402,6 +434,12 @@ def health() -> dict:
 
     with SessionLocal() as db:
         db.execute(text("SELECT 1"))
+    return {"status": "ok"}
+
+
+@app.get("/api/health/live")
+def health_live() -> dict:
+    """Sonde de vivacité SANS base de données (healthCheckPath de Render)."""
     return {"status": "ok"}
 
 

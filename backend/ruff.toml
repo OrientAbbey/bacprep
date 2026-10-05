@@ -1,0 +1,8 @@
+# Lint minimal : erreurs réelles (pyflakes + pycodestyle « E9 »), pas de reformatage massif.
+line-length = 120
+target-version = "py312"
+[lint]
+select = ["F", "E9", "B006", "B008"]
+ignore = ["B008"]  # Depends(...) en valeur par défaut : idiome FastAPI
+[lint.per-file-ignores]
+"tests/*" = ["F841"]  # variables « témoin » volontairement non lues dans certains tests

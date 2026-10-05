@@ -13,9 +13,8 @@ désigner un élève par son identifiant."""
 from __future__ import annotations
 
 import inspect
-import json
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable
 
 from fastapi import BackgroundTasks
 from pydantic import BaseModel, Field

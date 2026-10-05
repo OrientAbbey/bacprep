@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-import uuid
 from datetime import timedelta
 from typing import Optional
 

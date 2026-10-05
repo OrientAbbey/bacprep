@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-import pytest
 
 
 # ---------- Mode visiteur ----------
@@ -189,7 +188,6 @@ def test_admin_ne_peut_pas_bannir_sa_liste_blanche(admin):
     # Bannir un email de la liste blanche : créons-le comme user puis tentons.
     from app.core import store
     from app.db import SessionLocal
-    from app.db_models import UserORM
 
     with SessionLocal() as db:
         admin_user = store.get_or_create_user(db, "admin@example.com", "Admin Test")

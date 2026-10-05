@@ -88,7 +88,6 @@ def test_session_duree_maximale_absolue(eleve, monkeypatch):
     prime sur le glissement."""
     from datetime import timedelta as td
 
-    from app.core import store
     from app.db import SessionLocal, utc_now
     from app.db_models import SessionORM, UserORM
 

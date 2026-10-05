@@ -67,7 +67,6 @@ def test_seul_le_root_promouvoit(client, admin):
 def test_root_intouchable(client, admin):
     from app.core import store
     from app.db import SessionLocal
-    from app.db_models import UserORM
 
     with SessionLocal() as db:
         root = store.get_or_create_user(db, "admin@example.com", "Admin Test")

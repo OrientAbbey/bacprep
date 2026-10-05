@@ -8,7 +8,6 @@ les 4 méthodes historiques n'ont pas régressé.
 """
 from __future__ import annotations
 
-import io
 
 import pytest
 

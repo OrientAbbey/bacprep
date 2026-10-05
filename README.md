@@ -133,6 +133,36 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   `python -m scripts_dev.migrate_2026_09` (colonnes `users` : `consent_ia`,
   `consent_notes`, `banni`, `banni_motif`…).
 
+## Refonte d'octobre 2026 — ce qui a changé
+
+- **Élèves** : catalogue en tuiles par matière puis groupé par année · examen blanc chronométré
+  (corrigé et assistant masqués) avec note /20 · révision espacée calculée à partir des essais · page
+  « Calendrier et résultats » + compte à rebours · export PDF d'un sujet (impression navigateur) · taille
+  du texte réglable · barre d'onglets mobile · **interface FR/EN** (`src/i18n.ts`, `src/locales/en.json`) ·
+  **PWA** installable avec **lecture hors-ligne** (bouton « Hors-ligne » du lecteur).
+- **Admin** : onglets **Formules** (prix/durées, FR/EN) et **Calendrier** · colonne « Épreuves » bornée et
+  collante · **assistant IA sur tous les onglets** : il lit un résumé de l'onglet et *propose* des actions
+  (liste blanche dans `core/admin_tools.py`) que l'admin confirme d'un clic ; aucun outil de suppression,
+  de restauration ni de gestion des rôles.
+- **Sécurité** : quotas IA journaliers (par compte et global), contexte de l'assistant vérifié côté serveur,
+  IP cliente configurable, Origin du WebSocket, CSP en rapport seul, jeton de session `token_urlsafe`.
+- **Qualité / ops** : CI GitHub (pytest SQLite **et PostgreSQL**, vitest, build, ruff, **E2E Chromium**),
+  test de contrat frontend↔API, test de couverture de `.env.example`, logs JSON, sauvegarde hebdomadaire
+  planifiée, keep-alive Supabase.
+- **Paiement** : en pause (`PAIEMENT.md`).
+
+### Lancer les tests
+
+```bash
+# Backend (SQLite) puis PostgreSQL
+cd backend && pip install -r requirements-dev.txt && pytest -q
+TEST_DATABASE_URL="postgresql+psycopg2://bacprep:bacprep@127.0.0.1/bacprep_test" pytest -q
+# Frontend
+cd frontend && npm test
+# Navigateur réel (serveur lancé avec AUTH_MODE=mock, voir frontend/e2e/e2e.mjs)
+cd frontend && npm run build && E2E_URL=http://localhost:8000 E2E_ADMIN_TOKEN=... npm run e2e
+```
+
 ## Démarrage local
 
 ### Backend

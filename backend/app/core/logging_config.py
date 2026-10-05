@@ -1,7 +1,9 @@
 """Rotating file + console logging, set up once at startup."""
 from __future__ import annotations
 
+import json
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 
 from ..db import LOGS_DIR
@@ -10,6 +12,29 @@ _CONFIGURED = False
 
 MAX_BYTES = 5 * 1024 * 1024  # 5 Mo
 BACKUP_COUNT = 5
+
+
+class JsonFormatter(logging.Formatter):
+    """Une ligne JSON par évènement (LOG_FORMAT=json) : exploitable par les outils
+    de logs de Render. Les champs passés via `extra={...}` sont ajoutés tels quels."""
+
+    _STD = set(vars(logging.LogRecord("", 0, "", 0, "", None, None))) | {"message", "asctime", "taskName"}
+
+    def format(self, record: logging.LogRecord) -> str:
+        d = {
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "niveau": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        d.update({k: v for k, v in record.__dict__.items() if k not in self._STD and not k.startswith("_")})
+        if record.exc_info:
+            d["exception"] = self.formatException(record.exc_info)
+        return json.dumps(d, ensure_ascii=False, default=str)
+
+
+def log_json_actif() -> bool:
+    return os.getenv("LOG_FORMAT", "text").strip().lower() == "json"
 
 
 class _AccessQuietFilter(logging.Filter):
@@ -41,8 +66,10 @@ def setup_logging() -> None:
     root.setLevel(logging.INFO)
     root.propagate = False
 
-    fmt = logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+    fmt: logging.Formatter = (
+        JsonFormatter()
+        if log_json_actif()
+        else logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
     )
 
     app_handler = RotatingFileHandler(
@@ -73,6 +100,10 @@ def setup_logging() -> None:
     _quiet = _AccessQuietFilter()
     for _name in ("uvicorn", "uvicorn.access"):
         logging.getLogger(_name).addFilter(_quiet)
+    if log_json_actif():
+        # Le middleware `journal_requete` (main.py) émet déjà UNE ligne JSON par
+        # requête : on coupe l'accès texte d'uvicorn pour ne pas doubler.
+        logging.getLogger("uvicorn.access").disabled = True
 
     _CONFIGURED = True
 

@@ -14,7 +14,7 @@ import pytest
 from app.core.export_service import NOM_INDEX, NOM_MANIFESTE, PREFIXE
 from app.core.restore_service import MODE_DISASTER
 from app.core.storage import get_storage
-from app.db_models import Base, EpreuveFileORM, EpreuveORM
+from app.db_models import EpreuveFileORM, EpreuveORM
 
 
 def _purger(db) -> None:

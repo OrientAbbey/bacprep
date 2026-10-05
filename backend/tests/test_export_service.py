@@ -18,7 +18,6 @@ import zipfile
 
 import pytest
 
-from app.core import export_service
 from app.core.export_service import (
     NOM_INDEX,
     NOM_LISEZMOI,
@@ -40,7 +39,6 @@ def _epreuve(
     filieres=("D",),
 ) -> str:
     """Crée une épreuve publiée avec un sujet, par l'API d'administration."""
-    from app.db import utc_now
 
     from app.db_models import EpreuveORM
 

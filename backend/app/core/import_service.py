@@ -169,7 +169,7 @@ def _import_markdown(
 
     if path.stat().st_size > MAX_MARKDOWN_BYTES:
         report["erreurs"].append(
-            {"fichier": str(path.relative_to(root)), "erreur": f"markdown trop volumineux (>2 Mo)"}
+            {"fichier": str(path.relative_to(root)), "erreur": "markdown trop volumineux (>2 Mo)"}
         )
         return None
     try:

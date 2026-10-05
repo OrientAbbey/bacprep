@@ -15,7 +15,12 @@ services:
     # monte frontend/dist à l'import.
     buildCommand: npm --prefix ../frontend ci && npm --prefix ../frontend run build && pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/health
+    # Déploiement automatique SEULEMENT si la CI GitHub (.github/workflows/ci.yml) est verte.
+    autoDeployTrigger: checksPass
+    # Sonde LÉGÈRE (sans base) : une base momentanément injoignable (ex. projet Supabase
+    # en pause) ne doit pas faire redémarrer l'instance en boucle. /api/health (avec
+    # SELECT 1) sert au keep-alive quotidien de GitHub Actions.
+    healthCheckPath: /api/health/live
     envVars:
       - key: PYTHON_VERSION
         value: "3.13.5" # version épinglée (le défaut 3.14 peut casser des wheels)
@@ -96,3 +101,19 @@ services:
         value: "openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.8-27b"
       - key: LLM_CONCURRENCY_LIMIT
         value: "5"
+      # --- Quotas de l'assistant élève (coût LLM), fenêtre de 24 h glissantes ---
+      - key: ASSISTANT_DAILY_LIMIT
+        value: "60"
+      - key: ASSISTANT_GLOBAL_DAILY_LIMIT
+        value: "1500"
+      # --- IP cliente (limiteurs) : voir .env.example et DEPLOIEMENT.md (contrôle /api/health/ip) ---
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: TRUST_CLIENT_IP_HEADERS
+        value: "1"
+      # --- Journaux JSON (une ligne par requête) ---
+      - key: LOG_FORMAT
+        value: json
+      # --- Sauvegarde hebdomadaire déclenchée par GitHub Actions (backup.yml) ---
+      - key: CRON_TOKEN
+        sync: false # >= 24 caractères ; même valeur dans le secret GitHub CRON_TOKEN

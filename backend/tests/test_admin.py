@@ -290,7 +290,7 @@ def test_admin_detail_resigne_les_urls_images(admin, epreuve_gratuite):
     cas = detail["sujets"][0]["contenu_markdown"]
     assert stale not in cas
     m = re.search(
-        rf"!\[figure\]\(/api/files/([0-9a-z]+)\?token=([^)#]+)#w=300\)",
+        r"!\[figure\]\(/api/files/([0-9a-z]+)\?token=([^)#]+)#w=300\)",
         cas,
     )
     assert m, cas
