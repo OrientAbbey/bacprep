@@ -27,7 +27,9 @@ export function ExamenBlanc({
   const [note, setNote] = useState("");
   const debut = useRef(0);
 
-  useEffect(() => onChange(phase === "composition"), [phase, onChange]);
+  useEffect(() => {
+    onChange(phase === "composition");
+  }, [phase, onChange]);
 
   useEffect(() => {
     if (phase !== "composition") return;

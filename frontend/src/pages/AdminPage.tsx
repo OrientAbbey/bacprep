@@ -3,6 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
+import { AdminAssistantGlobal } from "./admin/AdminAssistantGlobal";
 import { CalendrierPanel } from "./admin/CalendrierPanel";
 import { EpreuvesPanel } from "./admin/EpreuvesPanel";
 import { ImportPanel } from "./admin/ImportPanel";
@@ -44,6 +45,8 @@ export function AdminPage() {
   // profond depuis le journal d'audit ou un signet — les onglets restent
   // ensuite pilotés par les boutons (pas de synchronisation bidirectionnelle
   // volontaire pour garder l'URL stable).
+  // Incrémenté après une action confirmée de l'assistant : remonte le panneau actif (données à jour).
+  const [rafraichir, setRafraichir] = useState(0);
   const [tab, setTab] = useState<Onglet>(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
     return (["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "formules", "calendrier", "journal", "signalements", "notifications"] as const).includes(t as never)
@@ -378,6 +381,7 @@ export function AdminPage() {
             onEpreuvesChange={() => loadStats(token)}
           />
         </div>
+        <div key={rafraichir}>
         {tab === "import" ? (
           <ImportPanel token={token} />
         ) : tab === "sauvegardes" ? (
@@ -406,6 +410,18 @@ export function AdminPage() {
           // Onglet « épreuves » : contenu déjà rendu (et conservé monté)
           // dans la div masquée ci-dessus — rien d'autre à afficher ici.
           null
+        )}
+        </div>
+        {/* Assistant de tous les onglets sauf Épreuves, qui a son propre assistant d'édition. */}
+        {tab !== "epreuves" && (
+          <AdminAssistantGlobal
+            token={token}
+            onglet={tab}
+            onAction={() => {
+              setRafraichir((n) => n + 1);
+              loadStats(token);
+            }}
+          />
         )}
       </div>
     </div>

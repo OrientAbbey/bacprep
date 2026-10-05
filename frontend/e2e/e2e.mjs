@@ -576,6 +576,78 @@ console.log("\nPWA et lecture hors-ligne");
   await ctx.close();
 }
 
+console.log("\nAssistant IA du back-office (tous onglets)");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterAdmin(ctx);
+  const page = await ctx.newPage();
+  const sse = (texte) => `data: ${JSON.stringify({ type: "chunk", text: texte })}\n\ndata: ${JSON.stringify({ type: "done", conversation: null })}\n\n`;
+  // Le LLM est simulé (aucune clé en test) ; tout le reste est réel : prompt, /execute, base PostgreSQL, rafraîchissement.
+  async function repondre(texte) {
+    await page.route("**/api/admin/assistant/ask", (route) => {
+      page.__requete = JSON.parse(route.request().postData());
+      route.fulfill({ status: 200, contentType: "text/event-stream", body: sse(texte) });
+    });
+  }
+  const plans = (await (await ctx.request.get("/api/admin/plans")).json()).plans;
+  const plan = plans.find((p) => p.scope === "epreuve" && p.actif);
+  await page.goto("/admin");
+  await page.getByRole("tab", { name: "Formules" }).click();
+  await page.getByText("Les formules actives sont proposées").waitFor({ timeout: 10000 });
+
+  await test("l'assistant est disponible sur l'onglet Formules, envoie l'onglet courant", async () => {
+    await repondre(`Je passe l'épreuve à 777 FCFA.\n\n\`\`\`action\n${JSON.stringify({ outil: "plan_modifier", args: { id: plan.id, prix: 777 } })}\n\`\`\`\n`);
+    await page.getByRole("button", { name: "Assistant", exact: true }).filter({ visible: true }).click();
+    await page.getByLabel("Question à l'assistant").fill("Passe l'épreuve à 777 FCFA");
+    await page.getByRole("button", { name: "Envoyer" }).click();
+    await page.getByText("Modifier une formule d'abonnement").waitFor({ timeout: 10000 });
+    ok(page.__requete.onglet === "formules", "onglet envoyé : " + page.__requete.onglet);
+    ok(/777/.test(await page.locator("pre").last().innerText()), "arguments non affichés avant confirmation");
+    const avant = (await (await ctx.request.get("/api/admin/plans")).json()).plans.find((p) => p.id === plan.id).prix;
+    ok(avant === plan.prix, "le prix a changé AVANT la confirmation !");
+    await page.screenshot({ path: `${SHOTS}/assistant-admin.png` });
+  });
+
+  await test("« Confirmer » exécute l'action : base mise à jour, journal, panneau rafraîchi", async () => {
+    await page.getByRole("button", { name: "Confirmer", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "Action exécutée" }).waitFor({ timeout: 10000 });
+    const p = (await (await ctx.request.get("/api/admin/plans")).json()).plans.find((x) => x.id === plan.id);
+    ok(p.prix === 777, "prix en base : " + p.prix);
+    await page.waitForFunction(() => [...document.querySelectorAll("input[type=number]")].some((i) => i.value === "777"), null, { timeout: 8000 });
+    const ev = await (await ctx.request.get("/api/admin/events?limit=20")).json();
+    ok(JSON.stringify(ev).includes("assistant_action"), "action absente du journal");
+    await ctx.request.patch(`/api/admin/plans/${plan.id}`, { data: { prix: plan.prix } });
+  });
+
+  await test("« Ignorer » n'exécute rien ; une action interdite proposée par le modèle est refusée par le serveur", async () => {
+    await page.unroute("**/api/admin/assistant/ask");
+    await repondre(`Je propose :\n\`\`\`action\n${JSON.stringify({ outil: "plan_modifier", args: { id: plan.id, prix: 555 } })}\n\`\`\`\n\`\`\`action\n${JSON.stringify({ outil: "utilisateur_supprimer", args: { id: "x" } })}\n\`\`\`\n`);
+    await page.getByLabel("Question à l'assistant").fill("Fais deux choses");
+    await page.getByRole("button", { name: "Envoyer" }).click();
+    await page.getByText("utilisateur_supprimer").waitFor({ timeout: 10000 });
+    const cartes = page.getByRole("button", { name: "Ignorer", exact: true });
+    await cartes.first().click();
+    await page.getByText("Ignorée.").waitFor();
+    await page.getByRole("button", { name: "Confirmer", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "Échec" }).waitFor({ timeout: 10000 });
+    const p = (await (await ctx.request.get("/api/admin/plans")).json()).plans.find((x) => x.id === plan.id);
+    ok(p.prix === plan.prix, "une action ignorée ou refusée a modifié la base : " + p.prix);
+  });
+
+  await test("onglet Calendrier : question sur l'onglet (le résumé vient du serveur) et pas de doublon d'assistant sur Épreuves", async () => {
+    await page.unroute("**/api/admin/assistant/ask");
+    await repondre("Il y a des événements au calendrier.");
+    await page.getByRole("tab", { name: "Calendrier" }).click();
+    await page.getByLabel("Question à l'assistant").fill("Que contient le calendrier ?");
+    await page.getByRole("button", { name: "Envoyer" }).click();
+    await page.getByText("Il y a des événements au calendrier.").waitFor({ timeout: 10000 });
+    ok(page.__requete.onglet === "calendrier", "onglet : " + page.__requete.onglet);
+    await page.getByRole("tab", { name: "Épreuves" }).click();
+    ok((await page.getByLabel("Question à l'assistant").count()) === 0, "l'assistant global ne doit pas apparaître sur l'onglet Épreuves");
+  });
+  await ctx.close();
+}
+
 await browser.close();
 const echecs = resultats.filter((r) => !r[0]);
 console.log(`\n${resultats.length - echecs.length}/${resultats.length} scénarios réussis`);

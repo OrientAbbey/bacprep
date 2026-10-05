@@ -133,14 +133,15 @@ def _demo_fallback_admin(epreuve: dict, question: str) -> str:
 
 
 async def ask_admin_assistant_stream(
-    epreuve: dict, question: str, historique: list[dict]
+    epreuve: dict, question: str, historique: list[dict], prompt: str | None = None
 ) -> AsyncIterator[str]:
     """Flux de réponse de l'assistant admin : Gemini → Groq → mode démo.
 
     Même mécanique que `assistant.ask_assistant_stream`, sans images
     (le contexte est du Markdown brut saisi dans l'éditeur, pas un passage
     sélectionné) et sans paywall : l'admin a accès à tout."""
-    prompt = build_admin_prompt(epreuve, question, historique)
+    # `prompt` fourni : onglet hors édition d'épreuve (voir core/admin_tools.prompt_onglet).
+    prompt = prompt or build_admin_prompt(epreuve, question, historique)
     async with assistant_llm._get_semaphore():
         got_any = False
         async for chunk in assistant_llm._stream_gemini(prompt, []):

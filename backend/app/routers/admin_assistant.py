@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session
 from starlette.requests import ClientDisconnect
 
@@ -76,6 +77,9 @@ class AdminAskIn(BaseModel):
     historique: list[dict] = Field(default_factory=list, max_length=100)
     epreuve: dict = Field(default_factory=dict)
     epreuve_id: str | None = Field(default=None, max_length=64)
+    # Onglet du back-office d'où vient la question : autre que l'édition d'une
+    # épreuve, le contexte est un résumé de l'onglet et l'assistant peut proposer des actions.
+    onglet: str | None = Field(default=None, max_length=24)
 
     @field_validator("question")
     @classmethod
@@ -160,6 +164,16 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
     épreuve ne se font qu'à sa sauvegarde réelle par l'admin)."""
     _ask_limiter.check(f"{lock.email}|{client_ip(request)}")
 
+    from ..core import admin_tools
+
+    # Voie « onglet » : jamais persistée ; le résumé est calculé ICI (session valide).
+    prompt_onglet = None
+    if payload.onglet and payload.onglet in admin_tools.ONGLETS:
+        prompt_onglet = admin_tools.prompt_onglet(
+            payload.onglet, admin_tools.resume_onglet(db, payload.onglet), payload.question, payload.historique
+        )
+        payload.epreuve_id = None
+
     persiste = bool(payload.epreuve_id)
     conv = None
     if persiste:
@@ -186,7 +200,7 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
     async def event_stream():
         accumulated = ""
         try:
-            async for chunk in ask_admin_assistant_stream(payload.epreuve, payload.question, messages):
+            async for chunk in ask_admin_assistant_stream(payload.epreuve, payload.question, messages, prompt_onglet):
                 accumulated += chunk
                 yield f"data: {json.dumps({'type': 'chunk', 'text': chunk}, ensure_ascii=False)}\n\n"
         except FournisseursIndisponiblesError as exc:
@@ -229,3 +243,32 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+class ExecuterIn(BaseModel):
+    outil: str = Field(min_length=1, max_length=40)
+    args: dict = Field(default_factory=dict)
+
+
+@router.post("/execute")
+async def admin_execute(
+    payload: ExecuterIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Exécute une action PROPOSÉE par l'assistant et CONFIRMÉE par l'admin
+    (carte « Confirmer » de l'interface). Liste blanche d'outils, arguments
+    validés, puis délégation aux handlers admin existants ; l'action est en
+    plus tracée au journal (« via l'assistant »)."""
+    from ..core import admin_tools
+    from .deps import log_admin_event
+
+    try:
+        resultat = await admin_tools.executer(db, lock, background, payload.outil, payload.args)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except ValidationError as exc:
+        raise HTTPException(422, "Arguments invalides : " + "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()))
+    log_admin_event(db, None, "assistant_action", lock.email, {"outil": payload.outil, "args": payload.args})
+    db.commit()
+    return {"ok": True, "outil": payload.outil, "resultat": jsonable_encoder(resultat)}

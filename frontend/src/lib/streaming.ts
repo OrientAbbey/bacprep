@@ -174,6 +174,8 @@ export interface AdminAskPayload {
   historique: { role: string; content: string }[];
   epreuve: Record<string, unknown>;
   epreuve_id?: string;
+  /** Onglet du back-office (hors édition d'épreuve) : le serveur fournit alors un résumé de l'onglet. */
+  onglet?: string;
 }
 
 export type AdminStreamEvent =
