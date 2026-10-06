@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core.plans import plan_out
@@ -56,7 +57,10 @@ def lister(db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
 def creer(payload: PlanIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
     if payload.scope not in SCOPE_LABELS:
         raise HTTPException(422, f"scope inconnu — attendu parmi {', '.join(SCOPE_LABELS)}")
-    p = PlanORM(**payload.model_dump())
+    data = payload.model_dump()
+    if not data["ordre"]:  # 0 = non précisé : la nouvelle formule se place EN DERNIER
+        data["ordre"] = (db.query(func.max(PlanORM.ordre)).scalar() or 0) + 1
+    p = PlanORM(**data)
     db.add(p)
     log_admin_event(db, None, "plan_cree", lock.email, {"scope": p.scope, "prix": p.prix})
     db.commit()

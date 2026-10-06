@@ -47,6 +47,9 @@ export function ExamenBlanc({
   const demarrer = () => {
     setRestant(total);
     debut.current = Date.now();
+    // Prévenir le parent DANS le même évènement (un seul rendu) : sinon le minuteur
+    // s'afficherait un rendu avant que le corrigé et l'assistant ne soient masqués.
+    onChange(true);
     setPhase("composition");
   };
   const enregistrer = (valeur: number | null) =>

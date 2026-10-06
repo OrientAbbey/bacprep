@@ -51,3 +51,16 @@ def test_checkout_utilise_prix_et_duree_de_la_formule(admin):
         admin.delete(f"/api/admin/plans/{pid}")
         for i in anciens:
             admin.patch(f"/api/admin/plans/{i}", json={"actif": True})
+
+
+def test_nouvelle_formule_placee_en_dernier(admin):
+    avant = [p["id"] for p in admin.get("/api/admin/plans").json()["plans"]]
+    pid = admin.post("/api/admin/plans", json={"scope": "annee", "libelle": "Dernière", "prix": 150, "duree_jours": 30}).json()["id"]
+    try:
+        apres = [p["id"] for p in admin.get("/api/admin/plans").json()["plans"]]
+        assert apres[-1] == pid and apres[:-1] == avant  # ni insérée au milieu, ni réordonnant les autres
+        pid2 = admin.post("/api/admin/plans", json={"scope": "annee", "libelle": "Encore", "prix": 100, "duree_jours": 30}).json()["id"]
+        assert [p["id"] for p in admin.get("/api/admin/plans").json()["plans"]][-2:] == [pid, pid2]
+        admin.delete(f"/api/admin/plans/{pid2}")
+    finally:
+        admin.delete(f"/api/admin/plans/{pid}")

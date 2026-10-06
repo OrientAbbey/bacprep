@@ -307,7 +307,8 @@ console.log("\nBack-office");
     const avant = await page.getByLabel("Libellé (FR)").count();
     await page.getByRole("button", { name: "Matière (toutes années)" }).last().click(); // boutons de création en bas de page
     await page.waitForFunction((n) => document.querySelectorAll("input[aria-label='Libellé (FR)']").length > n, avant);
-    const dernier = page.getByLabel("Libellé (FR)").last();
+    const dernier = page.getByLabel("Libellé (FR)").last(); // une nouvelle formule se place en dernier
+    ok((await dernier.inputValue()) === "Matière (toutes années)", "la nouvelle formule n'est pas en dernière position : " + (await dernier.inputValue()));
     await dernier.fill("Matière 3 mois");
     await page.getByLabel("Prix (FCFA)").last().fill("1200");
     await page.getByLabel("Durée (jours)").last().fill("90");
@@ -478,10 +479,13 @@ console.log("\nTraduction FR/EN");
   });
 
   await test("anglais : formules d'abonnement affichées avec libellé et description anglais", async () => {
+    // Indépendant des formules semées : on lit celles que l'API sert réellement et on exige leur libellé anglais.
+    const { plans } = await (await ctx.request.get("/api/pricing")).json();
+    const anglaises = plans.filter((p) => p.libelle_en && p.libelle_en !== p.libelle);
+    ok(anglaises.length >= 1, "aucune formule active n'a de libellé anglais");
     await page.goto("/abonnement");
-    await page.getByText("Single paper").first().waitFor({ timeout: 10000 });
-    ok((await page.getByText("Subject and correction of a single paper").count()) + (await page.getByText("Subject and correction").count()) >= 0, "");
-    await page.getByText("Subject, one year").first().waitFor({ timeout: 5000 });
+    for (const p of anglaises.slice(0, 3)) await page.getByText(p.libelle_en, { exact: true }).first().waitFor({ timeout: 10000 });
+    if (anglaises[0].description_en) await page.getByText(anglaises[0].description_en, { exact: true }).first().waitFor({ timeout: 5000 });
   });
   await ctx.close();
 }
