@@ -19,7 +19,7 @@ import base64
 import json
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 
 PNG_ROND = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -103,11 +103,11 @@ def test_call_groq_corps_textuel_sans_images(monkeypatch):
 
     corps = {}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         corps["json"] = json.loads(request.content.decode())
-        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        return httpx2.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     monkeypatch.setattr(assistant, "_get_http_client", lambda: client)
     monkeypatch.setenv("GROQ_API_KEY", "cle-test")
     monkeypatch.setenv("GROQ_MODELS", "openai/gpt-oss-20b")
@@ -123,11 +123,11 @@ def test_call_groq_corps_vision_avec_images(monkeypatch, tmp_path):
     p = _png_tmp(tmp_path)
     corps = {}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         corps["json"] = json.loads(request.content.decode())
-        return httpx.Response(200, json={"choices": [{"message": {"content": "Rouge"}}]})
+        return httpx2.Response(200, json={"choices": [{"message": {"content": "Rouge"}}]})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     monkeypatch.setattr(assistant, "_get_http_client", lambda: client)
     monkeypatch.setenv("GROQ_API_KEY", "cle-test")
     monkeypatch.setenv("GROQ_MODELS", "qwen/qwen3.8-27b")

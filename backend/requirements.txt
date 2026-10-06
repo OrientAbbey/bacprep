@@ -1,17 +1,19 @@
-# Versions épinglées selon l'environnement de développement testé
-# (backend/.venv — régénérer avec `pip freeze` lors d'une montée de version).
-# Correction : `httpx2` (typo, paquet inexistant) → `httpx` ;
-# (pytest vit dans requirements-dev.txt).
-requests==2.34.2
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
-SQLAlchemy==2.0.52
-pydantic==2.13.5
-httpx==0.28.1
-python-dotenv==1.2.3
-google-auth==2.57.1
-Pillow==12.3.0
-psycopg2-binary==2.9.12
-python-multipart==0.0.32
-PyYAML==6.0.2
-boto3==1.43.89
+# Dépendances de production. Chaque ligne borne la version des DEUX côtés :
+#   >= version testée (plancher)   et   <= dernière version de la MÊME lignée majeure
+# (avant 1.0 : de la même lignée mineure, car un 0.x peut casser d'une mineure à l'autre).
+# Les montées de lignée se font volontairement (Dependabot propose, la CI valide).
+# `httpx2` remplace `httpx` : successeur écrit par l'auteur d'httpx et maintenu par Pydantic,
+# que Starlette (TestClient) exige désormais. pytest et ruff vivent dans requirements-dev.txt.
+requests>=2.34.2,<=2.999.999
+fastapi>=0.142.2,<=0.142.999
+uvicorn[standard]>=0.54.0,<=0.54.999
+SQLAlchemy>=2.1.3,<=2.999.999
+pydantic>=2.13.5,<=2.999.999
+httpx2>=2.13.1,<=2.999.999
+python-dotenv>=1.2.4,<=1.999.999
+google-auth>=2.60.0,<=2.999.999
+Pillow>=12.3.0,<=12.999.999
+psycopg2-binary>=2.9.13,<=2.999.999
+python-multipart>=0.0.32,<=0.0.999
+PyYAML>=6.0.3,<=6.999.999
+boto3>=1.43.108,<=1.999.999

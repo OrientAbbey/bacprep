@@ -6,7 +6,7 @@ de chaque question est l'instantané du formulaire envoyé par le client, et
 l'historique est borné et fourni par l'admin (aucune table, aucun état).
 
 Réutilise l'infra LLM du module `assistant` (sémaphore de concurrence,
-client httpx partagé, repli Gemini → Groq → mode démonstration) — seul le
+client httpx2 partagé, repli Gemini → Groq → mode démonstration) — seul le
 prompt diffère : persona back-office, contraintes de format reprises des
 règles `$…$`/`$$…$$` de l'assistant élève.
 """

@@ -222,9 +222,14 @@ console.log("\nLecteur et assistant élève");
   // Une épreuve GRATUITE avec notre contenu de test (les payantes exigent un abonnement).
   const epreuveId = liste.find((e) => e.acces === "gratuit" && /Exercice sur les fonctions/.test(e.extrait ?? "") ) ?.id ?? liste.find((e) => e.acces === "gratuit").id;
 
-  await test("lecteur : chargement différé (skeleton) puis contenu et formule KaTeX", async () => {
+  await test("lecteur : chargement différé (skeleton) puis contenu et formule KaTeX, sans avertissement KaTeX", async () => {
+    const avertissements = [];
+    page.on("console", (m) => { if (["warning", "error"].includes(m.type()) && /katex|latex/i.test(m.text())) avertissements.push(m.text().slice(0, 120)); });
     await page.goto(`/epreuve/${epreuveId}`);
     await page.locator(".katex").first().waitFor({ timeout: 15000 });
+    ok(avertissements.length === 0, "avertissements KaTeX : " + avertissements.join(" | "));
+    const version = await page.evaluate(() => getComputedStyle(document.querySelector(".katex")).fontSize);
+    ok(parseFloat(version) > 0, "formule non rendue");
     await page.screenshot({ path: `${SHOTS}/lecteur.png` });
   });
 

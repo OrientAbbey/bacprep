@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 
-import httpx
+import httpx2
 
 
 # --- utils ---------------------------------------------------------------
@@ -63,16 +63,16 @@ def test_stream_provider_retente_une_fois_puis_reussit(monkeypatch):
 
     appels = {"n": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         appels["n"] += 1
         if appels["n"] == 1:
-            return httpx.Response(429, json={"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}})
-        return httpx.Response(
+            return httpx2.Response(429, json={"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}})
+        return httpx2.Response(
             200,
             text='data: {"candidates":[{"content":{"parts":[{"text":"Réponse OK"}]}}]}\n\n',
         )
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     monkeypatch.setattr(assistant, "_get_http_client", lambda: client)
     monkeypatch.setattr(asyncio, "sleep", _sans_attente)
     monkeypatch.setenv("GEMINI_API_KEY", "cle-test")
@@ -92,11 +92,11 @@ def test_stream_provider_429_persistant_passe_au_modele_suivant(monkeypatch):
 
     appels = {"n": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         appels["n"] += 1
-        return httpx.Response(429, json={"error": {"code": 429}})
+        return httpx2.Response(429, json={"error": {"code": 429}})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     monkeypatch.setattr(assistant, "_get_http_client", lambda: client)
     monkeypatch.setattr(asyncio, "sleep", _sans_attente)
     monkeypatch.setenv("GEMINI_API_KEY", "cle-test")
@@ -115,13 +115,13 @@ def test_call_provider_retente_une_fois_sur_429(monkeypatch):
 
     appels = {"n": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         appels["n"] += 1
         if appels["n"] == 1:
-            return httpx.Response(429, json={"error": {"code": 429}})
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+            return httpx2.Response(429, json={"error": {"code": 429}})
+        return httpx2.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     monkeypatch.setattr(assistant, "_get_http_client", lambda: client)
     monkeypatch.setattr(asyncio, "sleep", _sans_attente)
     monkeypatch.setenv("GEMINI_API_KEY", "cle-test")

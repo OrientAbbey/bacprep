@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-import httpx
+import httpx2
 
 from .epreuve_files import file_id_from_url
 from .extraits import IMAGE_MD_RE
@@ -120,16 +120,16 @@ def _model_supports_streaming(model: str) -> bool:
 
 _semaphore: Optional[asyncio.Semaphore] = None
 
-# Client httpx partagé (connexions réutilisées entre appels LLM ; un
+# Client httpx2 partagé (connexions réutilisées entre appels LLM ; un
 # AsyncClient par appel relançait une poignée TLS à chaque question).
 # timeout=60 couvre les appels streaming les plus longs.
-_shared_client: Optional[httpx.AsyncClient] = None
+_shared_client: Optional[httpx2.AsyncClient] = None
 
 
-def _get_http_client() -> httpx.AsyncClient:
+def _get_http_client() -> httpx2.AsyncClient:
     global _shared_client
     if _shared_client is None or _shared_client.is_closed:
-        _shared_client = httpx.AsyncClient(timeout=60)
+        _shared_client = httpx2.AsyncClient(timeout=60)
     return _shared_client
 
 
@@ -392,7 +392,7 @@ async def _call_provider(
                 )
                 resp.raise_for_status()
                 return spec["extract"](resp.json())
-            except httpx.HTTPStatusError as exc:
+            except httpx2.HTTPStatusError as exc:
                 log.warning("%s %s a échoué (%s) : %s", nom, model, exc.response.status_code, exc.response.text)
                 if exc.response.status_code == 429 and not quota_retente:
                     quota_retente = True
