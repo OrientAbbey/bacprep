@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Download, HardDriveDownload, RotateCcw, Trash2 } from "lucide-react";
-import { api, ApiError, resolveMediaUrl } from "../../api/client";
+import { api, resolveMediaUrl } from "../../api/client";
 import { SauvegardeInventaire, SauvegardeJob, SauvegardeResume } from "../../api/types";
 import { useToast } from "../../components/Toast";
 import { formatBytes } from "../../lib/format";

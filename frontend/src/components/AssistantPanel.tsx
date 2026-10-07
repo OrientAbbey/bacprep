@@ -1,28 +1,16 @@
-import { Bot, Check, ChevronDown, ChevronRight, Clock, Pencil, Plus, RotateCcw, Send, StickyNote, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Plus, StickyNote, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
-import { dateLongue, heureCourte } from "../lib/dates";
-import { getInitials } from "../lib/initials";
 import { delaiReconnexion, streamAssistantAsk, type AssistantAskPayload } from "../lib/streaming";
+import { ActionTexte, ASSISTANT_SIGNATURE, ASSISTANT_TITRE, Avatar, ChatBubble, INPUT_MAX_HEIGHT_PX, MessageComposer, type Message } from "./ChatParts";
 import { MarkdownContent } from "./MarkdownContent";
 import { useToast } from "./Toast";
 import { t } from "../i18n";
 
 /** Nom du produit assistant (en-tête du panneau, bouton lanceur) et
  * signature affichée sur chacune de ses réponses. */
-export const ASSISTANT_TITRE = t("Tuteur IA Prep");
-export const ASSISTANT_SIGNATURE = t("Assistant Pédagogique");
-
-export interface Message {
-  role: "user" | "assistant";
-  content: string;
-  /** Horodatage ISO de création, posé par le serveur (voie persistée) ou
-   * par le client (éphémère) — affiché en HH:MM à côté de la bulle. Les
-   * messages stockés AVANT ce changement n'en portent pas (aucun
-   * affichage d'heure pour eux). */
-  ts?: string;
-}
+export { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, type Message } from "./ChatParts";
 
 export interface Conversation {
   id: string;
@@ -53,7 +41,6 @@ const CONTEXTE_PREVIEW_THRESHOLD = 500;
 const CONTEXTE_PREVIEW_LENGTH = 320;
 // Hauteur du champ de saisie multi-ligne : démarre à une ligne, grandit
 // jusqu'à cette hauteur maximale avant de devenir défilable.
-const INPUT_MAX_HEIGHT_PX = 120;
 // Longueur max du libellé d'un onglet auto-renommé à partir de la première
 // question de l'élève (au-delà, tronqué avec une ellipse).
 const LABEL_MAX_LEN = 24;
@@ -829,10 +816,18 @@ export function AssistantPanel({
                 <ChatBubble
                   key={`${m.role}-${i}`}
                   m={m}
-                  questionContexte={i > 0 ? active.messages[i - 1]?.content ?? "" : ""}
                   userNom={userNom}
-                  onSaveAsNote={onSaveAsNote}
-                  peutSauvegarder={user?.consent_notes !== false}
+                  actionsEnLigne={
+                    // Réponses non vides seulement ; masqué si l'élève a refusé le stockage de ses notes.
+                    m.role === "assistant" && m.content.trim() && onSaveAsNote && user?.consent_notes !== false ? (
+                      <ActionTexte
+                        icone={StickyNote}
+                        libelle={t("Sauvegarder en note")}
+                        titre={t("Sauvegarder cette réponse dans tes notes")}
+                        onClick={() => onSaveAsNote(m.content, i > 0 ? active.messages[i - 1]?.content ?? "" : "")}
+                      />
+                    ) : null
+                  }
                   estDernier={estDernier}
                   enCours={sending}
                   onEditer={m.role === "user" && !sending ? (contenu) => regenerateFrom(i, contenu) : undefined}
@@ -960,224 +955,6 @@ function ConversationTabs({
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/** Bulle de message : avatar + auteur + horodatage (HH:MM, date complète
- * au survol via `title`) + contenu Markdown (rounded-2xl réservé aux
- * bulles par le référentiel).
- *
- * Actions selon le rôle :
- * - élève : « Modifier » — édition inline de la question puis régénération
- *   de la discussion À PARTIR de ce point ;
- * - assistant : « Sauvegarder en note » et, pour la DERNIÈRE bulle,
- *   « Réessayer » (relance la même question). */
-function ChatBubble({
-  m,
-  questionContexte,
-  userNom,
-  onSaveAsNote,
-  peutSauvegarder,
-  estDernier,
-  enCours,
-  onEditer,
-  onRegenerer,
-}: {
-  m: Message;
-  questionContexte: string;
-  userNom: string;
-  onSaveAsNote?: (contenu: string, contexte: string) => void;
-  peutSauvegarder: boolean;
-  estDernier: boolean;
-  enCours: boolean;
-  onEditer?: (contenu: string) => void;
-  onRegenerer?: () => void;
-}) {
-  const isUser = m.role === "user";
-  const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState(m.content);
-
-  const heure = heureCourte(m.ts);
-  const titreDate = dateLongue(m.ts);
-
-  function demarrerEdition() {
-    setEditValue(m.content);
-    setEditing(true);
-  }
-
-  function validerEdition() {
-    const contenu = editValue.trim();
-    if (!contenu) return;
-    setEditing(false);
-    onEditer?.(contenu);
-  }
-
-  return (
-    <div className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-      <Avatar role={m.role} nom={isUser ? userNom : ASSISTANT_SIGNATURE} />
-      <div className="min-w-0 max-w-[78%]">
-        <p className={`mb-0.5 flex items-center gap-1.5 font-mono-tag text-[10px] text-slate ${isUser ? "flex-row-reverse" : ""}`}>
-          <span>{isUser ? userNom : ASSISTANT_SIGNATURE}</span>
-          {/* Horodatage : HH:MM à côté du nom, date complète au survol. */}
-          {heure && (
-            <span title={titreDate ?? undefined} className="text-slate/70">
-              {heure}
-            </span>
-          )}
-        </p>
-        {editing ? (
-          <div className="rounded-2xl border border-ink-soft/15 bg-paper px-3 py-2">
-            <textarea
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              rows={3}
-              aria-label={t("Modifier ta question")}
-              className="w-full resize-y rounded-[2px] border border-ink-soft/20 bg-paper-raised px-3 py-2 text-sm text-ink outline-none"
-            />
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={validerEdition}
-                disabled={!editValue.trim()}
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-4 text-xs font-medium text-paper disabled:opacity-40"
-              >
-                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-                {t("Valider")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-ink-soft/25 px-4 text-xs text-ink-soft hover:text-ink"
-              >
-                {t("Annuler")}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            className={`rounded-2xl px-3 py-2 ${
-              isUser ? "bg-highlight-soft text-ink" : "border border-ink-soft/15 bg-paper text-ink"
-            }`}
-          >
-            <MarkdownContent content={m.content} variant="chat" />
-          </div>
-        )}
-        {!editing && (
-          <div className="mt-0.5 flex flex-wrap gap-x-3">
-            {/* Édition de la question et régénération depuis ce point. */}
-            {isUser && onEditer && (
-              <button
-                type="button"
-                onClick={demarrerEdition}
-                title={t("Modifier ta question et régénérer la réponse")}
-                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
-              >
-                <Pencil size={11} strokeWidth={1.75} aria-hidden="true" />
-                {t("Modifier")}
-              </button>
-            )}
-            {/* Sauvegarde d'une réponse en note personnelle (uniquement les
-                réponses non vides de l'assistant, acheminées par le lecteur ;
-                masquée si l'élève a refusé le stockage de ses notes). */}
-            {!isUser && m.content.trim() && onSaveAsNote && peutSauvegarder && (
-              <button
-                type="button"
-                onClick={() => onSaveAsNote(m.content, questionContexte)}
-                title={t("Sauvegarder cette réponse dans tes notes")}
-                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
-              >
-                <StickyNote size={11} strokeWidth={1.75} aria-hidden="true" />
-                {t("Sauvegarder en note")}
-              </button>
-            )}
-            {/* Relance de la dernière question (dernière bulle seulement). */}
-            {!isUser && estDernier && onRegenerer && !enCours && (
-              <button
-                type="button"
-                onClick={onRegenerer}
-                title={t("Relancer la même question")}
-                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
-              >
-                <RotateCcw size={11} strokeWidth={1.75} aria-hidden="true" />
-                {t("Réessayer")}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Champ de question + bouton d'envoi. Le textarea est une zone de TEXTE
- * → rayon `rounded-[2px]` du référentiel (et non rounded-2xl, réservé aux
- * bulles). Nom accessible via aria-label (pas de libellé visible). Tant
- * qu'une réponse est en cours, l'envoi est TOUJOURS possible : la question
- * part en file d'attente (`queueCount` visible au-dessus du champ). */
-function MessageComposer({
-  inputRef,
-  input,
-  onChange,
-  onKeyDown,
-  onSend,
-  queueCount,
-}: {
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
-  input: string;
-  onChange: (value: string) => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  onSend: () => void;
-  queueCount: number;
-}) {
-  return (
-    <div className="border-t border-ink-soft/15 bg-paper">
-      {queueCount > 0 && (
-        <p role="status" className="flex items-center gap-1.5 px-3 pt-2 font-mono-tag text-[10px] text-slate">
-          <Clock size={11} strokeWidth={1.75} aria-hidden="true" />
-          {queueCount} question{queueCount > 1 ? "s" : ""} en attente…
-        </p>
-      )}
-      <div className="flex items-end gap-2 p-3">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={t("Pose ta question… (Maj+Entrée pour une nouvelle ligne)")}
-          aria-label={t("Question à Tuteur IA Prep")}
-          rows={1}
-          style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
-          className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
-        />
-        <button
-          type="button"
-          onClick={onSend}
-          disabled={!input.trim()}
-          aria-label={t("Envoyer")}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
-        >
-          <Send size={18} strokeWidth={1.75} aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** Avatar rond distinguant l'élève de l'assistant dans le fil de
- * discussion — l'un et l'autre utilisent des tokens de couleur adaptatifs
- * (jamais de fixe) pour rester lisibles dans les deux thèmes. L'élève
- * porte ses INITIALES (comme l'en-tête et la page profil), l'assistant
- * l'icône robot. */
-function Avatar({ role, nom }: { role: "user" | "assistant"; nom: string }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-        role === "user" ? "bg-ink font-mono-tag text-[10px] font-semibold text-paper" : "bg-highlight text-highlight-ink"
-      }`}
-    >
-      {role === "user" ? getInitials(nom) : <Bot size={14} strokeWidth={2} />}
     </div>
   );
 }

@@ -1,10 +1,7 @@
-import { Bot, Check, Clock, Pencil, Plus, RotateCcw, Send, X } from "lucide-react";
+import { Bot, Check, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
-import { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, type Message } from "../../components/AssistantPanel";
-import { MarkdownContent } from "../../components/MarkdownContent";
-import { dateLongue, heureCourte } from "../../lib/dates";
-import { getInitials } from "../../lib/initials";
+import { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, Avatar, ChatBubble, INPUT_MAX_HEIGHT_PX, MessageComposer, type Message } from "../../components/ChatParts";
 import { delaiReconnexion, streamAdminAsk, type AdminConversation } from "../../lib/streaming";
 import {
   buildAdminAskPayload,
@@ -14,7 +11,6 @@ import {
   type ModificationsEpreuve,
 } from "../../lib/adminAssistant";
 
-const INPUT_MAX_HEIGHT_PX = 120;
 
 /**
  * Tiroir droit de l'assistant du back-office, ouvert depuis l'onglet
@@ -434,10 +430,12 @@ export function AdminAssistantPanel({
               <ChatBubble
                 key={`${m.role}-${i}`}
                 m={m}
-                // Les boutons « Appliquer » n'apparaissent qu'une fois la
-                // réponse terminée (le bloc de modification doit être complet).
-                onAppliquer={
-                  m.role === "assistant" && estDernier && !sending ? onAppliquer : undefined
+                userNom="Admin"
+                // « Appliquer » seulement une fois la réponse terminée (le bloc de modification doit être complet).
+                actionsHaut={
+                  m.role === "assistant" && estDernier && !sending && onAppliquer ? (
+                    <ActionsAppliquer content={m.content} onAppliquer={onAppliquer} />
+                  ) : null
                 }
                 estDernier={estDernier}
                 enCours={sending}
@@ -479,238 +477,38 @@ export function AdminAssistantPanel({
           onKeyDown={onInputKeyDown}
           onSend={submitQuestion}
           queueCount={queue.length}
+          placeholder="Pose ta question sur l'épreuve… (Maj+Entrée pour une nouvelle ligne)"
         />
       </div>
     </>
   );
 }
 
-/** Bulle de message : avatar + auteur + horodatage (HH:MM, date complète
- * au survol) + contenu Markdown (rounded-2xl réservé aux bulles par le
- * référentiel). Pour une réponse d'assistant terminée, des boutons
- * « Appliquer » apparaissent sous la bulle si elle contient des blocs de
- * modification (`modification-sujet`, `modification-corrige`,
- * `modification-form`) — un clic remplit la zone de texte ou les champs de
- * métadonnées du formulaire. Les questions de l'admin sont éditables
- * (« Modifier ») et la dernière réponse peut être relancée (« Réessayer »). */
-function ChatBubble({
-  m,
-  onAppliquer,
-  estDernier,
-  enCours,
-  onEditer,
-  onRegenerer,
-}: {
-  m: Message;
-  onAppliquer?: (modifications: ModificationsEpreuve) => void;
-  estDernier: boolean;
-  enCours: boolean;
-  onEditer?: (contenu: string) => void;
-  onRegenerer?: () => void;
-}) {
-  const isUser = m.role === "user";
-  const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState(m.content);
-  // Les blocs de modification restent visibles dans le Markdown rendu
-  // (aperçu) ; les boutons ne s'affichent que s'il y a un bloc exploitable.
-  const modifs = m.role === "assistant" ? extraireModifications(m.content) : {};
-  const applicable =
-    Boolean(onAppliquer) &&
-    (modifs.sujet !== undefined || modifs.corrige !== undefined || modifs.form !== undefined);
-
-  const heure = heureCourte(m.ts);
-  const titreDate = dateLongue(m.ts);
-
-  function demarrerEdition() {
-    setEditValue(m.content);
-    setEditing(true);
-  }
-
-  function validerEdition() {
-    const contenu = editValue.trim();
-    if (!contenu) return;
-    setEditing(false);
-    onEditer?.(contenu);
-  }
-
+/** Boutons « Appliquer » sous une réponse contenant des blocs `modification-*` : un clic
+ * remplit le sujet, le corrigé ou les métadonnées du formulaire. */
+function ActionsAppliquer({ content, onAppliquer }: { content: string; onAppliquer: (m: ModificationsEpreuve) => void }) {
+  const modifs = extraireModifications(content);
+  const boutons = (
+    [
+      ["sujet", "Appliquer au sujet"],
+      ["corrige", "Appliquer au corrigé"],
+      ["form", "Appliquer au formulaire"],
+    ] as const
+  ).filter(([cle]) => modifs[cle] !== undefined);
+  if (boutons.length === 0) return null;
   return (
-    <div className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-      <Avatar role={m.role} nom={isUser ? "Admin" : ASSISTANT_SIGNATURE} />
-      <div className="min-w-0 max-w-[78%]">
-        <p className={`mb-0.5 flex items-center gap-1.5 font-mono-tag text-[10px] text-slate ${isUser ? "flex-row-reverse" : ""}`}>
-          <span>{isUser ? "Admin" : ASSISTANT_SIGNATURE}</span>
-          {heure && (
-            <span title={titreDate ?? undefined} className="text-slate/70">
-              {heure}
-            </span>
-          )}
-        </p>
-        {editing ? (
-          <div className="rounded-2xl border border-ink-soft/15 bg-paper px-3 py-2">
-            <textarea
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              rows={3}
-              aria-label="Modifier ta question"
-              className="w-full resize-y rounded-[2px] border border-ink-soft/20 bg-paper-raised px-3 py-2 text-sm text-ink outline-none"
-            />
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={validerEdition}
-                disabled={!editValue.trim()}
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-4 text-xs font-medium text-paper disabled:opacity-40"
-              >
-                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-                Valider
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-ink-soft/25 px-4 text-xs text-ink-soft hover:text-ink"
-              >
-                Annuler
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            className={`rounded-2xl px-3 py-2 ${
-              isUser ? "bg-highlight-soft text-ink" : "border border-ink-soft/15 bg-paper text-ink"
-            }`}
-          >
-            <MarkdownContent content={m.content} variant="chat" />
-          </div>
-        )}
-        {!editing && applicable && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {modifs.sujet !== undefined && (
-              <button
-                type="button"
-                onClick={() => onAppliquer!({ sujet: modifs.sujet })}
-                className="flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
-              >
-                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-                Appliquer au sujet
-              </button>
-            )}
-            {modifs.corrige !== undefined && (
-              <button
-                type="button"
-                onClick={() => onAppliquer!({ corrige: modifs.corrige })}
-                className="flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
-              >
-                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-                Appliquer au corrigé
-              </button>
-            )}
-            {modifs.form !== undefined && (
-              <button
-                type="button"
-                onClick={() => onAppliquer!({ form: modifs.form })}
-                className="flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
-              >
-                <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-                Appliquer au formulaire
-              </button>
-            )}
-          </div>
-        )}
-        {!editing && (
-          <div className="mt-0.5 flex flex-wrap gap-x-3">
-            {isUser && onEditer && (
-              <button
-                type="button"
-                onClick={demarrerEdition}
-                title="Modifier ta question et régénérer la réponse"
-                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
-              >
-                <Pencil size={11} strokeWidth={1.75} aria-hidden="true" />
-                Modifier
-              </button>
-            )}
-            {!isUser && estDernier && onRegenerer && !enCours && (
-              <button
-                type="button"
-                onClick={onRegenerer}
-                title="Relancer la même question"
-                className="relative inline-flex items-center gap-1 font-mono-tag text-[10px] text-slate hover:text-ink after:absolute after:-inset-[10px] after:content-['']"
-              >
-                <RotateCcw size={11} strokeWidth={1.75} aria-hidden="true" />
-                Réessayer
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Champ de question + bouton d'envoi (mêmes conventions que le panneau
- * de l'élève : zone de texte → rayon `rounded-[2px]` du référentiel).
- * Pendant une réponse, l'envoi reste actif : la question part en file
- * d'attente, signalée au-dessus du champ. */
-function MessageComposer({
-  inputRef,
-  input,
-  onChange,
-  onKeyDown,
-  onSend,
-  queueCount,
-}: {
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
-  input: string;
-  onChange: (value: string) => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  onSend: () => void;
-  queueCount: number;
-}) {
-  return (
-    <div className="border-t border-ink-soft/15 bg-paper">
-      {queueCount > 0 && (
-        <p role="status" className="flex items-center gap-1.5 px-4 pt-2 font-mono-tag text-[10px] text-slate">
-          <Clock size={11} strokeWidth={1.75} aria-hidden="true" />
-          {queueCount} question{queueCount > 1 ? "s" : ""} en attente…
-        </p>
-      )}
-      <div className="flex items-end gap-2 p-3">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Pose ta question sur l'épreuve… (Maj+Entrée pour une nouvelle ligne)"
-          aria-label={`Question à ${ASSISTANT_TITRE}`}
-          rows={1}
-          style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
-          className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
-        />
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {boutons.map(([cle, libelle]) => (
         <button
+          key={cle}
           type="button"
-          onClick={onSend}
-          disabled={!input.trim()}
-          aria-label="Envoyer"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
+          onClick={() => onAppliquer({ [cle]: modifs[cle] })}
+          className="flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
         >
-          <Send size={18} strokeWidth={1.75} aria-hidden="true" />
+          <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+          {libelle}
         </button>
-      </div>
-    </div>
-  );
-}
-
-/** Avatar rond : initiales de l'admin côté utilisateur, icône robot pour
- * l'assistant (mêmes tokens adaptatifs que le panneau élève). */
-function Avatar({ role, nom }: { role: "user" | "assistant"; nom: string }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-        role === "user" ? "bg-ink font-mono-tag text-[10px] font-semibold text-paper" : "bg-highlight text-highlight-ink"
-      }`}
-    >
-      {role === "user" ? getInitials(nom) : <Bot size={14} strokeWidth={2} />}
+      ))}
     </div>
   );
 }

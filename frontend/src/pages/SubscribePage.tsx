@@ -8,7 +8,6 @@ import { useAuth } from "../auth/AuthProvider";
 import { Combobox } from "../components/Combobox";
 import { Skeleton } from "../components/Skeleton";
 import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
-import { foldText } from "../lib/text";
 import { getLang, t } from "../i18n";
 
 /** Fait défiler doucement un élément nouvellement apparu dans le champ de
@@ -91,7 +90,6 @@ export function SubscribePage() {
   const [matiere, setMatiere] = useState("");
   const [annee, setAnnee] = useState("");
   const [epreuveId, setEpreuveId] = useState("");
-  const [epreuveSearch, setEpreuveSearch] = useState("");
   const [provider, setProvider] = useState("orange");
   const [count, setCount] = useState<number | null>(null);
   const [dejaCouvert, setDejaCouvert] = useState(false);
@@ -133,14 +131,8 @@ export function SubscribePage() {
   const selectedEpreuve = epreuves.find((e) => e.id === epreuveId);
 
   /** Épreuves proposables à l'abonnement "épreuve précise" : on retire
-   * celles déjà gratuites (s'y abonner ne débloquerait rien de plus) et on
-   * applique la recherche tapée par l'utilisateur. */
-  const epreuvesFiltrees = useMemo(() => {
-    const abonnables = epreuves.filter((e) => !e.gratuit);
-    if (!epreuveSearch.trim()) return abonnables;
-    const q = foldText(epreuveSearch);
-    return abonnables.filter((e) => foldText(e.matiere).includes(q) || e.annee.includes(q));
-  }, [epreuves, epreuveSearch]);
+   * celles déjà gratuites (s'y abonner ne débloquerait rien de plus). */
+  const epreuvesFiltrees = useMemo(() => epreuves.filter((e) => !e.gratuit), [epreuves]);
 
   // Valeurs courantes des champs de sélection, indexables par nom de champ
   // (cf. CHAMPS_PAR_SCOPE) — redériver des états listés dans les deps.

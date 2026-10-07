@@ -34,7 +34,7 @@ export function NoteEditor({
   onSaved?: () => void;
 }) {
   const { showToast } = useToast();
-  const [contexte, setContexte] = useState(note?.contexte_extrait ?? contexteExtraitInitial);
+  const [contexte] = useState(note?.contexte_extrait ?? contexteExtraitInitial);
   const [contenu, setContenu] = useState(note?.contenu ?? contenuInitial);
   const [apercu, setApercu] = useState(false);
   const [saving, setSaving] = useState(false);

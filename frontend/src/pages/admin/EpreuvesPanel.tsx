@@ -8,7 +8,7 @@ import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
 import type { ModificationsEpreuve } from "../../lib/adminAssistant";
-import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, erreurDetail, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur, SujetFormData } from "./shared";
+import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, erreurDetail, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur } from "./shared";
 
 interface AdminEpreuveSummary {
   id: string;

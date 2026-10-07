@@ -7,10 +7,6 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
-interface Props {
-  token: string;
-}
-
 /** Métadonnées d'affichage par liste du référentiel (ordre du panneau). */
 const SCOPES: { scope: ReferentielScope; titre: string; description: string; codePh: string; labelPh: string }[] = [
   { scope: "niveau", titre: "Niveaux", description: "Grands niveaux du système scolaire", codePh: "ex. SECONDAIRE", labelPh: "ex. secondaire" },
@@ -84,7 +80,7 @@ export function ParametresPanel({ token }: { token: string }) {
       });
   }
 
-  function saveEdition(scope: ReferentielScope) {
+  function saveEdition() {
     if (!enEdition) return;
     const code = enEdition.code.trim();
     if (!code) return;
@@ -190,7 +186,7 @@ export function ParametresPanel({ token }: { token: string }) {
                           />
                           <button
                             type="button"
-                            onClick={() => saveEdition(meta.scope)}
+                            onClick={() => saveEdition()}
                             title="Enregistrer"
                             aria-label="Enregistrer le renommage"
                             className="relative flex h-8 w-8 items-center justify-center rounded-full bg-valide text-paper after:absolute after:-inset-1.5 after:rounded-full after:content-['']"

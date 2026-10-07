@@ -30,7 +30,7 @@ const PAGE_SIZE = 24;
 export function CataloguePage() {
   const navigate = useNavigate();
   const { classe } = useParams<{ classe: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
   const modeRecherche = query.trim().length > 0;
 

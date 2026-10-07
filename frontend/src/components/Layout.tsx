@@ -19,7 +19,6 @@ export function Layout({ children }: { children?: React.ReactNode }) {
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const showBack = !["/", "/catalogue"].includes(location.pathname) && !location.pathname.startsWith("/secondaire/");
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();

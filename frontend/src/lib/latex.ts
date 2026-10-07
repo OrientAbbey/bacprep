@@ -112,7 +112,7 @@ function findUnescaped(hay: string, from: number, token: string): number {
 function wrapNakedEnvs(text: string): string {
   return text.replace(
     /\\begin\{(aligned|align\*?|matrix|pmatrix|bmatrix|cases|array)\}([\s\S]*?)\\end\{\1\}/g,
-    (match, env: string, body: string) => `$$\n\\begin{${env}}${body}\\end{${env}}\n$$`
+    (_match, env: string, body: string) => `$$\n\\begin{${env}}${body}\\end{${env}}\n$$`
   );
 }
 

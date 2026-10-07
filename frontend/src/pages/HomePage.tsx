@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpen, ChevronRight, GraduationCap, Lock, Search } from "lucide-react";
+import { ArrowLeft, ChevronRight, GraduationCap, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
