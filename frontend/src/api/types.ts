@@ -416,8 +416,3 @@ export interface Revision {
   derniere_note: number | null;
   retard_jours: number;
 }
-
-export interface EssaiHistorique {
-  essais: { epreuve_id: string; matiere: string; annee: string; evaluation: string; note: number | null; duree_s: number | null; date: string }[];
-  moyennes: { matiere: string; moyenne: number; essais: number }[];
-}

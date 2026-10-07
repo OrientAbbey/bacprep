@@ -591,14 +591,6 @@ def delete_admin_conversation(db: Session, conv: AdminAIConversationORM) -> None
     db.commit()
 
 
-def delete_admin_conversations_for_epreuve(db: Session, epreuve_id: str) -> int:
-    """Purge les conversations admin liées à une épreuve supprimée."""
-    count = db.query(AdminAIConversationORM).filter(AdminAIConversationORM.epreuve_id == epreuve_id).delete(synchronize_session=False)
-    if count:
-        db.commit()
-    return count
-
-
 def admin_conversation_to_dict(conv: AdminAIConversationORM) -> dict:
     """Sérialise une conversation admin ORM pour la réponse API (horodatages
     en ISO — le flux SSE est encodé avec `json.dumps` brut, pas de modèle

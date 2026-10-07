@@ -408,27 +408,6 @@ class SauvegardeRestaurerDemande(BaseModel):
         return valeur
 
 
-class SauvegardeJob(BaseModel):
-    """État d'un job de sauvegarde ou de restauration, tel que lu par l'IHM."""
-
-    id: str
-    kind: str
-    status: str
-    destination: str
-    source: str
-    mode: str
-    total_fichiers: int = 0
-    fichiers_faits: int = 0
-    total_octets: int = 0
-    octets_faits: int = 0
-    partie_courante: int = 0
-    parties_total: int = 0
-    report: dict = Field(default_factory=dict)
-    logs: list = Field(default_factory=list)
-    created_at: Optional[str] = None
-    finished_at: Optional[str] = None
-
-
 class SauvegardeResume(BaseModel):
     """Récapitulatif d'une sauvegarde présente dans le stockage."""
 

@@ -174,21 +174,6 @@ def iter_fichiers(manifest: dict) -> Iterator[dict]:
 # --------------------------------------------------------------------------
 
 
-class _FichierHache:
-    """OBSOLÈTE — supprimé.
-
-    Première version : proxy d'un fichier temporaire qui calculait le SHA-256
-    au fil des écritures. Elle est fausse, et le test l'a démontré : `zipfile`
-    REPOSTE PAR-DESSUS les en-têtes locaux pour y inscrire CRC et tailles, donc
-    la séquence d'écritures ne correspond pas aux octets finaux (mesuré : 430
-    octets écrits contre 314 dans le fichier). Le hash sert à l'`index.json` pour
-    détecter une sauvegarde corrompue : il doit décrire le fichier RÉEL.
-
-    Le remplacement est `_televerser_et_hacher`, qui relit la partie une fois en
-    calculant le hash du contenu réellement stocké.
-    """
-
-
 def _televerser_et_hacher(stockage, cle: str, chemin: Path, mime_type: str) -> tuple[str, int]:
     """Téléverse un fichier en UNE SEULE lecture, SHA-256 compris.
 

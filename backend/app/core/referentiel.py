@@ -103,13 +103,6 @@ def normalize_classe(value: str | None) -> str | None:
     return None
 
 
-def classe_label(code: str | None) -> str:
-    """Libellé d'affichage d'une classe (le code lui-même si inconnu)."""
-    if not code:
-        return ""
-    return CLASSES_LABELS.get(code, code)
-
-
 def default_classe_for_evaluation(evaluation: str | None) -> str:
     """Classe indicative associée à une évaluation certificielle
     ("terminale" par défaut pour tout le reste)."""

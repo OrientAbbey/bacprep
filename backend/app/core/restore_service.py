@@ -28,7 +28,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -617,7 +616,3 @@ def _ecrire_base(db: Session, manifest: dict, report: dict) -> None:
         db.flush()
     log.info("Base reconstruite : %s épreuve(s)", len(manifest["epreuves"]))
 
-
-def nettoyer_temporaire(dossier_tmp: Path) -> None:
-    """Supprime le répertoire de travail d'une restauration."""
-    shutil.rmtree(dossier_tmp, ignore_errors=True)
