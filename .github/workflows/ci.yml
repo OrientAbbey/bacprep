@@ -58,7 +58,7 @@ jobs:
       - run: pip install -r backend/requirements.txt
       - run: npm ci && npm run build
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright-core install --with-deps chromium
         working-directory: frontend
       - name: Démarrer le serveur
         working-directory: backend
