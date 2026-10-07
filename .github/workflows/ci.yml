@@ -68,6 +68,7 @@ jobs:
           DEMO_MODE: "true"
           DATABASE_URL: postgresql+psycopg://bacprep:bacprep@127.0.0.1/bacprep_e2e
           DB_SSLMODE: disable
+          ADMIN_ROOT: admin@example.com
           ADMIN_TOKEN: e2e-admin-token
           STORAGE_BACKEND: local
           ASSISTANT_RATE_LIMIT: "0"
