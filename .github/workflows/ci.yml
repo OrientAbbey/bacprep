@@ -27,7 +27,7 @@ jobs:
       - run: ruff check app tests
       - run: pytest -q
         env:
-          TEST_DATABASE_URL: ${{ matrix.base == 'postgres' && 'postgresql+psycopg2://bacprep:bacprep@127.0.0.1/bacprep_test?sslmode=disable' || '' }}
+          TEST_DATABASE_URL: ${{ matrix.base == 'postgres' && 'postgresql+psycopg://bacprep:bacprep@127.0.0.1/bacprep_test?sslmode=disable' || '' }}
   frontend:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: frontend } }
@@ -66,7 +66,7 @@ jobs:
           ENV: dev
           AUTH_MODE: mock
           DEMO_MODE: "true"
-          DATABASE_URL: postgresql+psycopg2://bacprep:bacprep@127.0.0.1/bacprep_e2e
+          DATABASE_URL: postgresql+psycopg://bacprep:bacprep@127.0.0.1/bacprep_e2e
           DB_SSLMODE: disable
           ADMIN_TOKEN: e2e-admin-token
           STORAGE_BACKEND: local

@@ -156,7 +156,7 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
 ```bash
 # Backend (SQLite) puis PostgreSQL
 cd backend && pip install -r requirements-dev.txt && pytest -q
-TEST_DATABASE_URL="postgresql+psycopg2://bacprep:bacprep@127.0.0.1/bacprep_test" pytest -q
+TEST_DATABASE_URL="postgresql+psycopg://bacprep:bacprep@127.0.0.1/bacprep_test" pytest -q
 # Frontend
 cd frontend && npm test
 # Navigateur réel (serveur lancé avec AUTH_MODE=mock, voir frontend/e2e/e2e.mjs)

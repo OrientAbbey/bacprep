@@ -13,7 +13,11 @@ httpx2>=2.13.1,<=2.999.999
 python-dotenv>=1.2.4,<=1.999.999
 google-auth>=2.60.0,<=2.999.999
 Pillow>=12.3.0,<=12.999.999
-psycopg2-binary>=2.9.13,<=2.999.999
+# psycopg (v3), driver PostgreSQL par défaut de SQLAlchemy 2.1 : une URL
+# `postgresql://…` sans driver explicite importe `psycopg`, pas `psycopg2`
+# (ModuleNotFoundError: No module named 'psycopg'). L'extra [binary] fournit
+# les extensions compilées sans compiler à la volée.
+psycopg[binary]>=3.3.6,<=3.999.999
 python-multipart>=0.0.32,<=0.0.999
 PyYAML>=6.0.3,<=6.999.999
 boto3>=1.43.108,<=1.999.999

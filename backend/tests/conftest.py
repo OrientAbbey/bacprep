@@ -9,7 +9,7 @@ import tempfile
 # Env à positionner avant tout import d'app.* (les modules lisent os.getenv
 # à l'import pour certains réglages).
 _TMP = tempfile.mkdtemp(prefix="bacprep_test_")
-# TEST_DATABASE_URL (ex. postgresql+psycopg2://…) : exécute la suite sur un vrai
+# TEST_DATABASE_URL (ex. postgresql+psycopg://…) : exécute la suite sur un vrai
 # PostgreSQL ; le schéma est alors recréé à vide avant les tests.
 os.environ["DATABASE_URL"] = os.getenv("TEST_DATABASE_URL") or f"sqlite:///{_TMP}/test.db"
 os.environ["FILE_URL_SECRET"] = "t" * 32
