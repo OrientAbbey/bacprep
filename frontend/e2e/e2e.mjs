@@ -657,6 +657,82 @@ console.log("\nAssistant IA du back-office (tous onglets)");
   await ctx.close();
 }
 
+console.log("\nPanneaux de discussion (élève et admin d'épreuve)");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterEleve(ctx, `chat-${RUN}@test.cm`);
+  const page = await ctx.newPage();
+  const liste = await (await ctx.request.get("/api/epreuves?q=mathematiques&limit=50")).json();
+  const id = liste.find((e) => e.acces === "gratuit").id;
+  const boite = () => page; // le panneau élève est un volet latéral (pas un role=dialog) : champs et boutons ont des noms uniques sur la page
+  const poser = async (q) => {
+    await boite().getByLabel("Question à Tuteur IA Prep").fill(q);
+    await boite().getByRole("button", { name: "Envoyer" }).click();
+  };
+
+  await test("assistant élève : question, réponse, modification de la question, relance, note", async () => {
+    await page.goto(`/epreuve/${id}`);
+    await page.locator(".katex").first().waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: "Ouvrir Tuteur IA Prep" }).click();
+    await poser("Explique la question 1");
+    await boite().getByText("Explique la question 1").waitFor({ timeout: 10000 });
+    await boite().getByRole("button", { name: "Réessayer" }).waitFor({ timeout: 20000 });
+    const reponses = () => boite().locator("[data-role='assistant'], .prose-chat").count();
+    ok((await reponses()) >= 1, "aucune réponse de l'assistant");
+    await page.screenshot({ path: `${SHOTS}/chat-eleve.png` });
+    // Modifier la question → régénération depuis ce point
+    await boite().getByRole("button", { name: "Modifier", exact: true }).first().click();
+    await boite().getByLabel("Modifier ta question").fill("Explique la question 2");
+    await boite().getByRole("button", { name: "Valider" }).click();
+    await boite().getByText("Explique la question 2").waitFor({ timeout: 10000 });
+    await boite().getByRole("button", { name: "Réessayer" }).waitFor({ timeout: 20000 });
+    // L'édition REMPLACE la réponse (régénération depuis ce point) au lieu d'en ajouter une : une seule réponse sauvegardable.
+    ok((await boite().getByRole("button", { name: "Sauvegarder en note" }).count()) === 1, "la modification a ajouté une réponse au lieu de la remplacer");
+    // Relancer la dernière question : toujours UNE seule réponse après la relance
+    const avant = await boite().getByRole("button", { name: "Sauvegarder en note" }).count();
+    await boite().getByRole("button", { name: "Réessayer" }).click();
+    await boite().getByRole("button", { name: "Réessayer" }).waitFor({ timeout: 20000 });
+    ok((await boite().getByRole("button", { name: "Sauvegarder en note" }).count()) === avant, "la relance a dupliqué la réponse");
+    // Sauvegarde de la réponse en note personnelle
+    await boite().getByRole("button", { name: "Sauvegarder en note" }).last().click();
+    await page.getByRole("button", { name: "Enregistrer", exact: true }).click(); // fenêtre « Prendre une note » préremplie avec la réponse
+    await page.getByText("Note enregistrée — retrouvable dans ton profil.").waitFor({ timeout: 10000 });
+    const notes = await (await ctx.request.get("/api/me/notes")).json();
+    ok(Array.isArray(notes) ? notes.length >= 1 : (notes.notes ?? []).length >= 1, "note absente");
+  });
+
+  const admin = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterAdmin(admin);
+  const pa = await admin.newPage();
+  await test("assistant d'édition (admin › Épreuves) : réponse, « Appliquer au sujet », modification, relance", async () => {
+    const sse = (t) => `data: ${JSON.stringify({ type: "chunk", text: t })}\n\ndata: ${JSON.stringify({ type: "done", conversation: null })}\n\n`;
+    let n = 0;
+    await pa.route("**/api/admin/assistant/ask", (route) => {
+      n += 1;
+      route.fulfill({ status: 200, contentType: "text/event-stream", body: sse(`Voici (essai ${n}).\n\`\`\`modification-sujet\n# Sujet réécrit ${n}\n\`\`\`\n`) });
+    });
+    await pa.goto("/admin");
+    await pa.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    const d = pa.getByRole("dialog", { name: "Tuteur IA Prep" });
+    await d.getByLabel("Question à Tuteur IA Prep").fill("Réécris le sujet");
+    await d.getByRole("button", { name: "Envoyer" }).click();
+    await d.getByRole("button", { name: "Appliquer au sujet" }).waitFor({ timeout: 10000 });
+    await pa.screenshot({ path: `${SHOTS}/chat-admin.png` });
+    await d.getByRole("button", { name: "Appliquer au sujet" }).click();
+    await pa.waitForFunction(() => [...document.querySelectorAll("textarea")].some((t) => t.value.includes("# Sujet réécrit 1")), null, { timeout: 8000 });
+    await d.getByRole("button", { name: "Modifier", exact: true }).first().click();
+    await d.getByLabel("Modifier ta question").fill("Réécris le corrigé");
+    await d.getByRole("button", { name: "Valider" }).click();
+    await d.getByText("Réécris le corrigé").waitFor({ timeout: 10000 });
+    await d.getByRole("button", { name: "Réessayer" }).waitFor({ timeout: 10000 });
+    await d.getByRole("button", { name: "Réessayer" }).click();
+    await d.getByText("Voici (essai 3).").waitFor({ timeout: 10000 }); // 1 = question, 2 = question modifiée, 3 = relance
+    ok((await d.getByText(/^Voici \(essai/).count()) === 1, "plusieurs réponses affichées après la relance");
+  });
+  await admin.close();
+  await ctx.close();
+}
+
 await browser.close();
 const echecs = resultats.filter((r) => !r[0]);
 console.log(`\n${resultats.length - echecs.length}/${resultats.length} scénarios réussis`);
