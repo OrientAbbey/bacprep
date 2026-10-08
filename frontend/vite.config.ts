@@ -35,7 +35,11 @@ export default defineConfig({
         globIgnores: ["**/AdminPage-*.js"],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/ws\//],
+        // Doc OpenAPI : servie par le backend à un chemin secret (DOCS_PATH).
+        // Liste noire générique : TOUT chemin commençant par « doc » sort du SW
+        // (« doc_path_1 », « doc_2 », « documentation »…) — il faut donc que
+        // DOCS_PATH garde ce préfixe (ex. « doc_path_1 » sur Render).
+        navigateFallbackDenylist: [/^\/api\//, /^\/ws\//, /^\/doc/],
         runtimeCaching: [
           // Épreuve ouverte ou « téléchargée » : réseau d'abord (3 s max — utile sur
           // connexion lente), repli sur la copie locale. Ne met en cache que les 200.
