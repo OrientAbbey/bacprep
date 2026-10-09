@@ -8,10 +8,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..core.plans import plan_out
 from ..core.subscriptions import SCOPE_LABELS
 from ..db import get_db
-from ..db_models import PlanORM
+from ..db_models import PlanORM, to_dict
 from .deps import log_admin_event, require_admin
 
 router = APIRouter(prefix="/api/admin/plans", tags=["admin"])
@@ -50,7 +49,7 @@ def _get(db: Session, plan_id: str) -> PlanORM:
 @router.get("")
 def lister(db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
     plans = db.query(PlanORM).order_by(PlanORM.ordre, PlanORM.prix).all()
-    return {"plans": [plan_out(p) for p in plans], "scopes": SCOPE_LABELS}
+    return {"plans": [to_dict(p) for p in plans], "scopes": SCOPE_LABELS}
 
 
 @router.post("")
@@ -64,7 +63,7 @@ def creer(payload: PlanIn, db: Session = Depends(get_db), lock=Depends(require_a
     db.add(p)
     log_admin_event(db, None, "plan_cree", lock.email, {"scope": p.scope, "prix": p.prix})
     db.commit()
-    return plan_out(p)
+    return to_dict(p)
 
 
 @router.patch("/{plan_id}")
@@ -75,7 +74,7 @@ def modifier(plan_id: str, payload: PlanUpdate, db: Session = Depends(get_db), l
         setattr(p, k, v)
     log_admin_event(db, None, "plan_modifie", lock.email, {"id": p.id, **changes})
     db.commit()
-    return plan_out(p)
+    return to_dict(p)
 
 
 @router.delete("/{plan_id}")

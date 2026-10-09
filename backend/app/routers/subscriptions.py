@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 from ..core import referentiel, store
 from ..core.config import demo_allowed
 from ..core.logging_config import get_logger
-from ..core.plans import plan_out, plan_pour, plans_actifs
+from ..core.plans import plan_pour, plans_actifs
 from ..core.subscriptions import subs_to_out
 from ..db import get_db, utc_now
-from ..db_models import EpreuveORM, PaymentORM, SubscriptionORM
+from ..db_models import EpreuveORM, PaymentORM, SubscriptionORM, to_dict
 from ..models import CheckoutIn, SubscriptionOut, WebhookIn
 from .auth import require_user
 
@@ -148,7 +148,7 @@ def pricing(db: Session = Depends(get_db)) -> dict:
     for p in plans:
         premiere.setdefault(p.scope, p)
     return {
-        "plans": [plan_out(p) for p in plans],
+        "plans": [to_dict(p) for p in plans],
         "pricing": {k: p.prix for k, p in premiere.items()},
         "labels": {k: p.libelle for k, p in premiere.items()},
         "descriptions": {k: p.description for k, p in premiere.items()},

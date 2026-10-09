@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..db_models import EvenementORM
+from ..db_models import EvenementORM, to_dict
 from .deps import log_admin_event, require_admin
 
 public = APIRouter(prefix="/api/calendrier", tags=["calendrier"])
@@ -65,19 +65,15 @@ class EvenementUpdate(BaseModel):
         return v
 
 
-def _out(e: EvenementORM) -> dict:
-    return {c.name: getattr(e, c.name) for c in EvenementORM.__table__.columns}
-
-
 @public.get("")
 def lister_public(db: Session = Depends(get_db)) -> list[dict]:
     rows = db.query(EvenementORM).filter(EvenementORM.visible.is_(True)).order_by(EvenementORM.date_debut).all()
-    return [_out(e) for e in rows]
+    return [to_dict(e) for e in rows]
 
 
 @admin.get("")
 def lister_admin(db: Session = Depends(get_db), lock=Depends(require_admin)) -> list[dict]:
-    return [_out(e) for e in db.query(EvenementORM).order_by(EvenementORM.date_debut).all()]
+    return [to_dict(e) for e in db.query(EvenementORM).order_by(EvenementORM.date_debut).all()]
 
 
 @admin.post("")
@@ -86,7 +82,7 @@ def creer(payload: EvenementIn, db: Session = Depends(get_db), lock=Depends(requ
     db.add(e)
     log_admin_event(db, None, "evenement_cree", lock.email, {"titre": e.titre, "date": e.date_debut})
     db.commit()
-    return _out(e)
+    return to_dict(e)
 
 
 @admin.patch("/{evenement_id}")
@@ -99,7 +95,7 @@ def modifier(evenement_id: str, payload: EvenementUpdate, db: Session = Depends(
         setattr(e, k, v)
     log_admin_event(db, None, "evenement_modifie", lock.email, {"id": e.id, **changes})
     db.commit()
-    return _out(e)
+    return to_dict(e)
 
 
 @admin.delete("/{evenement_id}")

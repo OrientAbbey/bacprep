@@ -7,9 +7,12 @@ disparaît des cloches).
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..core.textsearch import contient
 from ..db import get_db
 from ..db_models import NotificationORM
 from ..models import NotificationIn, NotificationUpdate
@@ -35,14 +38,22 @@ def _notification_out(n: NotificationORM) -> dict:
 
 @router.get("")
 def admin_list_notifications(
-    db: Session = Depends(get_db), lock=Depends(require_admin)
+    etat: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 30,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
 ) -> list[dict]:
-    """Liste TOUTES les notifications (actives et désactivées), les plus
-    récentes en premier."""
-    return [
-        _notification_out(n)
-        for n in db.query(NotificationORM).order_by(NotificationORM.created_at.desc()).all()
-    ]
+    """Notifications (actives et désactivées), les plus récentes en premier, paginées.
+    `etat=active|inactive` filtre ; `q` cherche dans le titre et le message."""
+    query = db.query(NotificationORM)
+    if etat in ("active", "inactive"):
+        query = query.filter(NotificationORM.actif.is_(etat == "active"))
+    if q and q.strip():
+        query = query.filter(contient(NotificationORM.titre, q.strip()) | contient(NotificationORM.message, q.strip()))
+    rows = query.order_by(NotificationORM.created_at.desc()).offset(max(0, offset)).limit(max(1, min(limit, 100))).all()
+    return [_notification_out(n) for n in rows]
 
 
 @router.post("")

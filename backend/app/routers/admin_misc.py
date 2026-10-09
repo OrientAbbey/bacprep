@@ -21,6 +21,7 @@ from ..core import admin_session, store
 from ..core.config import EXAMPLE_ADMIN_TOKEN, is_prod
 from ..core.logging_config import get_logger
 from ..core.rate_limit import SlidingWindowLimiter, client_ip
+from ..core.textsearch import contient
 from ..db import get_db, utc_now
 from ..db_models import (
     AdminEventORM,
@@ -277,6 +278,7 @@ def _admin_revenus_par_mois(paiements: list[PaymentORM]) -> tuple[dict[str, int]
 def admin_events(
     limit: int = 100,
     offset: int = 0,
+    q: Optional[str] = None,
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> list[dict]:
@@ -286,9 +288,11 @@ def admin_events(
     classe, année) pour un affichage lisible sans aller-retour, et
     `epreuve_id` reste cliquable côté UI (ouverture dans la section
     « Épreuves »)."""
+    query = db.query(AdminEventORM)
+    if q and q.strip():  # filtre sur l'action ou l'e-mail de l'acteur
+        query = query.filter(contient(AdminEventORM.action, q.strip()) | contient(AdminEventORM.email, q.strip()))
     rows = (
-        db.query(AdminEventORM)
-        .order_by(AdminEventORM.created_at.desc())
+        query.order_by(AdminEventORM.created_at.desc())
         .offset(max(0, offset))
         .limit(max(1, min(limit, 300)))
         .all()
@@ -327,6 +331,9 @@ def admin_events(
 @router.get("/signalements")
 def admin_list_signalements(
     statut: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 30,
+    offset: int = 0,
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> list[dict]:
@@ -337,7 +344,14 @@ def admin_list_signalements(
     query = db.query(SignalementORM)
     if statut in ("ouvert", "resolu"):
         query = query.filter(SignalementORM.statut == statut)
-    rows = query.order_by(SignalementORM.created_at.desc()).limit(200).all()
+    if q and q.strip():  # motif ou message ; la matière demande une jointure, volontairement absente
+        query = query.filter(contient(SignalementORM.message, q.strip()) | contient(SignalementORM.motif, q.strip()))
+    rows = (
+        query.order_by(SignalementORM.created_at.desc())
+        .offset(max(0, offset))
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
     epreuve_ids = {s.epreuve_id for s in rows}
     user_ids = {s.user_id for s in rows}
     epreuves = {
