@@ -3,6 +3,8 @@ import { Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
+import { Spinner } from "../components/Spinner";
+import { messageErreurConnexion } from "../lib/messageConnexion";
 import { AdminAssistantGlobal } from "./admin/AdminAssistantGlobal";
 import { CalendrierPanel } from "./admin/CalendrierPanel";
 import { EpreuvesPanel } from "./admin/EpreuvesPanel";
@@ -32,6 +34,14 @@ type Onglet =
 /** Coquille du back-office : connexion admin, onglets, statistiques et
  * battement de cœur du verrou. Chaque onglet vit dans son propre panneau
  * (pages/admin/*) — ce fichier ne fait que le routage interne. */
+/** Les onglets, regroupés en trois familles (navigation latérale sur écran large). */
+const GROUPES: { titre: string; ids: Onglet[] }[] = [
+  { titre: "Contenu", ids: ["epreuves", "import", "formules", "calendrier"] },
+  { titre: "Communauté", ids: ["utilisateurs", "signalements", "notifications"] },
+  { titre: "Système", ids: ["parametres", "sauvegardes", "journal"] },
+];
+const ONGLETS: Onglet[] = GROUPES.flatMap((g) => g.ids);
+
 export function AdminPage() {
   const { showToast } = useToast();
   const [token, setToken] = useState("");
@@ -49,9 +59,7 @@ export function AdminPage() {
   const [rafraichir, setRafraichir] = useState(0);
   const [tab, setTab] = useState<Onglet>(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    return (["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "formules", "calendrier", "journal", "signalements", "notifications"] as const).includes(t as never)
-      ? (t as Onglet)
-      : "epreuves";
+    return ONGLETS.includes(t as Onglet) ? (t as Onglet) : "epreuves";
   });
 
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -65,14 +73,14 @@ export function AdminPage() {
   // bascule sur l'onglet Épreuves et EpreuvesPanel précharge son détail.
   const [detailAOpenir, setDetailAOpenir] = useState<string | null>(null);
 
-  // Navigation clavier des onglets (pattern WAI-ARIA) : flèches droite/
-  // gauche, Origine (Home) et Fin circulent dans l'ordre visuel affiché.
+  // Navigation clavier des onglets (pattern WAI-ARIA) : flèches, Origine (Home)
+  // et Fin circulent dans l'ordre affiché (famille par famille).
   function onTabsKeyDown(e: React.KeyboardEvent, current: Onglet) {
-    const order: Onglet[] = ["epreuves", "import", "sauvegardes", "utilisateurs", "parametres", "formules", "calendrier", "notifications", "signalements", "journal"];
+    const order = ONGLETS;
     const idx = order.indexOf(current);
     let next: Onglet | null = null;
-    if (e.key === "ArrowRight") next = order[(idx + 1) % order.length];
-    else if (e.key === "ArrowLeft") next = order[(idx - 1 + order.length) % order.length];
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = order[(idx + 1) % order.length];
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = order[(idx - 1 + order.length) % order.length];
     else if (e.key === "Home") next = order[0];
     else if (e.key === "End") next = order[order.length - 1];
     if (!next) return;
@@ -170,9 +178,12 @@ export function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  const [connexionEnCours, setConnexionEnCours] = useState(false);
+
   async function login(force = false) {
     setError(null);
     setBlocker(null);
+    setConnexionEnCours(true);
     try {
       await api.post<{ email: string }>("/api/admin/login", {
         email,
@@ -190,8 +201,10 @@ export function AdminPage() {
       if (err instanceof ApiError && err.status === 409) {
         setBlocker(err.detail as { message: string; active_email: string });
       } else {
-        setError("Connexion refusée — vérifie l'e-mail et le jeton.");
+        setError(messageErreurConnexion(err));
       }
+    } finally {
+      setConnexionEnCours(false);
     }
   }
 
@@ -227,10 +240,7 @@ export function AdminPage() {
   if (verification) {
     return (
       <div role="status" aria-live="polite" className="flex items-center gap-3 text-sm text-slate">
-        <span
-          aria-hidden="true"
-          className="h-4 w-4 animate-spin rounded-full border-2 border-ink-soft/25 border-t-ink motion-reduce:animate-none"
-        />
+        <Spinner />
         Vérification de la session administrateur…
       </div>
     );
@@ -308,12 +318,35 @@ export function AdminPage() {
             </button>
           </div>
         )}
-        <button type="submit" className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper">
-          Se connecter
+        <button
+          type="submit"
+          disabled={connexionEnCours}
+          aria-busy={connexionEnCours}
+          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-ink text-sm font-medium text-paper disabled:opacity-70"
+        >
+          {connexionEnCours && <Spinner />}
+          {connexionEnCours ? "Connexion…" : "Se connecter"}
         </button>
       </form>
     );
   }
+
+  const libelleOnglet = (id: Onglet): string => {
+    const base: Record<Onglet, string> = {
+      epreuves: "Épreuves",
+      import: "Import massif",
+      formules: "Formules",
+      calendrier: "Calendrier",
+      utilisateurs: "Utilisateurs",
+      signalements: "Signalements",
+      notifications: "Notifications",
+      parametres: "Paramètres",
+      sauvegardes: "Sauvegardes",
+      journal: "Journal",
+    };
+    const n = id === "utilisateurs" ? stats?.utilisateurs : id === "signalements" ? stats?.signalements_ouverts : 0;
+    return n ? `${base[id]} (${n})` : base[id];
+  };
 
   return (
     <div className="space-y-8">
@@ -329,40 +362,57 @@ export function AdminPage() {
 
       {stats && <StatsPanel stats={stats} />}
 
-      <div
-        role="tablist"
-        aria-label="Sections du back-office"
-        className="flex flex-wrap gap-1 rounded-full border border-ink-soft/20 p-1 font-mono-tag text-[10px] w-fit"
-      >
-        {(
-          [
-            ["epreuves", "Épreuves"],
-            ["import", "Import massif"],
-            ["sauvegardes", "Sauvegardes"],
-            ["utilisateurs", `Utilisateurs${stats?.utilisateurs ? ` (${stats.utilisateurs})` : ""}`],
-            ["parametres", "Paramètres"],
-            ["formules", "Formules"],
-            ["calendrier", "Calendrier"],
-            ["notifications", "Notifications"],
-            ["signalements", `Signalements${stats?.signalements_ouverts ? ` (${stats.signalements_ouverts})` : ""}`],
-            ["journal", "Journal"],
-          ] as [Onglet, string][]
-        ).map(([v, label]) => (
-          <button
-            key={v}
-            role="tab"
-            id={`admin-tab-${v}`}
-            aria-selected={tab === v}
-            aria-controls="admin-panel"
-            tabIndex={tab === v ? 0 : -1}
-            onClick={() => setTab(v)}
-            onKeyDown={(e) => onTabsKeyDown(e, v)}
-            className={`min-h-[44px] rounded-full px-4 py-1.5 ${tab === v ? "bg-ink text-paper" : "text-ink-soft"}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-6">
+        {/* Mobile : une liste déroulante groupée (dix onglets ne tiennent pas sur une ligne). */}
+        <select
+          aria-label="Section du back-office"
+          value={tab}
+          onChange={(e) => setTab(e.target.value as Onglet)}
+          className="mb-4 min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper px-3 text-sm lg:hidden"
+        >
+          {GROUPES.map((g) => (
+            <optgroup key={g.titre} label={g.titre}>
+              {g.ids.map((id) => (
+                <option key={id} value={id}>
+                  {libelleOnglet(id)}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+
+        {/* Bureau : navigation latérale groupée, qui reste visible pendant le défilement. */}
+        <div
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label="Sections du back-office"
+          className="hidden lg:sticky lg:top-4 lg:flex lg:flex-col lg:gap-4"
+        >
+          {GROUPES.map((g) => (
+            <div key={g.titre} className="flex flex-col gap-1">
+              <p aria-hidden="true" className="px-3 font-mono-tag text-[10px] uppercase tracking-wide text-slate">
+                {g.titre}
+              </p>
+              {g.ids.map((v) => (
+                <button
+                  key={v}
+                  role="tab"
+                  id={`admin-tab-${v}`}
+                  aria-selected={tab === v}
+                  aria-controls="admin-panel"
+                  tabIndex={tab === v ? 0 : -1}
+                  onClick={() => setTab(v)}
+                  onKeyDown={(e) => onTabsKeyDown(e, v)}
+                  className={`min-h-[44px] rounded-lg px-3 text-left text-sm ${
+                    tab === v ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/50"
+                  }`}
+                >
+                  {libelleOnglet(v)}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
 
       <div role="tabpanel" id="admin-panel" aria-labelledby={`admin-tab-${tab}`}>
         {/* EpreuvesPanel reste MONTÉ et simplement masqué quand on quitte
@@ -423,6 +473,7 @@ export function AdminPage() {
             }}
           />
         )}
+      </div>
       </div>
     </div>
   );

@@ -1,80 +1,53 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Flag } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
 import { Signalement } from "../../api/types";
-import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { MOTIF_LABELS } from "../../lib/motifs";
 import { classeLabel } from "../../lib/referentiel";
 import { formatRelativeTime } from "../../lib/time";
-import { authHeaders, purgerSessionExpiree } from "./shared";
+import { ListeAdmin } from "./ListeAdmin";
+import { authHeaders } from "./shared";
 
 /** Signalements d'épreuves : liste avec auteur, motif, message, et action
  *  « marquer résolu ». */
 export function SignalementsPanel({ token }: { token: string }) {
   const { showToast } = useToast();
-  const [signalements, setSignalements] = useState<Signalement[] | null>(null);
-  const [erreur, setErreur] = useState(false);
-
-  function load() {
-    setErreur(false);
-    api
-      .get<Signalement[]>("/api/admin/signalements", authHeaders(token))
-      .then(setSignalements)
-      .catch((err) => {
-        if (!purgerSessionExpiree(err)) setErreur(true);
-      });
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  const [rechargement, setRechargement] = useState(0);
 
   async function resoudre(id: string) {
     try {
       await api.post(`/api/admin/signalements/${id}/resoudre`, undefined, authHeaders(token));
       showToast("Signalement marqué résolu.", "success");
-      load();
+      setRechargement((n) => n + 1);
     } catch {
       showToast("Échec de la mise à jour du signalement.", "error");
     }
   }
 
-  if (erreur)
-    return (
-      <div
-        role="alert"
-        className="rounded-lg border border-correction/30 bg-correction-soft p-5 text-sm text-correction"
-      >
-        <p>Les signalements n'ont pas pu être chargés.</p>
-        <button type="button" onClick={load} className="mt-2 underline">
-          Réessayer
-        </button>
-      </div>
-    );
-  if (!signalements)
-    return (
-      <div className="space-y-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className={`h-4 ${i % 2 === 0 ? "w-full" : "w-2/3"}`} />
-        ))}
-      </div>
-    );
-  if (signalements.length === 0)
-    return (
-      <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5 text-sm text-slate">
-        Aucun signalement — rien à traiter pour l'instant.
-      </div>
-    );
-
   return (
-    <div className="space-y-3">
-      <h2 className="sr-only">Signalements</h2>
-      {signalements.map((s) => (
+    <ListeAdmin<Signalement>
+      path="/api/admin/signalements"
+      token={token}
+      libelle="Signalements"
+      recherche="Rechercher dans les messages…"
+      filtres={[
+        {
+          cle: "statut",
+          libelle: "Statut",
+          defaut: "ouvert",
+          options: [
+            ["ouvert", "Ouverts"],
+            ["resolu", "Résolus"],
+            ["tous", "Tous"],
+          ],
+        },
+      ]}
+      vide="Aucun signalement ne correspond — rien à traiter pour l'instant."
+      rechargement={rechargement}
+      rendu={(s) => (
         <div
-          key={s.id}
           className={`rounded-lg border bg-paper-raised p-4 ${
             s.statut === "ouvert" ? "border-correction/30" : "border-ink-soft/15 opacity-70"
           }`}
@@ -109,7 +82,7 @@ export function SignalementsPanel({ token }: { token: string }) {
             </button>
           )}
         </div>
-      ))}
-    </div>
+      )}
+    />
   );
 }

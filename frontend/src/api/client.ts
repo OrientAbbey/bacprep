@@ -1,4 +1,5 @@
 import { t } from "../i18n";
+import { estErreurReseau, signalerReseau } from "../lib/connexion";
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 export class ApiError extends Error {
@@ -110,12 +111,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     // remonter tel quel pour qu'il distingue le cas.
     if (rest.signal?.aborted) throw err;
     if (comb.expire()) throw new ApiTimeoutError(TIMEOUT_DEFAUT_MS);
+    if (estErreurReseau(err)) signalerReseau(false);
     throw err;
   } finally {
     comb.liberer();
     clearTimeout(minuterieLent);
     if (signaleLent) signalerLent(-1);
   }
+  signalerReseau(true); // une réponse HTTP, même d'erreur, prouve que le réseau fonctionne
 
   if (!res.ok) throw await parseError(res);
 

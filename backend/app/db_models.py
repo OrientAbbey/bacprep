@@ -491,6 +491,11 @@ class NotificationReadORM(Base):
     read_at = Column(UTCDateTime, default=utc_now)
 
 
+def to_dict(obj) -> dict:
+    """Colonnes d'une ligne ORM sous forme de dict (réponses JSON des listes simples)."""
+    return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
+
+
 class PlanORM(Base):
     """Formule d'abonnement vendue (modifiable depuis l'admin). `scope` dit
     ce que la formule débloque (epreuve, matiere_annee, matiere, annee,

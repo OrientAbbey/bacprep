@@ -8,12 +8,8 @@ export interface ComboOption {
   label: string;
 }
 
-/** Ferme `onOutside` quand un clic survient hors de `rootRef`. L'écouteur
- * document n'est posé QUE tant que `active` est vrai — aucune routine
- * dormante au niveau global entre deux ouvertures (É23). Hook local dans ce
- * fichier ; à extraire le jour d'une seconde utilisation (contrainte
- * « aucun nouveau fichier » du plan). */
-function useClickOutside(
+/** Ferme le panneau quand un clic survient hors de `rootRef` ; l'écouteur document n'existe que tant que le panneau est ouvert. */
+export function useClickOutside(
   rootRef: React.RefObject<HTMLElement | null>,
   onOutside: () => void,
   active: boolean

@@ -157,16 +157,17 @@ export function ParametresPanel({ token }: { token: string }) {
           return (
             <div
               key={meta.scope}
-              className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4"
+              // Hauteur FIXE : les cartes sont alignées quel que soit le nombre d'options ; la liste défile à l'intérieur.
+              className="flex h-[28rem] flex-col rounded-lg border border-ink-soft/15 bg-paper-raised p-4"
             >
-              <div className="mb-2 flex items-baseline justify-between gap-2">
+              <div className="mb-2 flex shrink-0 items-baseline justify-between gap-2">
                 <h3 className="font-serif-brand text-base">{meta.titre}</h3>
                 <span className="font-mono-tag text-[10px] text-slate">{options.length} option(s)</span>
               </div>
-              <p className="mb-3 text-xs text-slate">{meta.description}</p>
+              <p className="mb-3 shrink-0 text-xs text-slate">{meta.description}</p>
 
               {options.length > 0 && (
-                <ul className="divide-y divide-ink-soft/10">
+                <ul className="min-h-0 flex-1 divide-y divide-ink-soft/10 overflow-y-auto pr-1">
                   {options.map((o) => (
                     <li key={o.id} className="py-1.5">
                       {enEdition?.id === o.id ? (
@@ -244,10 +245,10 @@ export function ParametresPanel({ token }: { token: string }) {
                 </ul>
               )}
               {options.length === 0 && (
-                <p className="mb-2 text-xs text-slate">Liste vide — alimentée dès qu'une valeur est saisie.</p>
+                <p className="flex-1 text-xs text-slate">Liste vide — alimentée dès qu'une valeur est saisie.</p>
               )}
 
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-ink-soft/10 pt-2">
+              <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5 border-t border-ink-soft/10 pt-2">
                 <input
                   value={ajouts[meta.scope]?.code ?? ""}
                   onChange={(e) =>

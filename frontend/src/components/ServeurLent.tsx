@@ -1,21 +1,17 @@
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
+import { useConnexion } from "../lib/connexion";
 
 /** Bandeau d'état du réseau : « hors-ligne » (plus de connexion) ou « le serveur
  * se réveille » (requête > 3 s : serveur gratuit en veille qui redémarre). */
 export function ServeurLent() {
   const [n, setN] = useState(0);
-  const [horsLigne, setHorsLigne] = useState(typeof navigator !== "undefined" && !navigator.onLine);
+  const horsLigne = useConnexion() === "hors-ligne";
   useEffect(() => {
     const onLent = (e: Event) => setN((v) => Math.max(0, v + ((e as CustomEvent<number>).detail ?? 0)));
-    const maj = () => setHorsLigne(!navigator.onLine);
     window.addEventListener("serveur-lent", onLent);
-    window.addEventListener("online", maj);
-    window.addEventListener("offline", maj);
     return () => {
       window.removeEventListener("serveur-lent", onLent);
-      window.removeEventListener("online", maj);
-      window.removeEventListener("offline", maj);
     };
   }, []);
   if (!horsLigne && n === 0) return null;

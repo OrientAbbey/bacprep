@@ -1,5 +1,6 @@
 import { LangSwitch } from "../i18nProvider";
 import { BottomNav } from "./BottomNav";
+import { IndicateurConnexion } from "./IndicateurConnexion";
 import { ServeurLent } from "./ServeurLent";
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
@@ -133,6 +134,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               )}
             </div>
 
+            <IndicateurConnexion />
             <LangSwitch />
             <button
               type="button"

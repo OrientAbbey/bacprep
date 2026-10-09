@@ -1,3 +1,4 @@
+import { useClickOutside } from "../../components/Combobox";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, FileUp, Plus, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
@@ -236,26 +237,6 @@ export interface OptionChoix {
   label: string;
 }
 
-/** Ferme le panneau quand un clic survient hors de `rootRef` — l'écouteur
- * document n'est posé QUE tant que le panneau est ouvert (aucune routine
- * dormante au niveau global, même convention que le Combobox du catalogue). */
-function useClickOutside(
-  rootRef: React.RefObject<HTMLDivElement | null>,
-  onOutside: () => void,
-  active: boolean
-) {
-  useEffect(() => {
-    if (!active) return;
-    function onClick(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        onOutside();
-      }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [rootRef, onOutside, active]);
-}
-
 /** Panneau de liste COMMUN aux deux déclencheurs du back-office (`Select`
  * non modifiable et `EditableSelect` modifiable) : même design que le
  * Combobox du catalogue — option surlignée au survol/navigation, option
@@ -314,6 +295,16 @@ function ListeOptions({
   );
 }
 
+interface ChampChoixProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: OptionChoix[];
+  placeholder?: string;
+  /** Champ requis — une étoile accompagne le libellé. */
+  obligatoire?: boolean;
+}
+
 /** Liste déroulante NON modifiable du back-office : remplacer une valeur
  * connue par une autre. Entièrement customisée (bouton + panneau, comme le
  * Combobox du catalogue) : un SEUL chevron dessiné, aucune flèche système. */
@@ -324,15 +315,7 @@ export function Select({
   options,
   placeholder = "—",
   obligatoire,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: OptionChoix[];
-  placeholder?: string;
-  /** Champ requis — une étoile accompagne le libellé. */
-  obligatoire?: boolean;
-}) {
+}: ChampChoixProps) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -464,15 +447,7 @@ export function EditableSelect({
   options,
   placeholder,
   obligatoire,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: OptionChoix[];
-  placeholder?: string;
-  /** Champ requis — une étoile accompagne le libellé. */
-  obligatoire?: boolean;
-}) {
+}: ChampChoixProps) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);

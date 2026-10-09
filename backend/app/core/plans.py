@@ -44,7 +44,3 @@ def plan_pour(db: Session, scope: str, plan_id: Optional[str]) -> Optional[PlanO
     if plan_id:
         return q.filter(PlanORM.id == plan_id).one_or_none()
     return q.order_by(PlanORM.ordre, PlanORM.prix).first()
-
-
-def plan_out(p: PlanORM) -> dict:
-    return {c.name: getattr(p, c.name) for c in PlanORM.__table__.columns}

@@ -616,7 +616,8 @@ export function ViewerPage() {
             className="absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
           >
             <Watermark label={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleString(locale())}`} />
-            <div className="mb-2 flex justify-end print:hidden">
+            {/* Flottant : reste visible pendant tout le défilement de l'épreuve (en bas à gauche : l'assistant occupe la droite). */}
+            <div className="fixed bottom-4 left-4 z-30 rounded-full bg-paper-raised shadow-lg print:hidden">
               <TailleTexte taille={taille} onChange={changerTaille} />
             </div>
             <div className="relative" style={{ zoom: taille }}>

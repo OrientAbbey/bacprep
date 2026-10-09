@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Bell, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../api/client";
 import { NotificationAdmin } from "../../api/types";
-import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { formatRelativeTime } from "../../lib/time";
-import { authHeaders, EditableSelect, Field, purgerSessionExpiree, Select } from "./shared";
+import { ListeAdmin } from "./ListeAdmin";
+import { authHeaders, EditableSelect, Field, Select } from "./shared";
 
 /** Types proposés pour une notification — libellés d'interface, codes
  * stockés côté serveur. `nouvelle_epreuve` est aussi posé automatiquement
@@ -34,24 +34,9 @@ const FORMULAIRE_VIDE: Formulaire = { titre: "", message: "", type: "information
  *  propose un « aller à l'épreuve » dans la cloche des élèves. */
 export function NotificationsPanel({ token }: { token: string }) {
   const { showToast } = useToast();
-  const [notif, setNotif] = useState<NotificationAdmin[] | null>(null);
-  const [erreur, setErreur] = useState(false);
   const [edition, setEdition] = useState<{ id: string | null; form: Formulaire } | null>(null);
-
-  function load() {
-    setErreur(false);
-    api
-      .get<NotificationAdmin[]>("/api/admin/notifications", authHeaders(token))
-      .then(setNotif)
-      .catch((err) => {
-        if (!purgerSessionExpiree(err)) setErreur(true);
-      });
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  const [rechargement, setRechargement] = useState(0);
+  const recharger = () => setRechargement((n) => n + 1);
 
   async function sauvegarder(id: string | null, form: Formulaire) {
     try {
@@ -63,7 +48,7 @@ export function NotificationsPanel({ token }: { token: string }) {
         showToast("Notification mise à jour.", "success");
       }
       setEdition(null);
-      load();
+      recharger();
     } catch {
       showToast("Échec de l'enregistrement de la notification.", "error");
     }
@@ -73,7 +58,7 @@ export function NotificationsPanel({ token }: { token: string }) {
     try {
       await api.post(`/api/admin/notifications/${n.id}/toggle`, undefined, authHeaders(token));
       showToast(n.actif ? "Notification désactivée." : "Notification activée.", "success");
-      load();
+      recharger();
     } catch {
       showToast("Échec de l'activation de la notification.", "error");
     }
@@ -83,32 +68,11 @@ export function NotificationsPanel({ token }: { token: string }) {
     try {
       await api.del(`/api/admin/notifications/${n.id}`, authHeaders(token));
       showToast("Notification supprimée.", "success");
-      load();
+      recharger();
     } catch {
       showToast("Échec de la suppression de la notification.", "error");
     }
   }
-
-  if (erreur)
-    return (
-      <div
-        role="alert"
-        className="rounded-lg border border-correction/30 bg-correction-soft p-5 text-sm text-correction"
-      >
-        <p>Les notifications n'ont pas pu être chargées.</p>
-        <button type="button" onClick={load} className="mt-2 underline">
-          Réessayer
-        </button>
-      </div>
-    );
-  if (!notif)
-    return (
-      <div className="space-y-2 rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className={`h-4 ${i % 2 === 0 ? "w-full" : "w-2/3"}`} />
-        ))}
-      </div>
-    );
 
   return (
     <div className="space-y-4">
@@ -138,23 +102,30 @@ export function NotificationsPanel({ token }: { token: string }) {
           form={edition.form}
           onFormChange={(form) => setEdition({ ...edition, form })}
           onSave={() => sauvegarder(edition.id, edition.form)}
-          optionTypes={typesProposables(notif)}
+          optionTypes={TYPES}
         />
       )}
 
-      {notif.length === 0 && edition === null ? (
-        <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5 text-sm text-slate">
-          Aucune notification — créez la première pour informer les utilisateurs.
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {notif.map((n) => (
-            <li
-              key={n.id}
-              className={`rounded-lg border bg-paper-raised p-4 ${
-                n.actif ? "border-ink-soft/15" : "border-ink-soft/15 opacity-60"
-              }`}
-            >
+      <ListeAdmin<NotificationAdmin>
+        path="/api/admin/notifications"
+        token={token}
+        libelle="Notifications"
+        recherche="Rechercher dans les titres et messages…"
+        filtres={[
+          {
+            cle: "etat",
+            libelle: "État",
+            options: [
+              ["", "Toutes"],
+              ["active", "Actives"],
+              ["inactive", "Désactivées"],
+            ],
+          },
+        ]}
+        vide="Aucune notification ne correspond — créez-en une pour informer les utilisateurs."
+        rechargement={rechargement}
+        rendu={(n) => (
+<div className={`rounded-lg border bg-paper-raised p-4 ${n.actif ? "border-ink-soft/15" : "border-ink-soft/15 opacity-60"}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <Bell size={15} strokeWidth={1.75} aria-hidden="true" className="text-ink-soft" />
                 <p className="font-medium">{n.titre}</p>
@@ -204,24 +175,11 @@ export function NotificationsPanel({ token }: { token: string }) {
                   Supprimer
                 </button>
               </div>
-            </li>
-          ))}
-        </ul>
-      )}
+</div>
+        )}
+      />
     </div>
   );
-}
-
-/** Types proposés dans la liste déroulante : les usuels + ceux déjà
- * utilisés par des notifications existantes (un type saisi librement
- * précédemment reste proposé la fois suivante). */
-function typesProposables(notif: NotificationAdmin[] | null): { value: string; label: string }[] {
-  const vus = new Set<string>(TYPES.map((t) => t.value));
-  const extra = new Set<string>();
-  for (const n of notif ?? []) {
-    if (n.type && !vus.has(n.type)) extra.add(n.type);
-  }
-  return [...TYPES, ...[...extra].map((t) => ({ value: t, label: t }))];
 }
 
 /** Formulaire de création / modification d'une notification. */

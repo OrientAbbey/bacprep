@@ -291,7 +291,7 @@ console.log("\nBack-office");
     await page.getByRole("tab", { name: "Épreuves" }).waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /Nouvelle épreuve/ }).waitFor();
     await page.waitForFunction(() => document.querySelectorAll("aside, div").length > 0);
-    const colonne = page.locator("div.lg\\:sticky").first();
+    const colonne = page.locator("div.lg\\:sticky.lg\\:overflow-y-auto").first(); // pas le panneau latéral, qui est aussi collant
     await colonne.waitFor({ timeout: 10000 });
     await page.getByRole("button", { name: /Charger plus/ }).waitFor({ timeout: 10000 });
     const haut = await colonne.evaluate((e) => ({ h: e.getBoundingClientRect().height, sh: e.scrollHeight, vh: window.innerHeight }));
@@ -730,6 +730,196 @@ console.log("\nPanneaux de discussion (élève et admin d'épreuve)");
     ok((await d.getByText(/^Voici \(essai/).count()) === 1, "plusieurs réponses affichées après la relance");
   });
   await admin.close();
+  await ctx.close();
+}
+
+console.log("\nConnexion, état du réseau, A−/A+ flottant");
+{
+  // --- connexion admin : message selon la CAUSE, et indicateur de chargement
+  const ctx = await nouveauContexte({ viewport: { width: 1280, height: 800 } });
+  await connecterEleve(ctx, ADMIN.email); // compte autorisé, SANS session admin : la page affiche le formulaire du jeton
+  const page = await ctx.newPage();
+
+  await test("connexion admin : le bouton montre un indicateur de chargement pendant le traitement", async () => {
+    await page.route("**/api/admin/login", async (route) => {
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
+    await page.goto("/admin");
+    await page.locator("#admin-login-email").fill(ADMIN.email);
+    await page.locator("#admin-login-token").fill("mauvais-jeton");
+    const bouton = page.getByRole("button", { name: /Se connecter/ });
+    await bouton.click();
+    const occupe = page.getByRole("button", { name: /Connexion…/ });
+    await occupe.waitFor({ timeout: 3000 });
+    ok((await occupe.getAttribute("aria-busy")) === "true" && (await occupe.isDisabled()), "bouton non désactivé / pas aria-busy");
+    ok((await occupe.locator(".animate-spin").count()) === 1, "pas de cercle de chargement");
+    await page.screenshot({ path: `${SHOTS}/connexion-chargement.png` });
+    await page.getByRole("alert").waitFor({ timeout: 8000 });
+    ok((await page.getByRole("button", { name: /Se connecter/ }).isEnabled()), "le bouton reste bloqué après la réponse");
+    await page.unroute("**/api/admin/login");
+  });
+
+  await test("connexion admin : jeton refusé → message d'identifiants ; réseau coupé → message de connexion (jamais l'inverse)", async () => {
+    await page.locator("#admin-login-token").fill("encore-faux");
+    await page.getByRole("button", { name: /Se connecter/ }).click();
+    await page.getByText("Connexion refusée — vérifie l'e-mail et le jeton.").waitFor({ timeout: 8000 });
+    await ctx.setOffline(true);
+    await page.locator("#admin-login-token").fill("peu-importe");
+    await page.getByRole("button", { name: /Se connecter/ }).click();
+    const alerte = page.getByRole("alert");
+    await alerte.filter({ hasText: "Pas de connexion Internet" }).waitFor({ timeout: 8000 });
+    ok(!(await alerte.innerText()).includes("jeton"), "le message hors-ligne accuse encore le jeton : " + (await alerte.innerText()));
+    await page.screenshot({ path: `${SHOTS}/connexion-hors-ligne.png` });
+    await ctx.setOffline(false);
+  });
+
+  await test("nuage de connexion : vert en ligne, rouge hors connexion, vert au retour du réseau", async () => {
+    await page.goto("/");
+    const nuage = page.getByRole("status", { name: /Connecté à Internet|Hors connexion/ });
+    await nuage.waitFor({ timeout: 10000 });
+    ok((await nuage.getAttribute("data-connexion")) === "ok", "pas vert au départ");
+    ok(/valide/.test(await nuage.getAttribute("class")), "pas la couleur verte");
+    await ctx.setOffline(true);
+    await page.waitForFunction(() => document.querySelector("[data-connexion]")?.getAttribute("data-connexion") === "hors-ligne", null, { timeout: 5000 });
+    ok(/correction/.test(await nuage.getAttribute("class")), "pas la couleur rouge hors connexion");
+    await page.screenshot({ path: `${SHOTS}/nuage-rouge.png` });
+    await ctx.setOffline(false);
+    await page.waitForFunction(() => document.querySelector("[data-connexion]")?.getAttribute("data-connexion") === "ok", null, { timeout: 10000 });
+  });
+  await ctx.close();
+
+  // --- connexion élève : même indicateur de chargement
+  const eleve = await nouveauContexte();
+  const pe = await eleve.newPage();
+  await test("connexion élève : indicateur de chargement sur le bouton", async () => {
+    await pe.route("**/api/auth/mock-login", async (route) => {
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
+    await pe.goto("/connexion");
+    await pe.getByPlaceholder(/franck.albert@exemple.com|franck.albert@example.com/).fill(`spin-${RUN}@test.cm`);
+    await pe.getByPlaceholder(/Franck Albert/).first().fill("Spin");
+    await pe.getByRole("button", { name: /Se connecter/ }).click();
+    const occupe = pe.getByRole("button", { name: /Connexion…/ });
+    await occupe.waitFor({ timeout: 3000 });
+    ok((await occupe.locator(".animate-spin").count()) === 1 && (await occupe.isDisabled()), "pas d'indicateur de chargement");
+  });
+  await eleve.close();
+
+  // --- A−/A+ flottant sur toute l'épreuve
+  const adm = await nouveauContexte();
+  await connecterAdmin(adm);
+  const longue = Array.from({ length: 160 }, (_, i) => `Ligne ${i + 1} : développer et réduire l'expression $(x+${i})^2$.\n`).join("\n");
+  const cree = await (await adm.request.post("/api/admin/epreuves", { data: {
+    niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Mathématiques", annee: "2033", gratuit: true, filieres: ["C"], duree: "3h",
+    contenu_markdown: "# Épreuve longue\n\n" + longue } })).json();
+  await adm.request.post(`/api/admin/epreuves/${cree.id}/publish`);
+  const lecteur = await nouveauContexte({ viewport: { width: 1280, height: 720 } });
+  await connecterEleve(lecteur, `flot-${RUN}@test.cm`);
+  const pl = await lecteur.newPage();
+  await test("A−/A+ : reste visible et cliquable tout en bas d'une épreuve longue", async () => {
+    await pl.goto(`/epreuve/${cree.id}`);
+    await pl.getByText("Ligne 1 :").first().waitFor({ timeout: 15000 });
+    const plus = pl.getByRole("button", { name: "Agrandir le texte" });
+    ok((await plus.evaluate((e) => getComputedStyle(e.closest("div.fixed")).position)) === "fixed", "le contrôle n'est pas en position fixe");
+    await pl.mouse.move(640, 400);
+    for (let i = 0; i < 12; i++) await pl.mouse.wheel(0, 2500);
+    await pl.getByText("Ligne 160 :").first().waitFor({ timeout: 8000 });
+    const boite = await plus.boundingBox();
+    ok(boite && boite.y >= 0 && boite.y + boite.height <= 720, "hors de l'écran après défilement : " + JSON.stringify(boite));
+    const couvert = await plus.evaluate((e) => { const r = e.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return top === e || e.contains(top); });
+    ok(couvert, "le contrôle est masqué par un autre élément");
+    const avant = await pl.locator("div[style*='zoom']").first().evaluate((e) => getComputedStyle(e).zoom);
+    await plus.click();
+    const apres = await pl.locator("div[style*='zoom']").first().evaluate((e) => getComputedStyle(e).zoom);
+    ok(Number(apres) > Number(avant), `zoom ${avant} → ${apres}`);
+    await pl.screenshot({ path: `${SHOTS}/taille-flottante.png` });
+  });
+  await adm.close();
+  await lecteur.close();
+}
+
+console.log("\nBack-office : navigation, listes bornées et filtrées");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterAdmin(ctx);
+  const page = await ctx.newPage();
+  const ids = [];
+  for (let i = 0; i < 35; i++) {
+    const r = await ctx.request.post("/api/admin/notifications", { data: { titre: `ZZE2E-${RUN}-${String(i).padStart(2, "0")}`, message: "x", type: "information" } });
+    ids.push((await r.json()).id);
+  }
+  await ctx.request.post(`/api/admin/notifications/${ids[0]}/toggle`);
+  await page.goto("/admin");
+
+  await test("navigation : panneau latéral groupé (3 familles, 10 sections), flèches ↑↓, repli en liste déroulante sur mobile", async () => {
+    const liste = page.getByRole("tablist", { name: "Sections du back-office" });
+    await liste.waitFor({ timeout: 15000 });
+    ok((await liste.getAttribute("aria-orientation")) === "vertical", "pas vertical");
+    ok((await liste.getByRole("tab").count()) === 10, "il doit y avoir 10 sections");
+    for (const g of ["Contenu", "Communauté", "Système"]) await liste.getByText(g, { exact: true }).waitFor();
+    const x0 = (await liste.boundingBox()).x, larg = (await liste.boundingBox()).width;
+    ok(larg < 260 && x0 < 100, `panneau latéral attendu (x=${x0}, largeur=${larg})`);
+    await page.getByRole("tab", { name: "Épreuves" }).focus();
+    await page.keyboard.press("ArrowDown");
+    ok((await page.getByRole("tab", { selected: true }).innerText()).startsWith("Import"), "ArrowDown n'avance pas d'une section");
+    await page.screenshot({ path: `${SHOTS}/admin-navigation.png` });
+    await page.setViewportSize({ width: 390, height: 800 });
+    ok(!(await liste.isVisible()), "le panneau latéral doit disparaître sur mobile");
+    const sel = page.getByLabel("Section du back-office");
+    await sel.waitFor();
+    await sel.selectOption("formules");
+    await page.getByText("Les formules actives sont proposées").waitFor({ timeout: 8000 });
+    await page.screenshot({ path: `${SHOTS}/admin-mobile.png` });
+    await page.setViewportSize({ width: 1366, height: 900 });
+  });
+
+  await test("Notifications : liste de hauteur bornée qui défile, « Charger plus », recherche et filtre d'état", async () => {
+    await page.getByRole("tab", { name: "Notifications" }).click();
+    const liste = page.locator("ul[data-liste-admin]");
+    await liste.first().waitFor({ timeout: 10000 });
+    await page.getByLabel("Rechercher dans les titres et messages…").fill(`ZZE2E-${RUN}`);
+    await page.getByRole("button", { name: /Charger plus \(30 affichés\)/ }).waitFor({ timeout: 8000 });
+    const h = await liste.first().evaluate((e) => ({ h: e.getBoundingClientRect().height, sh: e.scrollHeight, vh: window.innerHeight, ov: getComputedStyle(e).overflowY }));
+    ok(h.h <= h.vh * 0.6 + 2 && h.sh > h.h && h.ov === "auto", "liste non bornée / ne défile pas : " + JSON.stringify(h));
+    await page.screenshot({ path: `${SHOTS}/admin-notifications.png` });
+    await page.getByRole("button", { name: /Charger plus/ }).click();
+    await page.waitForFunction((n) => document.querySelectorAll("ul[data-liste-admin] > li").length >= n, 35, { timeout: 8000 });
+    await page.getByLabel("Rechercher dans les titres et messages…").fill(`ZZE2E-${RUN}-34`);
+    await page.waitForFunction(() => document.querySelectorAll("ul[data-liste-admin] > li").length === 1, null, { timeout: 8000 });
+    await page.getByLabel("Rechercher dans les titres et messages…").fill(`ZZE2E-${RUN}`);
+    await page.getByLabel("État").selectOption("inactive");
+    // On attend le résultat FILTRÉ (et non le résultat périmé de la recherche précédente).
+    await page.waitForFunction(() => { const li = document.querySelectorAll("ul[data-liste-admin] > li"); return li.length === 1 && /ZZE2E-.*-00/.test(li[0].textContent); }, null, { timeout: 8000 });
+  });
+
+  await test("Signalements et Journal : filtres présents, signalements ouverts par défaut, journal filtrable", async () => {
+    await page.getByRole("tab", { name: /Signalements/ }).click();
+    await page.getByLabel("Statut").waitFor({ timeout: 8000 });
+    ok((await page.getByLabel("Statut").inputValue()) === "ouvert", "statut par défaut ≠ ouvert");
+    await page.getByLabel("Rechercher dans les messages…").waitFor();
+    await page.getByRole("tab", { name: "Journal" }).click();
+    const champ = page.getByLabel("Filtrer par action ou par e-mail…");
+    await champ.waitFor({ timeout: 8000 });
+    await champ.fill("notification_created");
+    await page.waitForFunction(() => { const li = [...document.querySelectorAll("ul[data-liste-admin] > li")]; return li.length > 0 && li.every((l) => /notification/i.test(l.textContent)); }, null, { timeout: 8000 });
+    await champ.fill("action-qui-nexiste-pas");
+    await page.getByText("Aucun évènement ne correspond.").waitFor({ timeout: 8000 });
+  });
+
+  await test("Paramètres : cartes de hauteur FIXE et identique, liste défilante à l'intérieur", async () => {
+    for (let i = 0; i < 25; i++) await ctx.request.post("/api/admin/referentiel-options", { data: { scope: "serie", code: `ZZ${RUN.toUpperCase().slice(-3)}${i}` } });
+    await page.getByRole("tab", { name: "Paramètres" }).click();
+    await page.locator("div.h-\\[28rem\\]").first().waitFor({ timeout: 10000 });
+    const cartes = await page.locator("div.h-\\[28rem\\]").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+    ok(cartes.length >= 2 && new Set(cartes).size === 1, "hauteurs différentes : " + cartes);
+    const defile = await page.locator("div.h-\\[28rem\\] ul").evaluateAll((els) => els.some((u) => u.scrollHeight > u.clientHeight && getComputedStyle(u).overflowY === "auto"));
+    ok(defile, "aucune liste ne défile à l'intérieur de sa carte");
+    await page.screenshot({ path: `${SHOTS}/admin-parametres.png` });
+  });
+
+  for (const id of ids) await ctx.request.delete(`/api/admin/notifications/${id}`);
   await ctx.close();
 }
 

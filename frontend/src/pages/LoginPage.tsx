@@ -4,7 +4,9 @@ import { api } from "../api/client";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { Logo } from "../components/Logo";
 import { useAuth } from "../auth/AuthProvider";
+import { Spinner } from "../components/Spinner";
 import { t } from "../i18n";
+import { messageErreurConnexion } from "../lib/messageConnexion";
 
 interface AuthConfig {
   mode: "mock" | "google";
@@ -17,6 +19,7 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [nom, setNom] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [enCours, setEnCours] = useState(false);
   const { loginMock, loginGoogle, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -43,11 +46,13 @@ export function LoginPage() {
   async function submitMock(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setEnCours(true);
     try {
       await loginMock(email, nom);
       navigate(from);
-    } catch {
-      setError(t("Connexion impossible. Vérifie les champs et réessaie."));
+    } catch (err) {
+      setError(messageErreurConnexion(err, t("Connexion impossible. Vérifie les champs et réessaie.")));
+      setEnCours(false);
     }
   }
 
@@ -127,9 +132,12 @@ export function LoginPage() {
               {error && <p id="login-error" role="alert" className="text-sm text-correction">{error}</p>}
               <button
                 type="submit"
-                className="min-h-[44px] w-full rounded-full bg-ink text-sm font-medium text-paper"
+                disabled={enCours}
+                aria-busy={enCours}
+                className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-ink text-sm font-medium text-paper disabled:opacity-70"
               >
-                {t("Se connecter")}
+                {enCours && <Spinner />}
+                {enCours ? t("Connexion…") : t("Se connecter")}
               </button>
               <p className="text-center text-xs text-slate">
                 {t("Mode démonstration — aucun mot de passe requis.")}
