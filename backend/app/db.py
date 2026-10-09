@@ -43,7 +43,21 @@ for d in (
     d.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_SQLITE_URL = f"sqlite:///{(DATA_DIR / 'bacprep.db').as_posix()}"
-DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_SQLITE_URL)
+
+
+def normaliser_url(url: str) -> str:
+    """Toute URL PostgreSQL passe par psycopg v3 (`postgresql+psycopg://`).
+
+    SQLAlchemy 2.1 choisit psycopg v3 pour `postgresql://` (la forme que donnent Supabase et
+    Render) et ne connaît pas `postgres://`. On accepte donc aussi `postgres://` et l'ancien
+    `postgresql+psycopg2://` : un DATABASE_URL déjà saisi continue de fonctionner."""
+    for ancien in ("postgres://", "postgresql://", "postgresql+psycopg2://"):
+        if url.startswith(ancien):
+            return "postgresql+psycopg://" + url[len(ancien):]
+    return url
+
+
+DATABASE_URL = normaliser_url(os.getenv("DATABASE_URL", DEFAULT_SQLITE_URL))
 
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
@@ -123,6 +137,9 @@ else:
         pool_pre_ping=True,
         pool_size=pool_size,
         max_overflow=max_overflow,
+        # Pas de requêtes préparées côté serveur : le pooler « transaction » de Supabase
+        # (port 6543) les partage entre connexions (erreur « prepared statement already exists »).
+        connect_args={"prepare_threshold": None},
     )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)

@@ -245,9 +245,14 @@ Les nouvelles variables sont déjà dans `render.yaml` (valeurs par défaut) ; s
 2. **Recherche sans accents** : l'extension PostgreSQL `unaccent` est activée au démarrage
    (`CREATE EXTENSION IF NOT EXISTS unaccent`, extension « de confiance » : testée avec un rôle non
    superutilisateur). Si l'activation échoue, la recherche reste sensible aux accents (avertissement dans les logs).
-3. **IP cliente** : après déploiement, appeler `GET /api/health/ip` avec un faux en-tête
-   `True-Client-IP: 1.2.3.4`. Si la réponse renvoie `1.2.3.4`, l'en-tête est forgeable : mettre
-   `TRUST_CLIENT_IP_HEADERS=0` dans Render (les limiteurs se rabattent sur `X-Forwarded-For`).
+3. **IP cliente** : après déploiement, vérifier que l'adresse comptée par les limiteurs est bien la vôtre
+   **et** que l'en-tête `True-Client-IP` n'est pas falsifiable :
+   ```bash
+   curl https://<service>.onrender.com/api/health/ip                                   # votre IP publique
+   curl -H "True-Client-IP: 1.2.3.4" https://<service>.onrender.com/api/health/ip      # NE doit PAS renvoyer 1.2.3.4
+   ```
+   Si le second appel renvoie `1.2.3.4`, l'en-tête est forgeable : mettre `TRUST_CLIENT_IP_HEADERS=0` dans Render
+   (les limiteurs se rabattent alors sur `X-Forwarded-For`).
 4. **Sauvegarde hebdomadaire** : définir `CRON_TOKEN` dans Render (≥ 24 caractères, p. ex.
    `python -c "import secrets;print(secrets.token_urlsafe(32))"`) et le même secret `CRON_TOKEN` dans
    GitHub (Settings › Secrets › Actions). Variable GitHub facultative `APP_URL` si l'adresse change.
@@ -258,7 +263,10 @@ Les nouvelles variables sont déjà dans `render.yaml` (valeurs par défaut) ; s
 6. **Déploiement après CI** : `autoDeployTrigger: checksPass` ne s'applique qu'à un service géré par le
    Blueprint ; sinon, dans le tableau de bord : Settings › Build & Deploy › Auto-Deploy = « After CI Checks Pass ».
 7. **Journaux** : `LOG_FORMAT=json` (une ligne JSON par requête, sans IP ni corps ; identifiant dans `X-Request-ID`).
-8. **Paiement** : en pause, voir `PAIEMENT.md`. Laisser `DEMO_MODE=false` en production.
+8. **Pilote PostgreSQL** : l'application utilise `psycopg` v3 (SQLAlchemy 2.1 le choisit pour `postgresql://`). Toute forme
+   d'URL (`postgresql://`, `postgres://`, `postgresql+psycopg2://`) est acceptée et convertie ; les requêtes préparées sont
+   désactivées pour le pooler « transaction » de Supabase (port 6543).
+9. **Paiement** : en pause, voir `PAIEMENT.md`. Laisser `DEMO_MODE=false` en production.
 
 ## Déploiement Render
 

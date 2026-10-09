@@ -58,6 +58,8 @@ jobs:
       - run: pip install -r backend/requirements.txt
       - run: npm ci && npm run build
         working-directory: frontend
+      # `playwright-core` (la seule dépendance) fournit sa propre commande ; `npx playwright` irait
+      # chercher le paquet complet, dans une version dont le navigateur peut différer.
       - run: npx playwright-core install --with-deps chromium
         working-directory: frontend
       - name: Démarrer le serveur
@@ -68,7 +70,7 @@ jobs:
           DEMO_MODE: "true"
           DATABASE_URL: postgresql+psycopg://bacprep:bacprep@127.0.0.1/bacprep_e2e
           DB_SSLMODE: disable
-          ADMIN_ROOT: admin@example.com
+          ADMIN_ROOT: admin@example.com  # compte admin de test (= E2E_ADMIN_EMAIL) ; sans lui is_admin vaut false et l'interface refuse /admin
           ADMIN_TOKEN: e2e-admin-token
           STORAGE_BACKEND: local
           ASSISTANT_RATE_LIMIT: "0"
