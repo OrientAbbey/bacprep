@@ -539,6 +539,13 @@ console.log("\nPWA et lecture hors-ligne");
     ok(admin.length === 0, "le back-office ne doit pas être précaché : " + admin);
   });
 
+  await test("service worker : la doc OpenAPI (/docs) n'est pas avalée par la coque de l'application", async () => {
+    // Régression corrigée : le service worker répondait index.html (« Page introuvable ») à /docs.
+    await page.goto("/docs");
+    ok(/swagger/i.test(await page.title()), "la doc OpenAPI n'est pas servie : titre = " + (await page.title()));
+    ok((await page.getByText("Page introuvable").count()) === 0, "la page 404 de l'application a remplacé la doc");
+  });
+
   await test("téléchargement hors-ligne : épreuve + image mises de côté, copie signalée", async () => {
     await page.goto(`/epreuve/${cree.id}`);
     await page.getByText("TEXTE-HORS-LIGNE-ABC").waitFor({ timeout: 15000 });
