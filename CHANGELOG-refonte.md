@@ -15,6 +15,12 @@ Base : `main` @ `7694149`. Branche : `refonte` (une série de commits par lot).
 | 7 | `pwa:` | Manifeste, service worker, lecture hors-ligne, bandeau réseau |
 | 8 | `admin-ai:` | Assistant du back-office sur tous les onglets, actions confirmées, liste blanche, journal |
 | 9 | `ops:` | Logs JSON, sauvegarde hebdomadaire par jeton, `render.yaml`, ruff, `PAIEMENT.md` (en pause) |
+| 9b | `deps:` | Montées de version (React 19.3, Vite 8.3, KaTeX 0.19 imposé à tout l'arbre via `overrides`, FastAPI 0.142, SQLAlchemy 2.1, `httpx2`…), contraintes bornées `>=` / `<=`, actions GitHub en v7, `npm audit` à 0 |
+| 9c | `refactor:` | `ChatBubble`, `MessageComposer`, `Avatar` partagés entre l'assistant élève et l'assistant admin ; 13 éléments inutilisés et du code mort supprimés ; `noUnusedLocals` activé |
+| 9d | `fix(ci,db):` | `psycopg` v3 avec normalisation de toute forme d'URL PostgreSQL, requêtes préparées désactivées pour le pooler Supabase ; CI : `playwright-core`, `ADMIN_ROOT` |
+| 9e | `feat(admin):` | Recherche, filtres et pagination serveur (notifications, signalements, journal) |
+| 9f | `feat(ui):` | Navigation admin latérale groupée, listes bornées, cartes de paramètres à hauteur fixe, nuage de connexion, messages de connexion par cause, indicateurs de chargement, A−/A+ flottant |
+| — | `fix(deps)`, `fix(ci)`, `fix(front)` | **Correctifs déjà présents sur la branche `refonte` distante** (conservés) : `pytest.ini`, `ADMIN_ROOT`/`playwright-core` en CI, exclusion `/^\/doc/` du service worker (la doc OpenAPI n'est plus interceptée) |
 
 ## À faire après application du bundle
 1. `git fetch bacprep-refonte.bundle refonte:refonte` puis relecture / `git push` (je n'ai pas d'accès GitHub).
