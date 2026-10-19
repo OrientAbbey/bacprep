@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -494,6 +495,17 @@ class NotificationReadORM(Base):
 def to_dict(obj) -> dict:
     """Colonnes d'une ligne ORM sous forme de dict (réponses JSON des listes simples)."""
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
+
+
+class AvatarORM(Base):
+    """Photo de profil (WebP 256 px, ~10-20 Ko) stockée en base : supprimée avec le compte,
+    sans toucher au stockage objet."""
+
+    __tablename__ = "avatars"
+
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    data = Column(LargeBinary, nullable=False)
+    updated_at = Column(UTCDateTime, default=utc_now, nullable=False)
 
 
 class PlanORM(Base):

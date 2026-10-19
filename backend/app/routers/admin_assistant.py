@@ -135,6 +135,24 @@ def admin_get_conversation(
     return {"conversation": store.admin_conversation_to_dict(conv) if conv else None}
 
 
+class DeplacerIn(BaseModel):
+    vers: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/conversation/{epreuve_id}/deplacer")
+def admin_move_conversation(
+    epreuve_id: str, payload: DeplacerIn, db: Session = Depends(get_db), lock=Depends(require_admin)
+) -> dict:
+    """Rattache la conversation tenue sur un BROUILLON (clé `brouillon:…`) à l'épreuve une fois
+    enregistrée : la discussion suit l'épreuve au lieu de rester orpheline."""
+    conv = store.get_admin_conversation(db, lock.email, epreuve_id)
+    if conv is None or store.get_admin_conversation(db, lock.email, payload.vers) is not None:
+        return {"ok": False}
+    conv.epreuve_id = payload.vers
+    db.commit()
+    return {"ok": True}
+
+
 @router.delete("/conversation/{epreuve_id}")
 def admin_delete_conversation(
     epreuve_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)
@@ -166,13 +184,14 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
 
     from ..core import admin_tools
 
-    # Voie « onglet » : jamais persistée ; le résumé est calculé ICI (session valide).
+    # Voie « onglet » : le résumé est calculé ICI (session valide) ; la conversation est
+    # mémorisée par onglet sous la clé `onglet:<nom>` (mêmes routes que celles d'une épreuve).
     prompt_onglet = None
     if payload.onglet and payload.onglet in admin_tools.ONGLETS:
         prompt_onglet = admin_tools.prompt_onglet(
             payload.onglet, admin_tools.resume_onglet(db, payload.onglet), payload.question, payload.historique
         )
-        payload.epreuve_id = None
+        payload.epreuve_id = f"onglet:{payload.onglet}"
 
     persiste = bool(payload.epreuve_id)
     conv = None

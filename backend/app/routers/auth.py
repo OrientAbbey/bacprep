@@ -12,6 +12,7 @@ from ..core.config import demo_allowed
 from ..core.logging_config import get_logger
 from ..core.rate_limit import SlidingWindowLimiter, client_ip
 from ..db import get_db, utc_now
+from ..core.avatar import version_avatar
 from ..models import AuthConfigOut, GoogleLoginIn, MockLoginIn, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -34,6 +35,7 @@ def _user_out(user, db: Session | None = None) -> UserOut:
         is_admin=user.email.lower() in admin_session.allowed_emails(db),
         consent_ia=user.consent_ia,
         consent_notes=user.consent_notes,
+        avatar_version=version_avatar(db, user.id) if db is not None else None,
     )
 
 # Freine le brute-force / l'énumération d'emails sur les deux logins.

@@ -11,6 +11,7 @@ from ..db_models import (
     AIConversationORM,
     ConsultationORM,
     EpreuveORM,
+    AvatarORM,
     EssaiORM,
     KickoutNoticeORM,
     NoteORM,
@@ -274,6 +275,7 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
             {"epreuve_id": c.epreuve_id, "epreuve": epreuves.get(c.epreuve_id), "consulted_at": c.consulted_at}
             for c in db.query(ConsultationORM).filter(ConsultationORM.user_id == user.id).all()
         ],
+        "avatar": {"present": db.get(AvatarORM, user.id) is not None},  # l'image elle-même : GET /api/me/avatar
         "essais": [
             {"epreuve_id": t.epreuve_id, "epreuve": epreuves.get(t.epreuve_id), "note": t.note, "duree_s": t.duree_s, "date": t.created_at}
             for t in db.query(EssaiORM).filter(EssaiORM.user_id == user.id).all()
@@ -312,6 +314,7 @@ def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) 
     db.query(AIConversationORM).filter(AIConversationORM.user_id == u_id).delete()
     db.query(ConsultationORM).filter(ConsultationORM.user_id == u_id).delete()
     db.query(EssaiORM).filter(EssaiORM.user_id == u_id).delete()
+    db.query(AvatarORM).filter(AvatarORM.user_id == u_id).delete()
     # Ordre important : les paiements référencent les abonnements
     # (payments.subscription_id → subscriptions.id, FK RESTRICT) — il faut
     # donc purger les paiements AVANT les abonnements, sinon le DELETE des

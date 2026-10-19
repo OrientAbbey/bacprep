@@ -27,6 +27,7 @@ from ..db_models import (
     AdminEventORM,
     AIConversationORM,
     ConsultationORM,
+    AvatarORM,
     EssaiORM,
     EpreuveFileORM,
     EpreuveORM,
@@ -578,6 +579,7 @@ def admin_supprimer_utilisateur(
     db.query(AIConversationORM).filter(AIConversationORM.user_id == u.id).delete()
     db.query(ConsultationORM).filter(ConsultationORM.user_id == u.id).delete()
     db.query(EssaiORM).filter(EssaiORM.user_id == u.id).delete()
+    db.query(AvatarORM).filter(AvatarORM.user_id == u.id).delete()
     # Ordre important : les paiements référencent les abonnements
     # (payments.subscription_id → subscriptions.id, FK RESTRICT) — il faut
     # donc purger les paiements AVANT les abonnements, sinon le DELETE des

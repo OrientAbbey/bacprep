@@ -407,7 +407,7 @@ def test_export_et_suppression_compte(client, epreuve_payante):
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["profil"]["email"] == "rgpd@test.cm"
-        assert set(body) == {"profil", "notes", "conversations_ia", "consultations", "essais", "abonnements", "paiements"}
+        assert set(body) == {"profil", "notes", "conversations_ia", "consultations", "essais", "avatar", "abonnements", "paiements"}
 
         # Suppression du compte → sessions révoquées (401 ensuite).
         assert u.delete("/api/me/compte").status_code == 200

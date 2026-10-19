@@ -30,6 +30,8 @@ class UserOut(BaseModel):
     # Consentements (NULL = pas encore demandé, la modale doit s'afficher).
     consent_ia: Optional[bool] = None
     consent_notes: Optional[bool] = None
+    # Horodatage de la photo de profil (None = pas de photo) : sert de paramètre ?v= de l'URL.
+    avatar_version: Optional[str] = None
 
 
 class ConsentementIn(BaseModel):

@@ -144,7 +144,14 @@ def test_flux_onglet_utilise_le_resume_sans_persister(admin, monkeypatch):
     r = admin.post("/api/admin/assistant/ask", json={"question": "Combien de formules ?", "onglet": "formules", "epreuve_id": "ignore"})
     assert r.status_code == 200
     assert "Formules d'abonnement" in vus["prompt"] and "Combien de formules ?" in vus["prompt"]
-    assert '"conversation": null' in r.text  # la voie « onglet » n'est jamais persistée
+    # La conversation est mémorisée par onglet (clé `onglet:formules`) et restituée à la réouverture.
+    assert '"conversation": null' not in r.text
+    conv = admin.get("/api/admin/assistant/conversation/onglet:formules").json()["conversation"]
+    assert [m["role"] for m in conv["messages"]] == ["user", "assistant"]
+    assert conv["messages"][1]["content"] == "Réponse"
+    assert admin.get("/api/admin/assistant/conversation/onglet:calendrier").json()["conversation"] is None  # une par onglet
+    admin.delete("/api/admin/assistant/conversation/onglet:formules")
+    assert admin.get("/api/admin/assistant/conversation/onglet:formules").json()["conversation"] is None
 
 
 def test_onglet_inconnu_retombe_sur_la_voie_epreuve(admin, monkeypatch):

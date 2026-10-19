@@ -17,6 +17,35 @@ from typing import AsyncIterator
 from . import assistant as assistant_llm
 
 
+def _contenu_epreuve(meta: dict, max_context_chars: int) -> str:
+    """Markdown brut de TOUS les sujets/corrigés de l'éditeur (contenu non enregistré compris).
+
+    Un seul sujet : format historique (`--- SUJET (Markdown brut) ---`, corrigé prioritaire en cas
+    de troncature). Plusieurs : chaque partie est numérotée (`SUJET 2`, `CORRIGÉ 2`…) pour que
+    l'assistant puisse cibler une modification (`remplacer-sujet:2`)."""
+    sujets = [s for s in (meta.get("sujets") or []) if isinstance(s, dict)]
+    if len(sujets) <= 1:
+        unique = sujets[0] if sujets else meta
+        sujet = (unique.get("contenu_markdown") or "").strip()
+        corrige = (unique.get("corrige_markdown") or "").strip()
+        contenu = f"--- CORRIGÉ (Markdown brut) ---\n{corrige}\n\n" if corrige else ""
+        if sujet:
+            candidate = f"{contenu}--- SUJET (Markdown brut) ---\n{sujet}"
+            return candidate if len(candidate) <= max_context_chars else candidate[:max_context_chars]
+        return contenu[:max_context_chars]
+    parties = []
+    for n, sj in enumerate(sujets, 1):
+        sujet = (sj.get("contenu_markdown") or "").strip()
+        corrige = (sj.get("corrige_markdown") or "").strip()
+        parties.append(f"--- SUJET {n} (Markdown brut) ---\n{sujet or '(vide)'}")
+        if corrige:
+            parties.append(f"--- CORRIGÉ {n} (Markdown brut) ---\n{corrige}")
+    contenu = "\n\n".join(parties)
+    if len(contenu) > max_context_chars:
+        contenu = contenu[:max_context_chars] + "\n[… contenu tronqué …]"
+    return contenu
+
+
 def build_admin_prompt(
     epreuve: dict,
     question: str,
@@ -45,20 +74,7 @@ def build_admin_prompt(
     statut = meta.get("statut") or "?"
     gratuit = meta.get("gratuit")
 
-    sujet = (meta.get("contenu_markdown") or "").strip()
-    corrige = (meta.get("corrige_markdown") or "").strip()
-
-    # Contexte partagé : sujet + corrigé, tronqués ENSEMBLE pour rester dans
-    # le plafond de contexte (le corrigé est prioritaire si les deux ne
-    # tiennent pas — c'est celui qui a le plus à gagner d'une relecture).
-    contenu = ""
-    if corrige:
-        contenu = f"--- CORRIGÉ (Markdown brut) ---\n{corrige}\n\n"
-    if sujet:
-        candidate = f"{contenu}--- SUJET (Markdown brut) ---\n{sujet}"
-        contenu = candidate if len(candidate) <= max_context_chars else candidate[:max_context_chars]
-    else:
-        contenu = contenu[:max_context_chars]
+    contenu = _contenu_epreuve(meta, max_context_chars)
 
     lignes = [
         "Tu es l'assistant du back-office de BacPrep (Copies & Corrigés), un expert des "
@@ -72,6 +88,8 @@ def build_admin_prompt(
         f"Épreuve en cours d'édition — {matiere} · {evaluation} {annee}"
         + f" · classe {classe} · séries {', '.join(filieres) if filieres else '?'}",
         f"Statut : {statut}" + (". Épreuve gratuite (consultation sans abonnement)." if gratuit else ". Épreuve payante."),
+        # Cible par défaut des modifications quand l'admin dit « ce sujet » / ne précise pas de numéro.
+        *([f"Sujet affiché dans l'éditeur : sujet {meta['sujet_actif']}."] if isinstance(meta.get("sujet_actif"), int) else []),
         "Réponds STRICTEMENT en Markdown : utilise des formules LaTeX pour les expressions "
         "mathématiques, des tableaux Markdown si utile, et des listes à puces pour structurer. "
         "N'utilise jamais de HTML brut.",
@@ -85,13 +103,25 @@ def build_admin_prompt(
         "Les images se référencent avec ![Légende](/api/files/{id}#w=300) (fragment #w=NNN "
         "pour la largeur d'affichage — absent = taille pleine). Les ancres `{#id}` servent "
         "aux renvois GPC/Théorique.",
-        "MODIFICATIONS APPLICABLES : si l'admin te demande de MODIFIER ou RÉÉCRIRE le sujet "
-        "ou le corrigé, fournis la version complète révisée dans un bloc de code fencé "
-        "portant le marqueur spécial correspondant — ```modification-sujet``` pour le sujet, "
-        "```modification-corrige``` pour le corrigé. Le bloc doit contenir TOUT le Markdown "
-        "révisé (prêt à remplacer la zone de texte correspondante), JAMAIS un extrait ou un "
-        "résumé des changements. Un seul bloc par cible ; garde une explication concise "
-        "avant le bloc et n'écris aucune autre version du contenu en dehors de lui.",
+        "MODIFICATIONS APPLIQUÉES AUTOMATIQUEMENT : quand l'admin te demande de modifier, corriger, "
+        "ajouter ou supprimer une partie du sujet ou du corrigé, tes modifications sont appliquées "
+        "directement dans l'éditeur dès la fin de ta réponse (il peut les annuler). Utilise un bloc de "
+        "code fencé dont le marqueur désigne la cible ; N est le numéro du sujet.",
+        "1) MODIFICATION CIBLÉE (à privilégier, surtout sur un contenu long) : ```remplacer-sujet:N``` "
+        "ou ```remplacer-corrige:N``` (sans :N = le sujet affiché dans l'éditeur) contenant une ou "
+        "plusieurs paires de ce format exact :\n"
+        "<<<<<<< CHERCHER\nextrait EXACT du contenu actuel\n=======\nnouveau texte\n>>>>>>> REMPLACER\n"
+        "L'extrait CHERCHER doit exister MOT POUR MOT dans le contenu ci-dessus (espaces et retours à "
+        "la ligne compris) et être assez long pour être unique : ne l'invente jamais, ne le résume "
+        "pas. Pour AJOUTER à la fin, laisse la partie CHERCHER vide ; pour SUPPRIMER, laisse la partie "
+        "REMPLACER vide.",
+        "2) RÉÉCRITURE COMPLÈTE (seulement si l'admin demande de tout refaire, ou si le contenu est "
+        "vide) : ```modification-sujet:N``` ou ```modification-corrige:N``` avec TOUT le Markdown "
+        "révisé, jamais un extrait.",
+        "Le texte que tu écris dans CHERCHER/REMPLACER est inséré tel quel : respecte le formatage du "
+        "contenu (mêmes conventions de titres, listes et ancres `{#id}`, $$...$$ seuls sur leur ligne "
+        "entourés de lignes vides, images ![..](/api/files/..) inchangées). Garde une explication "
+        "brève AVANT le bloc et n'écris aucune autre version du contenu en dehors des blocs.",
         "MODIFICATIONS DU FORMULAIRE : si l'admin te demande de corriger les métadonnées ou "
         "les réglages de l'épreuve (matière, niveau, classe, évaluation, année, durée, "
         "coefficient, séries, statut ou gratuité), fournis le nouvel ensemble complet dans un "

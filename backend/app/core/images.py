@@ -46,6 +46,26 @@ class InvalidImageError(ValueError):
     autorisé — le routeur répondra 415."""
 
 
+AVATAR_TAILLE = 256
+
+
+def process_avatar(raw: bytes) -> bytes:
+    """Image envoyée pour l'avatar → WebP carré de 256 px, orientation EXIF appliquée puis
+    métadonnées (GPS, appareil…) supprimées par le ré-encodage. Même validation du CONTENU que
+    `process_image` ; lève `InvalidImageError` si ce n'est pas une image d'un format autorisé."""
+    process_image(raw, "image/png")  # valide magic bytes, format et taille ; l'image redimensionnée est ignorée
+    from PIL import ImageOps
+
+    try:
+        img = ImageOps.exif_transpose(Image.open(BytesIO(raw)))
+        img = ImageOps.fit(img.convert("RGBA"), (AVATAR_TAILLE, AVATAR_TAILLE), Image.Resampling.LANCZOS)
+        sortie = BytesIO()
+        img.save(sortie, format="WEBP", quality=82, method=6)
+        return sortie.getvalue()
+    except Exception as exc:
+        raise InvalidImageError(f"traitement de l'avatar impossible : {exc}") from exc
+
+
 def process_image(raw: bytes, mime: str) -> tuple[bytes, str, Optional[int], Optional[int]]:
     """Valide puis optimise une image uploadée : format vérifié via les
     magic bytes (décodage Pillow), dimensions mesurées, réduction à

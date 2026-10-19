@@ -45,6 +45,7 @@ from .routers import (
     admin_sauvegardes,
     assistant,
     auth,
+    avatar,
     epreuves,
     files,
     me,
@@ -416,6 +417,7 @@ app.include_router(admin_plans.router)
 app.include_router(calendrier.public)
 app.include_router(calendrier.admin)
 app.include_router(essais.router)
+app.include_router(avatar.router)
 app.include_router(cron.router)
 app.include_router(admin_notifications.router)
 app.include_router(admin_assistant.router)
