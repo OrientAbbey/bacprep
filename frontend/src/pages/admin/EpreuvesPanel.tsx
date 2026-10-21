@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { Bot, Check, Loader2, Plus, Search, X } from "lucide-react";
 import { api, ApiError, ensureReferentielOption } from "../../api/client";
 import { AdminEpreuveCounts, EpreuveDetail, ReferentielOptions } from "../../api/types";
+import { appliquerEditions } from "../../lib/adminAssistant";
+import { BasculeAffichage } from "../../components/BasculeAffichage";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { affichageInitial, contenuAffiche, type AffichageSujets } from "../../lib/sujets";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
 import type { ModificationsEpreuve } from "../../lib/adminAssistant";
-import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, erreurDetail, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur } from "./shared";
+import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, erreurDetail, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur, modeEditeurInitial, type ModeEditeur } from "./shared";
 
 interface AdminEpreuveSummary {
   id: string;
@@ -73,8 +76,11 @@ export function EpreuvesPanel({
   // passe de l'un à l'autre. Chaque sujet garde son propre état d'aperçu
   // (texte/rendu) pour le sujet et pour le corrigé.
   const [sujetActif, setSujetActif] = useState(0);
-  const [previewSujet, setPreviewSujet] = useState<Record<number, boolean>>({});
-  const [previewCorrige, setPreviewCorrige] = useState<Record<number, boolean>>({});
+  // « Page par page » / « Toutes les pages » : concerne le RENDU (l'édition porte sur le sujet sélectionné).
+  const [affichage, setAffichage] = useState<AffichageSujets>(affichageInitial);
+  // Mode d'affichage (texte / rendu / côte à côte) par sujet ; préférence mémorisée sur l'appareil.
+  const [modeSujet, setModeSujet] = useState<Record<number, ModeEditeur>>({});
+  const [modeCorrige, setModeCorrige] = useState<Record<number, ModeEditeur>>({});
   const [listeChargement, setListeChargement] = useState(true);
   const [listeErreur, setListeErreur] = useState(false);
   // Confirmation en attente pour les actions irréversibles (suppression
@@ -640,8 +646,12 @@ export function EpreuvesPanel({
    * l'enregistrement ne se fait qu'avec son clic explicite sur
    * « Enregistrer ». */
   function appliquerModifications(modifications: ModificationsEpreuve) {
-    const { sujet, corrige, form: modifForm } = modifications;
-    if (!sujet && !corrige && !modifForm) return;
+    const { sujet, corrige, form: modifForm, editions } = modifications;
+    if (!sujet && !corrige && !modifForm && !editions?.length) return;
+    // Éditions numérotées / ciblées : résultat calculé sur l'état courant (pour informer l'admin) puis
+    // appliqué dans la mise à jour d'état ; un extrait introuvable n'applique rien pour cette édition.
+    const rangActif = Math.max(1, form.sujets.findIndex((s) => s.index === sujetActif) + 1);
+    const resultats = editions?.length ? appliquerEditions(form.sujets, editions, rangActif).resultats : [];
     // Applique la modification au sujet EN COURS d'édition (onglet actif) et
     // les métadonnées au formulaire (le `statut` vit dans `statutForm`, pas
     // dans `form`). Les valeurs numériques JSON du modèle (durée, coefficient)
@@ -662,7 +672,10 @@ export function EpreuvesPanel({
             filieres: modifForm.filieres ?? f.filieres,
           }
         : {}),
-      sujets: f.sujets.map((s) =>
+      sujets: (editions?.length
+        ? appliquerEditions(f.sujets, editions, Math.max(1, f.sujets.findIndex((s) => s.index === sujetActif) + 1)).sujets
+        : f.sujets
+      ).map((s) =>
         s.index === sujetActif
           ? {
               ...s,
@@ -676,7 +689,13 @@ export function EpreuvesPanel({
     if (modifForm?.statut && STATUTS_FORM.includes(modifForm.statut)) {
       setStatutForm(modifForm.statut);
     }
-    showToast("Modification de l'assistant appliquée au formulaire.", "success");
+    const echecs = resultats.filter((r) => !r.ok);
+    if (echecs.length) {
+      showToast(`Non appliqué — ${echecs.map((r) => `${r.libelle} : ${r.raison}`).join(" ; ")}.`, "error");
+    }
+    if (resultats.length === 0 || resultats.some((r) => r.ok) || sujet || corrige || modifForm) {
+      showToast("Modification de l'assistant appliquée au formulaire.", "success");
+    }
   }
 
   // Sujet actuellement affiché dans les zones d'édition (onglet actif).
@@ -957,6 +976,12 @@ export function EpreuvesPanel({
               Sujet 2…) + bouton « + » pour en ajouter. Le sujet affiché
               ci-dessous suit l'onglet actif — chaque sujet garde son
               corrigé optionnel. */}
+          {form.sujets.length > 1 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <BasculeAffichage valeur={affichage} onChange={setAffichage} />
+              {affichage === "tout" && <p className="text-xs text-slate">Le rendu montre tous les sujets ; l'édition porte sur le sujet sélectionné.</p>}
+            </div>
+          )}
           <div role="tablist" aria-label="Sujets de l'épreuve" className="flex flex-wrap items-center gap-1.5">
             {form.sujets.map((s, i) => {
               const actif = s.index === sujetActifData.index;
@@ -1023,8 +1048,9 @@ export function EpreuvesPanel({
               title={rangSujetActif === 1 ? "Sujet" : `Sujet n°${rangSujetActif}`}
               required={sujetActifData.index === 0}
               markdown={sujetActifData.contenu_markdown}
-              preview={Boolean(previewSujet[sujetActifData.index])}
-              onTogglePreview={() => setPreviewSujet((p) => ({ ...p, [sujetActifData.index]: !p[sujetActifData.index] }))}
+              markdownApercu={contenuAffiche(form.sujets, sujetActifData, "sujet", affichage)}
+              mode={modeSujet[sujetActifData.index] ?? modeEditeurInitial()}
+              onMode={(m) => setModeSujet((p) => ({ ...p, [sujetActifData.index]: m }))}
               onChange={(v) => updateSujet(sujetActifData.index, "contenu_markdown", v)}
               onUpload={(file) => uploadImage(file, "sujet")}
               onImportMarkdown={(text) => importMarkdown(text, "sujet")}
@@ -1040,10 +1066,9 @@ export function EpreuvesPanel({
               title={rangSujetActif === 1 ? "Corrigé (optionnel)" : `Corrigé n°${rangSujetActif} (optionnel)`}
               required={false}
               markdown={sujetActifData.corrige_markdown}
-              preview={Boolean(previewCorrige[sujetActifData.index])}
-              onTogglePreview={() =>
-                setPreviewCorrige((p) => ({ ...p, [sujetActifData.index]: !p[sujetActifData.index] }))
-              }
+              markdownApercu={contenuAffiche(form.sujets, sujetActifData, "corrige", affichage)}
+              mode={modeCorrige[sujetActifData.index] ?? modeEditeurInitial()}
+              onMode={(m) => setModeCorrige((p) => ({ ...p, [sujetActifData.index]: m }))}
               onChange={(v) => updateSujet(sujetActifData.index, "corrige_markdown", v)}
               onUpload={(file) => uploadImage(file, "corrige")}
               onImportMarkdown={(text) => importMarkdown(text, "corrige")}
@@ -1130,6 +1155,7 @@ export function EpreuvesPanel({
           epreuveId={form.id}
           onClose={() => setAssistantOuvert(false)}
           onAppliquer={appliquerModifications}
+          sujetActifRang={Math.max(1, form.sujets.findIndex((s) => s.index === sujetActif) + 1)}
         />
       )}
 

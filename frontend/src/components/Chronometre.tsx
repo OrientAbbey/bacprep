@@ -1,6 +1,8 @@
 import { Pause, Play, RotateCcw, Timer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dureeEnMinutes, formaterDurée } from "../lib/chronometre";
+import { jouerAlarme, preparerSon } from "../lib/son";
+import { BoutonSon } from "./BoutonSon";
 import { useToast } from "./Toast";
 import { t } from "../i18n";
 
@@ -45,6 +47,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
       showToast(t("Saisis un temps en minutes pour lancer le chronomètre."), "error");
       return;
     }
+    preparerSon(); // geste utilisateur : autorise l'alarme sonore quand le décompte arrivera à zéro
     stopCount();
     // Démarrage à NEUF (restant === null) : partir de la durée saisie.
     // REPRISE après pause : garder le `restant` courant — la version
@@ -71,6 +74,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
 
   useEffect(() => {
     if (expire) {
+      jouerAlarme();
       const t = window.setTimeout(() => setExpire(false), 6000);
       return () => window.clearTimeout(t);
     }
@@ -129,6 +133,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
         >
           <div className="flex items-start justify-between gap-2">
             <p className="font-serif-brand text-sm">{t("Chronomètre")}</p>
+            <BoutonSon />
             <button
               type="button"
               onClick={fermer}

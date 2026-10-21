@@ -2,6 +2,8 @@ import { ClipboardCheck, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { dureeEnMinutes, formaterDurée } from "../lib/chronometre";
+import { jouerAlarme, preparerSon } from "../lib/son";
+import { BoutonSon } from "./BoutonSon";
 import { useToast } from "./Toast";
 import { t } from "../i18n";
 
@@ -39,6 +41,7 @@ export function ExamenBlanc({
 
   useEffect(() => {
     if (phase === "composition" && restant <= 0) {
+      jouerAlarme();
       showToast(t("Temps écoulé ! Entre ta note pour enregistrer l'essai."), "success");
       setPhase("note");
     }
@@ -50,6 +53,7 @@ export function ExamenBlanc({
     // Prévenir le parent DANS le même évènement (un seul rendu) : sinon le minuteur
     // s'afficherait un rendu avant que le corrigé et l'assistant ne soient masqués.
     onChange(true);
+    preparerSon(); // geste utilisateur : autorise l'alarme sonore de fin de temps
     setPhase("composition");
   };
   const enregistrer = (valeur: number | null) =>
@@ -69,6 +73,7 @@ export function ExamenBlanc({
   if (phase === "composition")
     return (
       <div role="timer" aria-label={t("Examen blanc en cours")} className="flex items-center gap-2 text-sm">
+        <BoutonSon />
         <span className={`font-mono-tag tabular-nums ${restant < 300 ? "text-correction" : ""}`}>{formaterDurée(restant)}</span>
         <button onClick={() => setPhase("note")} className="min-h-[44px] rounded-full bg-ink px-4 text-paper">
           {t("Terminer")}

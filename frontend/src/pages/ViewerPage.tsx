@@ -10,8 +10,10 @@ import { Chronometre } from "../components/Chronometre";
 import { MarkdownContent } from "../components/MarkdownContent";
 import { NoteEditor } from "../components/NoteEditor";
 import { ExamenBlanc } from "../components/ExamenBlanc";
+import { BasculeAffichage } from "../components/BasculeAffichage";
 import { ExportPdf } from "../components/ExportPdf";
 import { TelechargerHorsLigne } from "../components/TelechargerHorsLigne";
+import { affichageInitial, contenuAffiche, type AffichageSujets } from "../lib/sujets";
 import { TailleTexte, useTailleTexte } from "../components/TailleTexte";
 import { SelectionBar } from "../components/SelectionBar";
 import { SignalementModal } from "../components/SignalementModal";
@@ -73,6 +75,8 @@ export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const [taille, changerTaille] = useTailleTexte();
+  // Épreuve à plusieurs sujets : un à la fois (« page ») ou tous à la suite (« tout »), préférence mémorisée.
+  const [affichage, setAffichage] = useState<AffichageSujets>(affichageInitial);
   // Examen blanc en cours : corrigé et assistant masqués.
   const [examenEnCours, setExamenEnCours] = useState(false);
   const [searchParams] = useSearchParams();
@@ -202,13 +206,12 @@ export function ViewerPage() {
     // On retrouve le Markdown BRUT (formules, tableaux, images compris)
     // correspondant à la sélection, plutôt que le texte affiché nettoyé —
     // c'est ce contenu brut qui est envoyé à l'assistant / à la note.
-    const contenuActif =
-      onglet === "sujet" ? sujetActifData?.contenu_markdown ?? "" : sujetActifData?.corrige_markdown ?? "";
+    const contenuActif = contenuAffiche(epreuve?.sujets ?? [], sujetActifData, onglet === "sujet" ? "sujet" : "corrige", affichage);
     const markdown = extractSourceMarkdownForSelection(sel, contenuActif || "") ?? text;
 
     const rect = sel.getRangeAt(0).getBoundingClientRect();
     setSelection({ x: rect.left, y: rect.top - 48, markdown });
-  }, [epreuve, onglet, sujetActifData]);
+  }, [epreuve, onglet, sujetActifData, affichage]);
 
   // Sélection au TOUCHER (mobile) : `mouseup` ne se déclenche pas sur la
   // sélection par long-appui — on écoute le `selectionchange` global et on
@@ -366,8 +369,17 @@ export function ViewerPage() {
   // Nombre de sujets de l'épreuve (1 par défaut — épreuves antérieures au
   // chantier multi-sujets sans tableau `sujets`).
   const nbSujets = epreuve.sujets && epreuve.sujets.length > 0 ? epreuve.sujets.length : 1;
-  const contenuActif =
-    onglet === "sujet" ? sujetActifData?.contenu_markdown ?? "" : sujetActifData?.corrige_markdown ?? "";
+  const contenuActif = contenuAffiche(epreuve.sujets ?? [], sujetActifData, onglet === "sujet" ? "sujet" : "corrige", affichage);
+  const toutAfficher = affichage === "tout" && nbSujets > 1;
+  // En mode « tout », le corrigé est disponible dès qu'UN sujet en a un.
+  const corrigeDispo = toutAfficher ? (epreuve.sujets ?? []).some((x) => x.corrige_disponible) : Boolean(sujetActifData?.corrige_disponible);
+
+  /** Mode « tout » : fait défiler jusqu'au titre du sujet N (les titres servent d'ancres). */
+  function allerAuSujet(n: number) {
+    const titre = onglet === "sujet" ? t("Sujet {n}", { n }) : t("Corrigé du sujet {n}", { n });
+    const cible = [...(containerRef.current?.querySelectorAll("h2") ?? [])].find((h) => h.textContent?.trim() === titre);
+    cible?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   // Props identiques pour les deux rendus (bureau/mobile) — seule la
   // variante `mobile` diffère.
@@ -416,13 +428,13 @@ export function ViewerPage() {
             {!examenEnCours && (
               <ExportPdf
                 titre={`${epreuve.matiere} — ${epreuve.evaluation} ${epreuve.annee}`}
-                sujet={sujetActifData?.contenu_markdown ?? ""}
-                corrige={sujetActifData?.corrige_markdown ?? ""}
+                sujet={contenuAffiche(epreuve.sujets ?? [], sujetActifData, "sujet", affichage)}
+                corrige={contenuAffiche(epreuve.sujets ?? [], sujetActifData, "corrige", affichage)}
                 identite={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleDateString(locale())}`}
               />
             )}
             <Chronometre dureeEpreuve={epreuve.duree || null} />
-              {sujetActifData?.corrige_disponible && !examenEnCours && (
+              {corrigeDispo && !examenEnCours && (
             <div role="tablist" aria-label={t("Contenu de l'épreuve")} className="flex rounded-full border border-ink-soft/20 p-1">
                 {([
                   ["sujet", "Sujet", FileText],
@@ -455,10 +467,21 @@ export function ViewerPage() {
             afficher — le bascule revient toujours sur le sujet de l'onglet
             (jamais directement sur son corrigé). */}
         {nbSujets > 1 && (
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+          <BasculeAffichage valeur={affichage} onChange={setAffichage} />
+          {toutAfficher ? (
+            <nav aria-label={t("Aller au sujet")} className="flex flex-wrap items-center gap-1.5">
+              {(epreuve.sujets ?? []).map((s, i) => (
+                <button key={s.index} type="button" onClick={() => allerAuSujet(i + 1)} className="min-h-[44px] rounded-full border border-ink-soft/20 px-4 py-1.5 text-sm text-ink-soft hover:bg-highlight-soft/40">
+                  {t("Sujet {n}", { n: i + 1 })}
+                </button>
+              ))}
+            </nav>
+          ) : (
           <div
             role="tablist"
             aria-label={t("Sujets de l'épreuve")}
-            className="mb-3 flex flex-wrap items-center gap-1.5"
+            className="flex flex-wrap items-center gap-1.5"
           >
             {(epreuve.sujets ?? []).map((s, i) => {
               const actif = s.index === sujetActifData?.index;
@@ -485,6 +508,8 @@ export function ViewerPage() {
                 </button>
               );
             })}
+          </div>
+          )}
           </div>
         )}
 

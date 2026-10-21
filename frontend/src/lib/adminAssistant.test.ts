@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  appliquerEditions,
+  appliquerPaires,
   buildAdminAskPayload,
   extraireModifications,
   nettoyerHistorique,
@@ -200,5 +202,88 @@ describe("extraireModifications", () => {
       corrige: "Corrigé revu.",
       form: { annee: "2023" },
     });
+  });
+});
+
+describe("modifications ciblées (chercher / remplacer) et numérotées", () => {
+  const bloc = (verbe: string, corps: string, fence = "```") => `${fence}${verbe}\n${corps}\n${fence}`;
+
+  it("extrait les paires et le numéro de sujet", () => {
+    const m = extraireModifications(
+      "Voici :\n" + bloc("remplacer-sujet:2", "<<<<<<< CHERCHER\nancien\n=======\nnouveau\n>>>>>>> REMPLACER\n<<<<<<< CHERCHER\na\n=======\nb\n>>>>>>> REMPLACER")
+    );
+    expect(m.editions).toEqual([{ cible: "sujet", numero: 2, paires: [{ chercher: "ancien", remplacer: "nouveau" }, { chercher: "a", remplacer: "b" }] }]);
+    expect(m.sujet).toBeUndefined();
+  });
+
+  it("distingue la réécriture complète numérotée (editions) de la non numérotée (champ historique)", () => {
+    const m = extraireModifications(bloc("modification-corrige:3", "Tout le corrigé") + "\n" + bloc("modification-sujet", "Tout le sujet"));
+    expect(m.editions).toEqual([{ cible: "corrige", numero: 3, complet: "Tout le corrigé" }]);
+    expect(m.sujet).toBe("Tout le sujet");
+  });
+
+  it("gère une partie CHERCHER vide (ajout) et une partie REMPLACER vide (suppression)", () => {
+    const m = extraireModifications(bloc("remplacer-sujet", "<<<<<<< CHERCHER\n=======\nAjout final\n>>>>>>> REMPLACER\n<<<<<<< CHERCHER\nà supprimer\n=======\n>>>>>>> REMPLACER"));
+    expect(m.editions?.[0].paires).toEqual([{ chercher: "", remplacer: "Ajout final" }, { chercher: "à supprimer", remplacer: "" }]);
+  });
+
+  it("accepte une clôture à 4 apostrophes inverses quand le contenu contient lui-même des ```", () => {
+    const m = extraireModifications(bloc("modification-sujet:1", "Avant\n```python\nprint(1)\n```\nAprès", "````"));
+    expect(m.editions?.[0].complet).toBe("Avant\n```python\nprint(1)\n```\nAprès");
+  });
+
+  it("ignore un remplacement sans paire valide", () => {
+    expect(extraireModifications(bloc("remplacer-sujet", "n'importe quoi")).editions).toBeUndefined();
+  });
+});
+
+describe("appliquerPaires", () => {
+  it("remplace un extrait unique", () => {
+    const r = appliquerPaires("a\nb\nc", [{ chercher: "b", remplacer: "B" }]);
+    expect(r.texte).toBe("a\nB\nc");
+    expect(r.resultats).toEqual([{ ok: true }]);
+  });
+  it("refuse un extrait introuvable ou ambigu sans toucher au texte", () => {
+    expect(appliquerPaires("a b a", [{ chercher: "a", remplacer: "X" }])).toEqual({ texte: "a b a", resultats: [{ ok: false, raison: "ambigu" }] });
+    expect(appliquerPaires("abc", [{ chercher: "zzz", remplacer: "X" }]).resultats).toEqual([{ ok: false, raison: "introuvable" }]);
+  });
+  it("tolère espaces de fin de ligne et fins de ligne Windows", () => {
+    const r = appliquerPaires("Ligne 1   \r\nLigne 2\r\nLigne 3", [{ chercher: "Ligne 1\nLigne 2", remplacer: "Neuf" }]);
+    expect(r.resultats).toEqual([{ ok: true }]);
+    expect(r.texte).toBe("Neuf\nLigne 3");
+  });
+  it("ajoute à la fin avec un CHERCHER vide, et remplit un contenu vide", () => {
+    expect(appliquerPaires("Début\n", [{ chercher: "", remplacer: "Fin" }]).texte).toBe("Début\n\nFin");
+    expect(appliquerPaires("", [{ chercher: "", remplacer: "Premier" }]).texte).toBe("Premier");
+  });
+  it("applique les paires dans l'ordre (la suivante voit le résultat de la précédente)", () => {
+    expect(appliquerPaires("un", [{ chercher: "un", remplacer: "deux" }, { chercher: "deux", remplacer: "trois" }]).texte).toBe("trois");
+  });
+  it("conserve les formules LaTeX et les ancres telles quelles", () => {
+    const r = appliquerPaires("## Q1 {#q1}\n\n$$\nx^2\n$$\n", [{ chercher: "$$\nx^2\n$$", remplacer: "$$\nx^3\n$$" }]);
+    expect(r.texte).toBe("## Q1 {#q1}\n\n$$\nx^3\n$$\n");
+  });
+});
+
+describe("appliquerEditions", () => {
+  const sujets = [
+    { contenu_markdown: "S1 texte", corrige_markdown: "C1" },
+    { contenu_markdown: "S2 texte", corrige_markdown: "" },
+  ];
+  it("vise le sujet numéroté, ou le sujet affiché par défaut, sans modifier l'original", () => {
+    const r = appliquerEditions(sujets, [{ cible: "sujet", numero: 2, paires: [{ chercher: "texte", remplacer: "NEUF" }] }, { cible: "corrige", complet: "C1 bis" }], 1);
+    expect(r.sujets[1].contenu_markdown).toBe("S2 NEUF");
+    expect(r.sujets[0].corrige_markdown).toBe("C1 bis"); // pas de numéro : rang actif = 1
+    expect(r.resultats.every((x) => x.ok)).toBe(true);
+    expect(sujets[1].contenu_markdown).toBe("S2 texte"); // l'entrée n'est pas mutée
+  });
+  it("signale un sujet inexistant et un extrait introuvable (tout ou rien par édition)", () => {
+    const r = appliquerEditions(sujets, [
+      { cible: "sujet", numero: 9, complet: "x" },
+      { cible: "sujet", numero: 1, paires: [{ chercher: "S1", remplacer: "OK" }, { chercher: "absent", remplacer: "KO" }] },
+    ], 1);
+    expect(r.resultats[0]).toMatchObject({ ok: false, raison: "le sujet 9 n'existe pas" });
+    expect(r.resultats[1].ok).toBe(false);
+    expect(r.sujets[0].contenu_markdown).toBe("S1 texte"); // la première paire valide n'a PAS été gardée
   });
 });

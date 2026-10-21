@@ -1,5 +1,5 @@
 import { useClickOutside } from "../../components/Combobox";
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, FileUp, Plus, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
 import { MarkdownContent } from "../../components/MarkdownContent";
@@ -602,12 +602,52 @@ export function EditableSelect({
   );
 }
 
+/** Texte seul, rendu seul, ou les deux côte à côte (le rendu suit la frappe en temps réel). */
+export type ModeEditeur = "texte" | "rendu" | "double";
+const CLE_MODE = "bacprep-admin-editeur-mode";
+export const MODES_EDITEUR: [ModeEditeur, string][] = [
+  ["texte", "Texte"],
+  ["rendu", "Rendu"],
+  ["double", "Côte à côte"],
+];
+
+/** Mode préféré, mémorisé sur l'appareil (« texte » par défaut). */
+export function modeEditeurInitial(): ModeEditeur {
+  try {
+    const v = localStorage.getItem(CLE_MODE);
+    return v === "rendu" || v === "double" ? v : "texte";
+  } catch {
+    return "texte";
+  }
+}
+export function memoriserModeEditeur(m: ModeEditeur): void {
+  try {
+    localStorage.setItem(CLE_MODE, m);
+  } catch {
+    /* préférence non mémorisée */
+  }
+}
+
+/** Aperçu rendu ; `useDeferredValue` garde la frappe fluide quand le contenu est long (KaTeX). */
+function ApercuTempsReel({ markdown, grand }: { markdown: string; grand: boolean }) {
+  const differe = useDeferredValue(markdown);
+  return (
+    <div
+      data-apercu-temps-reel
+      className={`overflow-y-auto rounded-lg border border-ink-soft/15 p-3 ${grand ? "max-h-[30rem] lg:h-[30rem]" : "max-h-[420px]"}`}
+    >
+      <MarkdownContent content={differe} variant="epreuve" />
+    </div>
+  );
+}
+
 export function ContentBlock({
   title,
   required,
   markdown,
-  preview,
-  onTogglePreview,
+  mode,
+  onMode,
+  markdownApercu,
   onChange,
   onUpload,
   onImportMarkdown,
@@ -621,8 +661,10 @@ export function ContentBlock({
   title: string;
   required: boolean;
   markdown: string;
-  preview: boolean;
-  onTogglePreview: () => void;
+  mode: ModeEditeur;
+  onMode: (m: ModeEditeur) => void;
+  /** Contenu montré par le rendu (tous les sujets à la suite en mode « toutes les pages ») ; sinon `markdown`. */
+  markdownApercu?: string;
   onChange: (v: string) => void;
   onUpload: (file: File) => void;
   onImportMarkdown: (text: string) => void;
@@ -675,35 +717,48 @@ export function ContentBlock({
             <FileUp size={13} strokeWidth={1.75} aria-hidden="true" />
             Importer un .md
           </button>
-          <button
-            type="button"
-            onClick={onTogglePreview}
-            className="min-h-[44px] rounded-full border border-ink-soft/25 px-3 text-xs"
-          >
-            {preview ? "Texte" : "Rendu"}
-          </button>
+          <div role="group" aria-label="Affichage du contenu" className="flex overflow-hidden rounded-full border border-ink-soft/25 text-xs">
+            {MODES_EDITEUR.map(([valeur, libelle]) => (
+              <button
+                key={valeur}
+                type="button"
+                aria-pressed={mode === valeur}
+                onClick={() => {
+                  memoriserModeEditeur(valeur);
+                  onMode(valeur);
+                }}
+                className={`min-h-[44px] px-3 ${mode === valeur ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/50"}`}
+              >
+                {libelle}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <FormatAttendu />
 
-      {preview ? (
-        <div className="max-h-[420px] overflow-y-auto rounded-lg border border-ink-soft/15 p-3">
-          <MarkdownContent content={markdown} variant="epreuve" />
-        </div>
-      ) : (
-        <>
-          <label htmlFor={textareaId} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
-            Contenu Markdown
-          </label>
-          <textarea
-            id={textareaId}
-            value={markdown}
-            onChange={(e) => onChange(e.target.value)}
-            rows={10}
-            className="w-full rounded-[2px] border border-ink-soft/25 bg-paper p-3 font-mono text-sm"
-          />
-        </>
-      )}
+      <div className={mode === "double" ? "grid gap-3 lg:grid-cols-2" : undefined}>
+        {mode !== "rendu" && (
+          <div>
+            <label htmlFor={textareaId} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
+              Contenu Markdown
+            </label>
+            <textarea
+              id={textareaId}
+              value={markdown}
+              onChange={(e) => onChange(e.target.value)}
+              rows={mode === "double" ? 18 : 10}
+              className={`w-full rounded-[2px] border border-ink-soft/25 bg-paper p-3 font-mono text-sm ${mode === "double" ? "lg:h-[30rem] lg:resize-none" : ""}`}
+            />
+          </div>
+        )}
+        {mode !== "texte" && (
+          <div>
+            {mode === "double" && <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">Rendu en temps réel</p>}
+            <ApercuTempsReel markdown={markdownApercu ?? markdown} grand={mode === "double"} />
+          </div>
+        )}
+      </div>
 
       <div>
         {/* Documents Markdown de cette cible : liste TEXTE (distincte de la

@@ -40,6 +40,7 @@ export function AdminAssistantPanel({
   epreuveId,
   onClose,
   onAppliquer,
+  sujetActifRang,
 }: {
   /** Formulaire d'édition COURANT (hors `statut`, porté par la prop éponyme). */
   form: Omit<AdminEpreuveSnapshot, "statut">;
@@ -52,6 +53,8 @@ export function AdminAssistantPanel({
    * l'assistant (blocs `modification-sujet`, `modification-corrige`,
    * `modification-form`). */
   onAppliquer: (modifications: ModificationsEpreuve) => void;
+  /** Rang (à partir de 1) du sujet affiché dans l'éditeur, transmis à l'assistant. */
+  sujetActifRang?: number;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -194,7 +197,7 @@ export function AdminAssistantPanel({
    * applicatives du flux et les 4xx ne sont pas relancées. */
   async function applyExchange(question: string, base: Message[]) {
     if (sending) return;
-    const payload = buildAdminAskPayload({ ...form, statut }, base, question, epreuveId);
+    const payload = buildAdminAskPayload({ ...form, statut }, base, question, epreuveId, sujetActifRang);
     const nowIso = new Date().toISOString();
 
     setMessages([...base, { role: "user", content: question, ts: nowIso }, { role: "assistant", content: "", ts: nowIso }]);
@@ -488,25 +491,38 @@ export function AdminAssistantPanel({
  * remplit le sujet, le corrigé ou les métadonnées du formulaire. */
 function ActionsAppliquer({ content, onAppliquer }: { content: string; onAppliquer: (m: ModificationsEpreuve) => void }) {
   const modifs = extraireModifications(content);
-  const boutons = (
-    [
-      ["sujet", "Appliquer au sujet"],
-      ["corrige", "Appliquer au corrigé"],
-      ["form", "Appliquer au formulaire"],
-    ] as const
-  ).filter(([cle]) => modifs[cle] !== undefined);
+  const boutons: { cle: string; libelle: string; modifs: ModificationsEpreuve }[] = [
+    ...(
+      [
+        ["sujet", "Appliquer au sujet"],
+        ["corrige", "Appliquer au corrigé"],
+        ["form", "Appliquer au formulaire"],
+      ] as const
+    )
+      .filter(([cle]) => modifs[cle] !== undefined)
+      .map(([cle, libelle]) => ({ cle, libelle, modifs: { [cle]: modifs[cle] } as ModificationsEpreuve })),
+    ...(modifs.editions ?? []).map((ed, i) => {
+      const cible = `${ed.cible === "sujet" ? "sujet" : "corrigé"}${ed.numero ? ` ${ed.numero}` : " affiché"}`;
+      const n = ed.paires?.length ?? 0;
+      return {
+        cle: `edition-${i}`,
+        libelle: ed.complet !== undefined ? `Réécrire le ${cible}` : `Appliquer ${n} modification${n > 1 ? "s" : ""} au ${cible}`,
+        modifs: { editions: [ed] } as ModificationsEpreuve,
+      };
+    }),
+  ];
   if (boutons.length === 0) return null;
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5">
-      {boutons.map(([cle, libelle]) => (
+      {boutons.map((b) => (
         <button
-          key={cle}
+          key={b.cle}
           type="button"
-          onClick={() => onAppliquer({ [cle]: modifs[cle] })}
+          onClick={() => onAppliquer(b.modifs)}
           className="flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
         >
           <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-          {libelle}
+          {b.libelle}
         </button>
       ))}
     </div>

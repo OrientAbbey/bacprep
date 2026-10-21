@@ -1,8 +1,9 @@
-import { Bot, Check, Clock, Pencil, RotateCcw, Send } from "lucide-react";
-import { useState, type ComponentType, type ReactNode } from "react";
+import { Bot, Check, Clock, Copy, Pencil, RotateCcw, Send } from "lucide-react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { t } from "../i18n";
 import { dateLongue, heureCourte } from "../lib/dates";
 import { getInitials } from "../lib/initials";
+import { copierTexte } from "../lib/pressePapiers";
 import { MarkdownContent } from "./MarkdownContent";
 
 /** Éléments de discussion partagés par l'assistant de l'élève (AssistantPanel) et
@@ -42,6 +43,24 @@ export function ActionTexte({
       <Icone size={11} strokeWidth={1.75} aria-hidden="true" />
       {libelle}
     </button>
+  );
+}
+
+/** « Copier » : place le texte BRUT du message (Markdown, espaces et retours à la ligne exacts) dans le presse-papiers. */
+export function BoutonCopier({ texte }: { texte: string }) {
+  const [etat, setEtat] = useState<"repos" | "copie" | "echec">("repos");
+  useEffect(() => {
+    if (etat === "repos") return;
+    const minuterie = window.setTimeout(() => setEtat("repos"), 2000);
+    return () => window.clearTimeout(minuterie);
+  }, [etat]);
+  return (
+    <ActionTexte
+      icone={etat === "copie" ? Check : Copy}
+      libelle={etat === "copie" ? t("Copié ✓") : etat === "echec" ? t("Échec de la copie") : t("Copier")}
+      titre={t("Copier le message tel quel, avec sa mise en forme")}
+      onClick={() => void copierTexte(texte).then((ok) => setEtat(ok ? "copie" : "echec"))}
+    />
   );
 }
 
@@ -141,6 +160,7 @@ export function ChatBubble({
                 }}
               />
             )}
+            {m.content.trim() && <BoutonCopier texte={m.content} />}
             {actionsEnLigne}
             {!isUser && estDernier && onRegenerer && !enCours && (
               <ActionTexte icone={RotateCcw} libelle={t("Réessayer")} titre={t("Relancer la même question")} onClick={onRegenerer} />

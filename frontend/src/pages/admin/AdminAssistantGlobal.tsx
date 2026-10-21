@@ -1,6 +1,7 @@
 import { Bot, Check, Loader2, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
+import { BoutonCopier } from "../../components/ChatParts";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { extraireActions, LIBELLES_OUTILS, type ActionProposee } from "../../lib/adminActions";
 import { streamAdminAsk } from "../../lib/streaming";
@@ -101,6 +102,11 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
         {messages.map((m, mi) => (
           <div key={mi} className={m.role === "user" ? "ml-8 rounded-lg bg-ink px-3 py-2 text-sm text-paper" : "mr-4 text-sm"}>
             {m.role === "user" ? m.content : m.content ? <MarkdownContent content={m.content} variant="chat" /> : <Loader2 size={14} className="animate-spin" aria-label="L'assistant réfléchit" />}
+            {m.content.trim() && !m.content.startsWith("⚠️") && (
+              <div className="mt-0.5">
+                <BoutonCopier texte={m.content} />
+              </div>
+            )}
             {m.actions?.map((a, ai) => (
               <div key={ai} className="mt-2 rounded-lg border border-highlight/50 bg-highlight-soft/40 p-3">
                 <p className="font-medium">{LIBELLES_OUTILS[a.action.outil] ?? a.action.outil}</p>
