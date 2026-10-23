@@ -398,7 +398,7 @@ export function ViewerPage() {
       {/* Rangées d'en-tête FIXES (ne défilent pas) : tout l'espace vertical
           restant est réservé au panneau de lecture ci-dessous. */}
       <div className="shrink-0">
-        <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <h1 className="truncate font-serif-brand text-2xl">{epreuve.matiere}</h1>
             {/* Signalement : toujours VISIBLE (découvrabilité), en rouge
@@ -422,7 +422,7 @@ export function ViewerPage() {
               soit l'état (sinon leur état se réinitialiserait au démarrage de
               l'examen) ; seuls l'export PDF et les onglets Sujet/Corrigé se
               masquent pendant l'examen. */}
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             {user && <ExamenBlanc epreuveId={epreuve.id} duree={epreuve.duree} onChange={setExamenEnCours} />}
             {user && !examenEnCours && <TelechargerHorsLigne id={epreuve.id} matiere={epreuve.matiere} annee={epreuve.annee} evaluation={epreuve.evaluation} />}
             {!examenEnCours && (

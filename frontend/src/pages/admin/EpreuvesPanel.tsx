@@ -704,7 +704,7 @@ export function EpreuvesPanel({
 
   return (
     <>
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
         {/* Colonne collante à hauteur bornée : la liste défile à l'intérieur au
             lieu d'allonger la page bien au-delà du formulaire de droite. */}
         <div className="space-y-2 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">

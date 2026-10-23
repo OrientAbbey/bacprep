@@ -20,6 +20,7 @@ Base : `main` @ `7694149`. Branche : `refonte` (une série de commits par lot).
 | 9d | `fix(ci,db):` | `psycopg` v3 avec normalisation de toute forme d'URL PostgreSQL, requêtes préparées désactivées pour le pooler Supabase ; CI : `playwright-core`, `ADMIN_ROOT` |
 | 9e | `feat(admin):` | Recherche, filtres et pagination serveur (notifications, signalements, journal) |
 | 9f | `feat(ui):` | Navigation admin latérale groupée, listes bornées, cartes de paramètres à hauteur fixe, nuage de connexion, messages de connexion par cause, indicateurs de chargement, A−/A+ flottant |
+| 9g | `fix(ui):` | Boutons flottants hors écran sur mobile : cause = débordement horizontal (en-tête du lecteur `shrink-0`, grilles admin Épreuves/Paramètres sans colonne de base, barre d'outils de l'éditeur) qui élargissait la fenêtre de mise en page ; E2E bureau + mobile (position après défilement de la page, aucun débordement horizontal) |
 | — | `fix(deps)`, `fix(ci)`, `fix(front)` | **Correctifs déjà présents sur la branche `refonte` distante** (conservés) : `pytest.ini`, `ADMIN_ROOT`/`playwright-core` en CI, exclusion `/^\/doc/` du service worker (la doc OpenAPI n'est plus interceptée) |
 
 ## À faire après application du bundle

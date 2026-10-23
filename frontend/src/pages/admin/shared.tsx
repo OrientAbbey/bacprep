@@ -686,11 +686,11 @@ export function ContentBlock({
   const largeurs = (a: Asset) => extraireBaliseImage(markdown, a.url);
   return (
     <div className="space-y-2 border-t border-ink-soft/10 pt-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-serif-brand text-lg">
           {title} {required && <span className="text-correction">*</span>}
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Import Markdown d'un fichier .md fourni par un collègue : le
               contenu est recopié dans la zone de texte de la cible. */}
           <input

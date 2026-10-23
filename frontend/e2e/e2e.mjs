@@ -930,6 +930,96 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
   await ctx.close();
 }
 
+console.log("\nBoutons flottants et débordement horizontal (bureau et mobile)");
+{
+  const adm = await nouveauContexte();
+  await connecterAdmin(adm);
+  const lignes = (n, mot) => Array.from({ length: n }, (_, i) => `${mot} ${i + 1}.`).join("\n\n");
+  const sujets = [1, 2, 3].map((index) => ({ index, contenu_markdown: `# Sujet ${index}\n\n${lignes(60, "Question")}`, corrige_markdown: `Corrigé ${index}\n\n${lignes(60, "Réponse")}` }));
+  const cree = await (await adm.request.post("/api/admin/epreuves", { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: `Mathématiques appliquées ${RUN}`, annee: "2036", gratuit: true, filieres: ["C", "D"], duree: "3h", sujets } })).json();
+  await adm.request.post(`/api/admin/epreuves/${cree.id}/publish`);
+  await adm.close();
+
+  // Position du bloc `fixed` (l'élément lui-même ou son conteneur fixe), dans la zone VISIBLE de la fenêtre.
+  const position = (loc) => loc.evaluate((e) => {
+    const f = getComputedStyle(e).position === "fixed" ? e : e.closest(".fixed");
+    if (!f) return { fixe: false };
+    const r = f.getBoundingClientRect(), d = document.documentElement;
+    return { fixe: true, x: Math.round(r.x), y: Math.round(r.y), visible: r.x >= 0 && r.y >= 0 && r.right <= d.clientWidth + 1 && r.bottom <= d.clientHeight + 1 };
+  });
+  const resteFixe = async (page, loc, nom) => {
+    await page.evaluate(() => document.scrollingElement.scrollTo(0, 0));
+    const avant = await position(loc);
+    const defile = await page.evaluate(async () => { const r = document.scrollingElement; r.scrollTo(0, r.scrollHeight); await new Promise((res) => setTimeout(res, 300)); return r.scrollTop; });
+    const apres = await position(loc);
+    ok(defile > 0, `${nom} : la page ne défile pas, le test serait sans objet`);
+    ok(avant.fixe && avant.visible && apres.visible, `${nom} : hors de la zone visible ${JSON.stringify({ avant, apres })}`);
+    ok(avant.x === apres.x && avant.y === apres.y, `${nom} : a bougé avec le défilement ${JSON.stringify({ avant, apres })}`);
+  };
+  const attendreChargement = async (page) => {
+    await page.waitForFunction(() => !document.querySelector(".skeleton, [aria-busy='true']"), null, { timeout: 15000 });
+    await page.waitForTimeout(300);
+  };
+  const deborde = (page) => page.evaluate(() => { const d = document.documentElement; return innerWidth !== d.clientWidth || d.scrollWidth > d.clientWidth; });
+
+  const VUES = [["bureau", { viewport: { width: 1280, height: 900 } }], ["mobile", { viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true }]];
+  for (const [vue, options] of VUES) {
+    const ctx = await nouveauContexte(options);
+    await connecterAdmin(ctx);
+    const page = await ctx.newPage();
+    const ongletAdmin = (valeur) => page.locator("select").first().selectOption(valeur, { force: true }); // le <select> est masqué sur grand écran
+
+    await test(`${vue} › lecteur : A−/A+ et lanceur de l'assistant restent fixes et visibles après défilement de la page`, async () => {
+      await page.goto(`/epreuve/${cree.id}`);
+      await page.getByRole("button", { name: "Agrandir le texte" }).waitFor({ timeout: 15000 });
+      await resteFixe(page, page.getByRole("button", { name: "Agrandir le texte" }), "A−/A+");
+      await resteFixe(page, page.getByRole("button", { name: "Ouvrir Tuteur IA Prep" }), "lanceur de l'assistant élève");
+    });
+
+    await test(`${vue} › admin : lanceur « Ouvrir l'assistant admin » (Épreuves) et bouton « Assistant » (autres onglets) restent fixes et visibles`, async () => {
+      await page.goto("/admin");
+      const lanceur = page.getByRole("button", { name: "Ouvrir l'assistant admin" });
+      await lanceur.waitFor({ timeout: 15000 });
+      await resteFixe(page, lanceur, "lanceur de l'assistant d'épreuve");
+      await ongletAdmin("utilisateurs");
+      const global = page.getByRole("button", { name: "Assistant", exact: true });
+      await global.waitFor({ timeout: 10000 });
+      await resteFixe(page, global, "bouton Assistant global");
+    });
+
+    if (vue === "mobile") {
+      await test("mobile › catalogue : la barre d'onglets du bas reste fixe et visible", async () => {
+        await page.goto("/catalogue");
+        await attendreChargement(page);
+        const barre = page.getByRole("navigation", { name: "Navigation principale" });
+        await barre.waitFor({ timeout: 15000 });
+        await resteFixe(page, barre, "barre d'onglets");
+      });
+    }
+
+    await test(`${vue} › aucune page ne déborde horizontalement (sinon la fenêtre s'élargit et les boutons fixes sortent de l'écran)`, async () => {
+      const fautives = [];
+      for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", `/epreuve/${cree.id}`]) {
+        await page.goto(url);
+        await attendreChargement(page);
+        if (await deborde(page)) fautives.push(url);
+      }
+      const visiteur = await (await nouveauContexte(options)).newPage();
+      await visiteur.goto(`/epreuve/${cree.id}`);
+      await attendreChargement(visiteur);
+      if (await deborde(visiteur)) fautives.push("épreuve (visiteur)");
+      await page.goto("/admin");
+      for (const valeur of await page.locator("select").first().locator("option").evaluateAll((o) => o.map((x) => x.value))) {
+        await ongletAdmin(valeur);
+        await attendreChargement(page);
+        if (await deborde(page)) fautives.push(`admin › ${valeur}`);
+      }
+      ok(!fautives.length, "débordement horizontal : " + fautives.join(", "));
+    });
+    await ctx.close();
+  }
+}
+
 await browser.close();
 const echecs = resultats.filter((r) => !r[0]);
 console.log(`\n${resultats.length - echecs.length}/${resultats.length} scénarios réussis`);
