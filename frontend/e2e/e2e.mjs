@@ -721,6 +721,7 @@ console.log("\nPanneaux de discussion (élève et admin d'épreuve)");
     await pa.goto("/admin");
     await pa.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
     const d = pa.getByRole("dialog", { name: "Tuteur IA Prep" });
+    await d.getByLabel("Appliquer automatiquement").uncheck(); // parcours manuel (l'automatique est testé plus bas)
     await d.getByLabel("Question à Tuteur IA Prep").fill("Réécris le sujet");
     await d.getByRole("button", { name: "Envoyer" }).click();
     await d.getByRole("button", { name: "Appliquer au sujet" }).waitFor({ timeout: 10000 });
@@ -737,6 +738,112 @@ console.log("\nPanneaux de discussion (élève et admin d'épreuve)");
     ok((await d.getByText(/^Voici \(essai/).count()) === 1, "plusieurs réponses affichées après la relance");
   });
   await admin.close();
+  await ctx.close();
+}
+
+console.log("\nAssistant d'édition : application automatique");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterAdmin(ctx);
+  const page = await ctx.newPage();
+  const BROUILLON = "Exercice 1 : calculer la dérivée de f. Exercice 2 : calculer la dérivée de g.";
+  const envoyees = [];
+  let reponse = "";
+  await page.route("**/api/admin/assistant/ask", (route) => {
+    envoyees.push(route.request().postDataJSON());
+    route.fulfill({ status: 200, contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "chunk", text: reponse })}\n\ndata: ${JSON.stringify({ type: "done", conversation: null })}\n\n` });
+  });
+  const bloc = (verbe, corps) => `Voici.\n\`\`\`${verbe}\n${corps}\n\`\`\`\n`;
+  const paire = (chercher, remplacer) => `<<<<<<< CHERCHER\n${chercher}\n=======\n${remplacer}\n>>>>>>> REMPLACER`;
+  const zone = (n) => page.locator("textarea").nth(n);
+  const d = page.getByRole("dialog", { name: "Tuteur IA Prep" });
+  const poser = async (question, texte) => {
+    reponse = texte;
+    await d.getByLabel("Question à Tuteur IA Prep").fill(question);
+    await d.getByRole("button", { name: "Envoyer" }).click();
+  };
+  const boutonAnnuler = d.getByRole("button", { name: "Annuler la dernière application" });
+  const boutonManuel = d.getByRole("button", { name: /^Appliquer (au|\d)/ });
+  const surligne = (sel = "") => page.locator(`[data-modifie]${sel}`);
+  const ouvrir = async () => {
+    await page.goto("/admin");
+    await zone(0).fill(BROUILLON); // brouillon : jamais enregistré
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+  };
+
+  await ouvrir();
+  await test("automatique (par défaut) : lit le brouillon NON enregistré, applique à la fin de la réponse, signale le champ", async () => {
+    ok(await d.getByLabel("Appliquer automatiquement").isChecked(), "la case doit être cochée par défaut");
+    await poser("Précise l'exercice 1", bloc("remplacer-sujet:1", paire("Exercice 1 : calculer la dérivée de f.", "Exercice 1 : calculer la dérivée de f(x) = x².")));
+    await d.getByText("Appliqué automatiquement au formulaire").waitFor({ timeout: 10000 });
+    const p = envoyees[0].epreuve;
+    ok(!("epreuve_id" in envoyees[0]), "épreuve non enregistrée : aucun epreuve_id ne doit partir");
+    ok(p.sujets[0].contenu_markdown === BROUILLON && p.contenu_markdown === BROUILLON, `l'assistant n'a pas reçu le brouillon : ${JSON.stringify(p.sujets)}`);
+    ok(p.sujet_actif === 1, "le sujet affiché n'est pas transmis");
+    const texte = await zone(0).inputValue();
+    ok(texte.includes("f(x) = x²") && texte.includes("Exercice 2 : calculer la dérivée de g."), `application incorrecte : ${texte}`);
+    ok((await surligne(":has(textarea)").count()) === 1, "seule la zone du sujet doit être signalée");
+    ok((await boutonManuel.count()) === 0, "les boutons manuels ne doivent plus être proposés");
+    await page.screenshot({ path: `${SHOTS}/assistant-auto.png` });
+  });
+
+  await test("« Annuler » restaure le formulaire d'avant et efface le signalement", async () => {
+    await boutonAnnuler.click();
+    ok((await zone(0).inputValue()) === BROUILLON, "le brouillon d'origine n'est pas restauré");
+    ok((await surligne().count()) === 0 && (await boutonAnnuler.count()) === 0, "signalement ou bouton Annuler encore présents");
+    await boutonManuel.first().waitFor({ timeout: 5000 }); // les boutons manuels reviennent
+  });
+
+  await test("dès que l'admin tape, le signalement disparaît et « Annuler » n'est plus proposé (sa saisie n'est jamais écrasée)", async () => {
+    await poser("Précise l'exercice 1", bloc("remplacer-sujet:1", paire("Exercice 1", "Exercice 1 bis")));
+    await d.getByText("Appliqué automatiquement au formulaire").waitFor({ timeout: 10000 });
+    await page.keyboard.press("Escape");
+    await zone(0).fill(`${await zone(0).inputValue()} (ma note)`);
+    ok((await surligne().count()) === 0, "le signalement doit disparaître à la première frappe");
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    ok((await boutonAnnuler.count()) === 0, "« Annuler » écraserait la saisie");
+    ok((await zone(0).inputValue()).endsWith("(ma note)"), "saisie perdue");
+    await zone(0).fill(BROUILLON);
+  });
+
+  await test("échecs : extrait introuvable puis ambigu — rien n'est appliqué, rien à annuler", async () => {
+    await poser("Corrige", bloc("remplacer-sujet:1", paire("Texte absent du sujet", "X")));
+    await page.getByText(/extrait introuvable/).waitFor({ timeout: 10000 });
+    await poser("Corrige encore", bloc("remplacer-sujet:1", paire("calculer la dérivée", "Y")));
+    await page.getByText(/extrait présent plusieurs fois/).waitFor({ timeout: 10000 });
+    ok((await zone(0).inputValue()) === BROUILLON, "le sujet a été modifié malgré l'échec");
+    ok((await surligne().count()) === 0 && (await boutonAnnuler.count()) === 0, "un échec ne doit rien signaler ni proposer d'annuler");
+    ok((await d.getByText("Appliqué automatiquement au formulaire").count()) === 0, "faux « appliqué »");
+  });
+
+  await test("case décochée : rien n'est appliqué tout seul, bouton manuel, préférence mémorisée", async () => {
+    await d.getByLabel("Appliquer automatiquement").uncheck();
+    await poser("Précise l'exercice 2", bloc("remplacer-sujet:1", paire("Exercice 2 : calculer la dérivée de g.", "Exercice 2 : calculer la dérivée de g(x) = 3x.")));
+    const manuel = d.getByRole("button", { name: "Appliquer 1 modification au sujet 1" });
+    await manuel.waitFor({ timeout: 10000 });
+    ok((await zone(0).inputValue()) === BROUILLON, "appliqué malgré la case décochée");
+    await manuel.click();
+    await page.waitForFunction(() => document.querySelector("textarea").value.includes("g(x) = 3x"), null, { timeout: 8000 });
+    ok((await surligne(":has(textarea)").count()) === 1, "le champ modifié à la main doit aussi être signalé");
+    await page.reload();
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    ok(!(await d.getByLabel("Appliquer automatiquement").isChecked()), "la préférence n'est pas mémorisée");
+    await d.getByLabel("Appliquer automatiquement").check();
+  });
+
+  await test("sujet non affiché modifié : son onglet est signalé, et sa zone une fois ouvert", async () => {
+    await page.keyboard.press("Escape");
+    await zone(0).fill(BROUILLON);
+    await page.getByRole("button", { name: "Ajouter un sujet" }).click();
+    await page.getByRole("tab", { name: "Sujet 1" }).click();
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    await poser("Rédige le corrigé du sujet 2", bloc("modification-corrige:2", "Corrigé du sujet 2"));
+    await d.getByText("Appliqué automatiquement au formulaire").waitFor({ timeout: 10000 });
+    ok((await surligne(":has([role=tab])").count()) === 1 && (await surligne(":has(textarea)").count()) === 0, "seul l'onglet du sujet 2 doit être signalé");
+    await page.keyboard.press("Escape");
+    await page.getByRole("tab", { name: "Sujet 2" }).click();
+    ok((await zone(1).inputValue()) === "Corrigé du sujet 2" && (await surligne(":has(textarea)").count()) === 1, "la zone du corrigé n° 2 n'est pas signalée");
+  });
   await ctx.close();
 }
 

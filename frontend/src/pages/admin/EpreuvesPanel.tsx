@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, Loader2, Plus, Search, X } from "lucide-react";
 import { api, ApiError, ensureReferentielOption } from "../../api/client";
 import { AdminEpreuveCounts, EpreuveDetail, ReferentielOptions } from "../../api/types";
-import { appliquerEditions } from "../../lib/adminAssistant";
 import { BasculeAffichage } from "../../components/BasculeAffichage";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { affichageInitial, contenuAffiche, type AffichageSujets } from "../../lib/sujets";
@@ -10,7 +9,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
-import type { ModificationsEpreuve } from "../../lib/adminAssistant";
+import { aDesModifications, appliquerEditions, champsModifies, type ModificationsEpreuve } from "../../lib/adminAssistant";
 import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, erreurDetail, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur, modeEditeurInitial, type ModeEditeur } from "./shared";
 
 interface AdminEpreuveSummary {
@@ -26,6 +25,17 @@ interface AdminEpreuveSummary {
 }
 
 const SIDEBAR_LIMIT = 30;
+const STATUTS_FORM = ["brouillon", "a_reviser", "publie"];
+
+/** Entoure d'un liseré vert le champ que l'assistant vient de modifier. */
+const LISERE = "rounded-lg bg-valide-soft/60 ring-2 ring-valide ring-offset-2 ring-offset-paper-raised";
+function Marque({ actif, children }: { actif: boolean; children: ReactNode }) {
+  return (
+    <div data-modifie={actif || undefined} className={actif ? LISERE : undefined}>
+      {children}
+    </div>
+  );
+}
 
 /** Années proposées dans la liste déroulante du champ « Année » : de
  * l'année courante jusqu'à 15 ans en arrière (bornes raisonnables d'une
@@ -101,6 +111,11 @@ export function EpreuvesPanel({
   const [statutForm, setStatutForm] = useState("brouillon");
   // État du tiroir droit de l'assistant admin.
   const [assistantOuvert, setAssistantOuvert] = useState(false);
+  // Dernière application de l'assistant : instantané d'avant pour « Annuler », et clés des champs modifiés
+  // (signalés). Valable tant que le formulaire n'a pas été touché depuis : dès la première frappe, il ne l'est plus.
+  const [application, setApplication] = useState<{ avant: EpreuveForm; avantStatut: string; apres: EpreuveForm; apresStatut: string; cles: string[] } | null>(null);
+  const derniere = application?.apres === form && application.apresStatut === statutForm ? application : null;
+  const modifie = (cle: string) => derniere?.cles.includes(cle) ?? false;
   // Opération longue en cours : désactive les boutons d'action et affiche
   // un indicateur sur celui concerné — « charge le détail d'une épreuve,
   // enregistre, publie, dépublie » (les suppressions passent par la modale
@@ -640,62 +655,52 @@ export function EpreuvesPanel({
     }
   }
 
-  /** Applique une modification proposée par l'assistant admin au formulaire
-   * d'édition (sujet et/ou corrigé réécrits par le LLM). Les zones sont
-   * remplies, mais l'admin garde la main : rien n'est envoyé au serveur —
-   * l'enregistrement ne se fait qu'avec son clic explicite sur
-   * « Enregistrer ». */
-  function appliquerModifications(modifications: ModificationsEpreuve) {
-    const { sujet, corrige, form: modifForm, editions } = modifications;
-    if (!sujet && !corrige && !modifForm && !editions?.length) return;
-    // Éditions numérotées / ciblées : résultat calculé sur l'état courant (pour informer l'admin) puis
-    // appliqué dans la mise à jour d'état ; un extrait introuvable n'applique rien pour cette édition.
-    const rangActif = Math.max(1, form.sujets.findIndex((s) => s.index === sujetActif) + 1);
-    const resultats = editions?.length ? appliquerEditions(form.sujets, editions, rangActif).resultats : [];
-    // Applique la modification au sujet EN COURS d'édition (onglet actif) et
-    // les métadonnées au formulaire (le `statut` vit dans `statutForm`, pas
-    // dans `form`). Les valeurs numériques JSON du modèle (durée, coefficient)
-    // sont ramenées en chaîne pour le formulaire ; `statut` n'est accepté que
-    // s'il est dans la liste des statuts valides du formulaire.
-    setForm((f) => ({
-      ...f,
-      ...(modifForm
-        ? {
-            niveau: modifForm.niveau ?? f.niveau,
-            classe: modifForm.classe ?? f.classe,
-            evaluation: modifForm.evaluation ?? f.evaluation,
-            matiere: modifForm.matiere ?? f.matiere,
-            annee: modifForm.annee ?? f.annee,
-            duree: modifForm.duree !== undefined ? String(modifForm.duree) : f.duree,
-            coefficient: modifForm.coefficient !== undefined ? String(modifForm.coefficient) : f.coefficient,
-            gratuit: modifForm.gratuit ?? f.gratuit,
-            filieres: modifForm.filieres ?? f.filieres,
-          }
-        : {}),
-      sujets: (editions?.length
-        ? appliquerEditions(f.sujets, editions, Math.max(1, f.sujets.findIndex((s) => s.index === sujetActif) + 1)).sujets
-        : f.sujets
-      ).map((s) =>
-        s.index === sujetActif
-          ? {
-              ...s,
-              contenu_markdown: sujet ? sujet : s.contenu_markdown,
-              corrige_markdown: corrige ? corrige : s.corrige_markdown,
-            }
-          : s
+  /** Applique une modification proposée par l'assistant admin au formulaire d'édition. Rien n'est envoyé au
+   * serveur : l'enregistrement reste le clic explicite sur « Enregistrer ». Un extrait introuvable ou ambigu
+   * n'applique rien pour cette édition. Renvoie `true` si le formulaire a changé. */
+  function appliquerModifications(modifications: ModificationsEpreuve): boolean {
+    if (!aDesModifications(modifications)) return false;
+    const { sujet, corrige, form: mf, editions } = modifications;
+    const rang = Math.max(1, form.sujets.findIndex((s) => s.index === sujetActif) + 1);
+    const { sujets, resultats } = appliquerEditions(form.sujets, editions ?? [], rang);
+    // Durée et coefficient arrivent parfois en nombre JSON : ramenés en chaîne pour le formulaire.
+    const apres: EpreuveForm = {
+      ...form,
+      ...(mf && {
+        niveau: mf.niveau ?? form.niveau,
+        classe: mf.classe ?? form.classe,
+        evaluation: mf.evaluation ?? form.evaluation,
+        matiere: mf.matiere ?? form.matiere,
+        annee: mf.annee ?? form.annee,
+        duree: mf.duree !== undefined ? String(mf.duree) : form.duree,
+        coefficient: mf.coefficient !== undefined ? String(mf.coefficient) : form.coefficient,
+        gratuit: mf.gratuit ?? form.gratuit,
+        filieres: mf.filieres ?? form.filieres,
+      }),
+      sujets: sujets.map((s) =>
+        s.index === sujetActif ? { ...s, contenu_markdown: sujet || s.contenu_markdown, corrige_markdown: corrige || s.corrige_markdown } : s
       ),
-    }));
-    const STATUTS_FORM = ["brouillon", "a_reviser", "publie"];
-    if (modifForm?.statut && STATUTS_FORM.includes(modifForm.statut)) {
-      setStatutForm(modifForm.statut);
-    }
+    };
+    const apresStatut = mf?.statut && STATUTS_FORM.includes(mf.statut) ? mf.statut : statutForm;
+    const cles = champsModifies(form, apres);
     const echecs = resultats.filter((r) => !r.ok);
-    if (echecs.length) {
-      showToast(`Non appliqué — ${echecs.map((r) => `${r.libelle} : ${r.raison}`).join(" ; ")}.`, "error");
+    if (echecs.length) showToast(`Non appliqué — ${echecs.map((r) => `${r.libelle} : ${r.raison}`).join(" ; ")}.`, "error");
+    if (!cles.length && apresStatut === statutForm) {
+      if (!echecs.length) showToast("Aucun changement : le formulaire contient déjà cette version.", "info");
+      return false;
     }
-    if (resultats.length === 0 || resultats.some((r) => r.ok) || sujet || corrige || modifForm) {
-      showToast("Modification de l'assistant appliquée au formulaire.", "success");
-    }
+    setApplication({ avant: form, avantStatut: statutForm, apres, apresStatut, cles });
+    setForm(apres);
+    setStatutForm(apresStatut);
+    showToast("Modification de l'assistant appliquée au formulaire.", "success");
+    return true;
+  }
+
+  function annulerApplication() {
+    if (!derniere) return;
+    setForm(derniere.avant);
+    setStatutForm(derniere.avantStatut);
+    setApplication(null);
   }
 
   // Sujet actuellement affiché dans les zones d'édition (onglet actif).
@@ -833,62 +838,76 @@ export function EpreuvesPanel({
             className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-5"
           >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <EditableSelect
-                label="Niveau"
-                obligatoire
-                value={form.niveau}
-                onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
-                options={scopeOptions("niveau")}
-                placeholder="ex. Secondaire"
-              />
-              <EditableSelect
-                label="Classe"
-                obligatoire
-                value={form.classe}
-                onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
-                options={scopeOptions("classe")}
-                placeholder="ex. Terminale"
-              />
-              <EditableSelect
-                label="Évaluation"
-                obligatoire
-                value={form.evaluation}
-                onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
-                options={scopeOptions("evaluation")}
-                placeholder="ex. Baccalauréat"
-              />
-              <EditableSelect
-                label="Année"
-                obligatoire
-                value={form.annee}
-                onChange={(v) => setForm((f) => ({ ...f, annee: v }))}
-                placeholder="ex. 2024"
-                options={anneesProposees().map((a) => ({ value: a, label: a }))}
-              />
+              <Marque actif={modifie("niveau")}>
+                <EditableSelect
+                  label="Niveau"
+                  obligatoire
+                  value={form.niveau}
+                  onChange={(v) => setForm((f) => ({ ...f, niveau: v }))}
+                  options={scopeOptions("niveau")}
+                  placeholder="ex. Secondaire"
+                />
+              </Marque>
+              <Marque actif={modifie("classe")}>
+                <EditableSelect
+                  label="Classe"
+                  obligatoire
+                  value={form.classe}
+                  onChange={(v) => setForm((f) => ({ ...f, classe: v }))}
+                  options={scopeOptions("classe")}
+                  placeholder="ex. Terminale"
+                />
+              </Marque>
+              <Marque actif={modifie("evaluation")}>
+                <EditableSelect
+                  label="Évaluation"
+                  obligatoire
+                  value={form.evaluation}
+                  onChange={(v) => setForm((f) => ({ ...f, evaluation: v }))}
+                  options={scopeOptions("evaluation")}
+                  placeholder="ex. Baccalauréat"
+                />
+              </Marque>
+              <Marque actif={modifie("annee")}>
+                <EditableSelect
+                  label="Année"
+                  obligatoire
+                  value={form.annee}
+                  onChange={(v) => setForm((f) => ({ ...f, annee: v }))}
+                  placeholder="ex. 2024"
+                  options={anneesProposees().map((a) => ({ value: a, label: a }))}
+                />
+              </Marque>
               {/* Matière : saisie libre (champ + liste de suggestions),
                   valeurs déjà connues du référentiel proposées — toute
                   valeur hors liste est mémorisée par le serveur à
                   l'enregistrement. */}
-              <EditableSelect
-                label="Matière"
-                obligatoire
-                value={form.matiere}
-                onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
-                placeholder="ex. Mathématiques"
-                options={(referentiel?.matiere ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
-              />
-              <Field
-                label="Durée"
-                value={form.duree}
-                onChange={(v) => setForm((f) => ({ ...f, duree: v }))}
-                placeholder="ex. 4h"
-              />
-              <Field
-                label="Coefficient"
-                value={form.coefficient}
-                onChange={(v) => setForm((f) => ({ ...f, coefficient: v }))}
-                placeholder="ex. 5"
-              />
+              <Marque actif={modifie("matiere")}>
+                <EditableSelect
+                  label="Matière"
+                  obligatoire
+                  value={form.matiere}
+                  onChange={(v) => setForm((f) => ({ ...f, matiere: v }))}
+                  placeholder="ex. Mathématiques"
+                  options={(referentiel?.matiere ?? []).map((o) => ({ value: o.label || o.code, label: o.label || o.code }))}
+                />
+              </Marque>
+              <Marque actif={modifie("duree")}>
+                <Field
+                  label="Durée"
+                  value={form.duree}
+                  onChange={(v) => setForm((f) => ({ ...f, duree: v }))}
+                  placeholder="ex. 4h"
+                />
+              </Marque>
+              <Marque actif={modifie("coefficient")}>
+                <Field
+                  label="Coefficient"
+                  value={form.coefficient}
+                  onChange={(v) => setForm((f) => ({ ...f, coefficient: v }))}
+                  placeholder="ex. 5"
+                />
+              </Marque>
             </div>
 
           {/* Séries : sélection multiple par puces (une épreuve peut couvrir
@@ -896,74 +915,76 @@ export function EpreuvesPanel({
               Les puces viennent de la table `referentiel_options` (onglet
               Paramètres), et toute nouvelle série saisie y est mémorisée
               (best-effort). */}
-          <div>
-            <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">
-              Séries / filières <span className="text-correction">*</span>
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {scopeOptions("serie").map(({ value: s, label }) => {
-                const active = form.filieres.includes(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => toggleSerie(s)}
-                    aria-pressed={active}
-                    className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                      active
-                        ? "border-ink bg-ink text-paper"
-                        : "border-ink-soft/25 text-ink-soft hover:border-highlight/50"
-                    }`}
-                  >
-                    {active && <Check size={12} strokeWidth={2.5} aria-hidden="true" />}
-                    {label}
-                  </button>
-                );
-              })}
-              {form.filieres
-                .filter((s) => !scopeOptions("serie").some((o) => o.value === s))
-                .map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => toggleSerie(s)}
-                    aria-pressed
-                    className="flex min-h-[44px] items-center gap-1 rounded-full border border-ink bg-ink px-3 text-xs text-paper"
-                  >
-                    <Check size={12} strokeWidth={2.5} aria-hidden="true" />
-                    {s}
-                  </button>
-                ))}
-            </div>
-            <input
-              value={nouvelleSerie}
-              onChange={(e) => setNouvelleSerie(e.target.value)}
-              onKeyDown={(e) => {
-                // Bug corrigé : l'input était contrôlé avec value="" —
-                // chaque caractère tapé était ajouté comme série (taper
-                // "ESP" créait "E", "S", "P") et le placeholder promettait
-                // Entrée sans la gérer.
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  const v = nouvelleSerie.trim();
-                  if (v && !form.filieres.includes(v)) {
-                    setForm((f) => ({ ...f, filieres: [...f.filieres, v] }));
-                    // Mémorise la valeur hors liste dans le référentiel
-                    // (best-effort, jamais bloquant) puis rafraîchit pour
-                    // qu'elle apparaisse dans les puces.
-                    void ensureReferentielOption("serie", v, authHeaders(token)).then(() =>
-                      refreshReferentiel()
-                    );
+          <Marque actif={modifie("filieres")}>
+            <div>
+              <p className="mb-1 font-mono-tag text-[10px] text-ink-soft">
+                Séries / filières <span className="text-correction">*</span>
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {scopeOptions("serie").map(({ value: s, label }) => {
+                  const active = form.filieres.includes(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => toggleSerie(s)}
+                      aria-pressed={active}
+                      className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                        active
+                          ? "border-ink bg-ink text-paper"
+                          : "border-ink-soft/25 text-ink-soft hover:border-highlight/50"
+                      }`}
+                    >
+                      {active && <Check size={12} strokeWidth={2.5} aria-hidden="true" />}
+                      {label}
+                    </button>
+                  );
+                })}
+                {form.filieres
+                  .filter((s) => !scopeOptions("serie").some((o) => o.value === s))
+                  .map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => toggleSerie(s)}
+                      aria-pressed
+                      className="flex min-h-[44px] items-center gap-1 rounded-full border border-ink bg-ink px-3 text-xs text-paper"
+                    >
+                      <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+                      {s}
+                    </button>
+                  ))}
+              </div>
+              <input
+                value={nouvelleSerie}
+                onChange={(e) => setNouvelleSerie(e.target.value)}
+                onKeyDown={(e) => {
+                  // Bug corrigé : l'input était contrôlé avec value="" —
+                  // chaque caractère tapé était ajouté comme série (taper
+                  // "ESP" créait "E", "S", "P") et le placeholder promettait
+                  // Entrée sans la gérer.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const v = nouvelleSerie.trim();
+                    if (v && !form.filieres.includes(v)) {
+                      setForm((f) => ({ ...f, filieres: [...f.filieres, v] }));
+                      // Mémorise la valeur hors liste dans le référentiel
+                      // (best-effort, jamais bloquant) puis rafraîchit pour
+                      // qu'elle apparaisse dans les puces.
+                      void ensureReferentielOption("serie", v, authHeaders(token)).then(() =>
+                        refreshReferentiel()
+                      );
+                    }
+                    setNouvelleSerie("");
                   }
-                  setNouvelleSerie("");
-                }
-              }}
-              placeholder="Ajouter une série hors référentiel puis Entrée…"
-              className="mt-2 min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-xs"
-            />
-          </div>
+                }}
+                placeholder="Ajouter une série hors référentiel puis Entrée…"
+                className="mt-2 min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-xs"
+              />
+            </div>
+          </Marque>
 
-          <label className="flex items-center gap-2 text-sm">
+          <label data-modifie={modifie("gratuit") || undefined} className={`flex w-fit items-center gap-2 p-1 text-sm ${modifie("gratuit") ? LISERE : ""}`}>
             <input
               type="checkbox"
               checked={form.gratuit}
@@ -989,9 +1010,10 @@ export function EpreuvesPanel({
               return (
                 <div
                   key={s.index}
+                  data-modifie={modifie(`sujet:${s.index}`) || modifie(`corrige:${s.index}`) || undefined}
                   className={`flex items-center rounded-full border transition-colors ${
                     actif ? "border-ink bg-ink text-paper" : "border-ink-soft/20 text-ink-soft"
-                  }`}
+                  } ${modifie(`sujet:${s.index}`) || modifie(`corrige:${s.index}`) ? "ring-2 ring-valide ring-offset-2 ring-offset-paper-raised" : ""}`}
                 >
                   <button
                     type="button"
@@ -1044,41 +1066,45 @@ export function EpreuvesPanel({
           </div>
 
           <div role="tabpanel" id="panel-sujets" aria-labelledby={`sujet-tab-${sujetActifData.index}`} className="space-y-4">
-            <ContentBlock
-              title={rangSujetActif === 1 ? "Sujet" : `Sujet n°${rangSujetActif}`}
-              required={sujetActifData.index === 0}
-              markdown={sujetActifData.contenu_markdown}
-              markdownApercu={contenuAffiche(form.sujets, sujetActifData, "sujet", affichage)}
-              mode={modeSujet[sujetActifData.index] ?? modeEditeurInitial()}
-              onMode={(m) => setModeSujet((p) => ({ ...p, [sujetActifData.index]: m }))}
-              onChange={(v) => updateSujet(sujetActifData.index, "contenu_markdown", v)}
-              onUpload={(file) => uploadImage(file, "sujet")}
-              onImportMarkdown={(text) => importMarkdown(text, "sujet")}
-              assets={form.assets.filter((a) => a.cible === "sujet")}
-              documents={form.documents.filter((d) => d.cible === "sujet")}
-              onDeleteImage={deleteImage}
-              onInsertImage={insertImageTag}
-              onResizeImage={resizeImage}
-              onDeleteDocument={deleteDocument}
-            />
+            <Marque actif={modifie(`sujet:${sujetActifData.index}`)}>
+              <ContentBlock
+                title={rangSujetActif === 1 ? "Sujet" : `Sujet n°${rangSujetActif}`}
+                required={sujetActifData.index === 0}
+                markdown={sujetActifData.contenu_markdown}
+                markdownApercu={contenuAffiche(form.sujets, sujetActifData, "sujet", affichage)}
+                mode={modeSujet[sujetActifData.index] ?? modeEditeurInitial()}
+                onMode={(m) => setModeSujet((p) => ({ ...p, [sujetActifData.index]: m }))}
+                onChange={(v) => updateSujet(sujetActifData.index, "contenu_markdown", v)}
+                onUpload={(file) => uploadImage(file, "sujet")}
+                onImportMarkdown={(text) => importMarkdown(text, "sujet")}
+                assets={form.assets.filter((a) => a.cible === "sujet")}
+                documents={form.documents.filter((d) => d.cible === "sujet")}
+                onDeleteImage={deleteImage}
+                onInsertImage={insertImageTag}
+                onResizeImage={resizeImage}
+                onDeleteDocument={deleteDocument}
+              />
+            </Marque>
 
-            <ContentBlock
-              title={rangSujetActif === 1 ? "Corrigé (optionnel)" : `Corrigé n°${rangSujetActif} (optionnel)`}
-              required={false}
-              markdown={sujetActifData.corrige_markdown}
-              markdownApercu={contenuAffiche(form.sujets, sujetActifData, "corrige", affichage)}
-              mode={modeCorrige[sujetActifData.index] ?? modeEditeurInitial()}
-              onMode={(m) => setModeCorrige((p) => ({ ...p, [sujetActifData.index]: m }))}
-              onChange={(v) => updateSujet(sujetActifData.index, "corrige_markdown", v)}
-              onUpload={(file) => uploadImage(file, "corrige")}
-              onImportMarkdown={(text) => importMarkdown(text, "corrige")}
-              assets={form.assets.filter((a) => a.cible === "corrige")}
-              documents={form.documents.filter((d) => d.cible === "corrige")}
-              onDeleteImage={deleteImage}
-              onInsertImage={insertImageTag}
-              onResizeImage={resizeImage}
-              onDeleteDocument={deleteDocument}
-            />
+            <Marque actif={modifie(`corrige:${sujetActifData.index}`)}>
+              <ContentBlock
+                title={rangSujetActif === 1 ? "Corrigé (optionnel)" : `Corrigé n°${rangSujetActif} (optionnel)`}
+                required={false}
+                markdown={sujetActifData.corrige_markdown}
+                markdownApercu={contenuAffiche(form.sujets, sujetActifData, "corrige", affichage)}
+                mode={modeCorrige[sujetActifData.index] ?? modeEditeurInitial()}
+                onMode={(m) => setModeCorrige((p) => ({ ...p, [sujetActifData.index]: m }))}
+                onChange={(v) => updateSujet(sujetActifData.index, "corrige_markdown", v)}
+                onUpload={(file) => uploadImage(file, "corrige")}
+                onImportMarkdown={(text) => importMarkdown(text, "corrige")}
+                assets={form.assets.filter((a) => a.cible === "corrige")}
+                documents={form.documents.filter((d) => d.cible === "corrige")}
+                onDeleteImage={deleteImage}
+                onInsertImage={insertImageTag}
+                onResizeImage={resizeImage}
+                onDeleteDocument={deleteDocument}
+              />
+            </Marque>
           </div>
 
           <div className="flex flex-wrap gap-2 border-t border-ink-soft/10 pt-4">
@@ -1155,6 +1181,7 @@ export function EpreuvesPanel({
           epreuveId={form.id}
           onClose={() => setAssistantOuvert(false)}
           onAppliquer={appliquerModifications}
+          onAnnuler={derniere ? annulerApplication : undefined}
           sujetActifRang={Math.max(1, form.sujets.findIndex((s) => s.index === sujetActif) + 1)}
         />
       )}

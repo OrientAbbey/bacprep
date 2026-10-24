@@ -4,8 +4,11 @@ import { api } from "../../api/client";
 import { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, Avatar, ChatBubble, INPUT_MAX_HEIGHT_PX, MessageComposer, type Message } from "../../components/ChatParts";
 import { delaiReconnexion, streamAdminAsk, type AdminConversation } from "../../lib/streaming";
 import {
+  aDesModifications,
+  applicationAutoInitiale,
   buildAdminAskPayload,
   extraireModifications,
+  memoriserApplicationAuto,
   resumeEpreuveName,
   type AdminEpreuveSnapshot,
   type ModificationsEpreuve,
@@ -40,6 +43,7 @@ export function AdminAssistantPanel({
   epreuveId,
   onClose,
   onAppliquer,
+  onAnnuler,
   sujetActifRang,
 }: {
   /** Formulaire d'édition COURANT (hors `statut`, porté par la prop éponyme). */
@@ -49,10 +53,11 @@ export function AdminAssistantPanel({
    * serveur. Absent = mode éphémère (rien n'est stocké). */
   epreuveId?: string;
   onClose: () => void;
-  /** Applique au formulaire d'édition une modification proposée par
-   * l'assistant (blocs `modification-sujet`, `modification-corrige`,
-   * `modification-form`). */
-  onAppliquer: (modifications: ModificationsEpreuve) => void;
+  /** Applique au formulaire d'édition une modification proposée par l'assistant (blocs `modification-*` et
+   * `remplacer-*`). Renvoie `true` si le formulaire a changé. */
+  onAppliquer: (modifications: ModificationsEpreuve) => boolean;
+  /** Présent tant que la dernière application peut être annulée. */
+  onAnnuler?: () => void;
   /** Rang (à partir de 1) du sujet affiché dans l'éditeur, transmis à l'assistant. */
   sujetActifRang?: number;
 }) {
@@ -63,6 +68,9 @@ export function AdminAssistantPanel({
   const [queue, setQueue] = useState<string[]>([]);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [enChargement, setEnChargement] = useState(false);
+  const [auto, setAuto] = useState(applicationAutoInitiale);
+  // La réponse en cours a été appliquée toute seule (remplace les boutons manuels).
+  const [appliqueAuto, setAppliqueAuto] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -72,6 +80,15 @@ export function AdminAssistantPanel({
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // `applyExchange` dure le temps d'une réponse : il lit ces refs pour appliquer avec le formulaire ET la case
+  // du moment de la fin de réponse, pas ceux du début.
+  const onAppliquerRef = useRef(onAppliquer);
+  const autoRef = useRef(auto);
+  useEffect(() => {
+    onAppliquerRef.current = onAppliquer;
+    autoRef.current = auto;
+  });
 
   // Annulation de l'échange en cours + frame de fragments en attente, à
   // nettoyer au démontage (même raison que l'assistant élève).
@@ -203,6 +220,7 @@ export function AdminAssistantPanel({
     setMessages([...base, { role: "user", content: question, ts: nowIso }, { role: "assistant", content: "", ts: nowIso }]);
     setSending(true);
     setErreurStream(null);
+    setAppliqueAuto(false);
 
     // Échange annulable : quitter la page admin pendant une réponse stoppait
     // la boucle de réécriture d'état et laissait le serveur produire un
@@ -214,6 +232,7 @@ export function AdminAssistantPanel({
 
     const MAX_ATTEMPTES = 3;
     let erreurFinale: string | null = null;
+    let reponse = "";
     let aReussi = false;
     let annule = false;
 
@@ -244,6 +263,7 @@ export function AdminAssistantPanel({
         });
       }
 
+      reponse = "";
       if (tentative > 1) {
         // Nouvelle tentative : toute réponse partielle est remise à zéro.
         setMessages((prev) => [
@@ -256,6 +276,7 @@ export function AdminAssistantPanel({
       try {
         await streamAdminAsk(payload, (event) => {
           if (event.type === "chunk") {
+            reponse += event.text;
             pendingChunkText += event.text;
             if (chunkRaf === null) {
               chunkRaf = requestAnimationFrame(flushChunk);
@@ -272,6 +293,7 @@ export function AdminAssistantPanel({
             // les messages sont la source de vérité (question + réponse, ts
             // inclus). Le remplacement est immédiat et écrase l'état local.
             if (event.conversation) {
+              reponse = event.conversation.messages[event.conversation.messages.length - 1]?.content ?? reponse;
               setMessages(
                 event.conversation.messages.map((m) => ({
                   role: m.role === "assistant" ? "assistant" : "user",
@@ -321,6 +343,9 @@ export function AdminAssistantPanel({
     setSending(false);
     if (!aReussi) {
       setErreurStream(erreurFinale ?? "La réponse n'a pas pu être reçue — réessaie.");
+    } else if (autoRef.current) {
+      const modifications = extraireModifications(reponse);
+      if (aDesModifications(modifications)) setAppliqueAuto(onAppliquerRef.current(modifications));
     }
   }
 
@@ -437,7 +462,7 @@ export function AdminAssistantPanel({
                 // « Appliquer » seulement une fois la réponse terminée (le bloc de modification doit être complet).
                 actionsHaut={
                   m.role === "assistant" && estDernier && !sending && onAppliquer ? (
-                    <ActionsAppliquer content={m.content} onAppliquer={onAppliquer} />
+                    <ActionsAppliquer content={m.content} onAppliquer={onAppliquer} appliqueAuto={appliqueAuto} />
                   ) : null
                 }
                 estDernier={estDernier}
@@ -473,6 +498,32 @@ export function AdminAssistantPanel({
           )}
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-x-3 border-t border-ink-soft/15 bg-paper px-4 text-xs">
+          <label className="flex min-h-[44px] items-center gap-2">
+            <input
+              type="checkbox"
+              checked={auto}
+              onChange={(e) => {
+                setAuto(e.target.checked);
+                memoriserApplicationAuto(e.target.checked);
+              }}
+            />
+            Appliquer automatiquement
+          </label>
+          {onAnnuler && (
+            <button
+              type="button"
+              onClick={() => {
+                onAnnuler();
+                setAppliqueAuto(false);
+              }}
+              className="min-h-[44px] font-medium text-correction underline underline-offset-2"
+            >
+              Annuler la dernière application
+            </button>
+          )}
+        </div>
+
         <MessageComposer
           inputRef={inputRef}
           input={input}
@@ -489,7 +540,7 @@ export function AdminAssistantPanel({
 
 /** Boutons « Appliquer » sous une réponse contenant des blocs `modification-*` : un clic
  * remplit le sujet, le corrigé ou les métadonnées du formulaire. */
-function ActionsAppliquer({ content, onAppliquer }: { content: string; onAppliquer: (m: ModificationsEpreuve) => void }) {
+function ActionsAppliquer({ content, onAppliquer, appliqueAuto }: { content: string; onAppliquer: (m: ModificationsEpreuve) => boolean; appliqueAuto: boolean }) {
   const modifs = extraireModifications(content);
   const boutons: { cle: string; libelle: string; modifs: ModificationsEpreuve }[] = [
     ...(
@@ -512,6 +563,14 @@ function ActionsAppliquer({ content, onAppliquer }: { content: string; onAppliqu
     }),
   ];
   if (boutons.length === 0) return null;
+  if (appliqueAuto) {
+    return (
+      <p className="mt-1.5 flex items-center gap-1 text-xs font-medium text-valide">
+        <Check size={12} strokeWidth={2.5} aria-hidden="true" />
+        Appliqué automatiquement au formulaire
+      </p>
+    );
+  }
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5">
       {boutons.map((b) => (

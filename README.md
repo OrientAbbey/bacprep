@@ -144,6 +144,10 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   collante · **assistant IA sur tous les onglets** : il lit un résumé de l'onglet et *propose* des actions
   (liste blanche dans `core/admin_tools.py`) que l'admin confirme d'un clic ; aucun outil de suppression,
   de restauration ni de gestion des rôles.
+  Dans l'éditeur d'épreuve, ses modifications (réécriture, chercher/remplacer par sujet numéroté, métadonnées)
+  s'appliquent **seules à la fin de la réponse** au brouillon affiché, même non enregistré : case « Appliquer
+  automatiquement » (cochée par défaut, mémorisée), champ modifié signalé en vert, bouton « Annuler la dernière
+  application » ; un extrait introuvable ou ambigu n'applique rien. Rien n'est enregistré avant « Enregistrer ».
 - **Sécurité** : quotas IA journaliers (par compte et global), contexte de l'assistant vérifié côté serveur,
   IP cliente configurable, Origin du WebSocket, CSP en rapport seul, jeton de session `token_urlsafe`.
 - **Qualité / ops** : CI GitHub (pytest SQLite **et PostgreSQL**, vitest, build, ruff, **E2E Chromium**),

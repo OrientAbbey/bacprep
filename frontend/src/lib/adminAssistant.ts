@@ -179,6 +179,46 @@ export function extraireModifications(markdown: string): ModificationsEpreuve {
   return out;
 }
 
+const CLE_AUTO = "bacprep-assistant-admin-auto";
+
+/** « Appliquer automatiquement » : activé par défaut, préférence mémorisée sur l'appareil. */
+export function applicationAutoInitiale(): boolean {
+  try {
+    return localStorage.getItem(CLE_AUTO) !== "0";
+  } catch {
+    return true;
+  }
+}
+export function memoriserApplicationAuto(v: boolean): void {
+  try {
+    localStorage.setItem(CLE_AUTO, v ? "1" : "0");
+  } catch {
+    /* préférence non mémorisée */
+  }
+}
+
+export function aDesModifications(m: ModificationsEpreuve): boolean {
+  return Object.values(m).some(Boolean);
+}
+
+type FormulaireSansStatut = Omit<AdminEpreuveSnapshot, "statut">;
+const CHAMPS_FORMULAIRE = ["niveau", "classe", "evaluation", "annee", "matiere", "duree", "coefficient", "gratuit", "filieres"] as const;
+
+/** Clés des champs que `apres` change par rapport à `avant` : un champ du formulaire (« matiere »…),
+ * « sujet:<index> » ou « corrige:<index> ». */
+export function champsModifies(avant: FormulaireSansStatut, apres: FormulaireSansStatut): string[] {
+  return [
+    ...CHAMPS_FORMULAIRE.filter((c) => JSON.stringify(avant[c]) !== JSON.stringify(apres[c])),
+    ...apres.sujets.flatMap((s) => {
+      const a = avant.sujets.find((x) => x.index === s.index);
+      return [
+        ...(a?.contenu_markdown !== s.contenu_markdown ? [`sujet:${s.index}`] : []),
+        ...(a?.corrige_markdown !== s.corrige_markdown ? [`corrige:${s.index}`] : []),
+      ];
+    }),
+  ];
+}
+
 export interface ResultatPaire {
   ok: boolean;
   raison?: "introuvable" | "ambigu";

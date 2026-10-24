@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  aDesModifications,
+  applicationAutoInitiale,
   appliquerEditions,
   appliquerPaires,
   buildAdminAskPayload,
+  champsModifies,
   extraireModifications,
+  memoriserApplicationAuto,
   nettoyerHistorique,
   resumeEpreuveName,
 } from "./adminAssistant";
@@ -285,5 +289,47 @@ describe("appliquerEditions", () => {
     expect(r.resultats[0]).toMatchObject({ ok: false, raison: "le sujet 9 n'existe pas" });
     expect(r.resultats[1].ok).toBe(false);
     expect(r.sujets[0].contenu_markdown).toBe("S1 texte"); // la première paire valide n'a PAS été gardée
+  });
+});
+
+describe("aDesModifications", () => {
+  it("est faux pour une réponse sans bloc ou avec un bloc vide, vrai sinon", () => {
+    expect(aDesModifications(extraireModifications("Simple réponse."))).toBe(false);
+    expect(aDesModifications({ sujet: "" })).toBe(false);
+    expect(aDesModifications(extraireModifications("```modification-form\n{\"annee\":\"2023\"}\n```"))).toBe(true);
+    expect(aDesModifications({ editions: [{ cible: "sujet", complet: "x" }] })).toBe(true);
+  });
+});
+
+describe("champsModifies", () => {
+  const avant = { ...FORM };
+  it("liste les champs et les sujets/corrigés réellement changés (et rien d'autre)", () => {
+    expect(champsModifies(avant, { ...avant })).toEqual([]);
+    const apres = {
+      ...avant,
+      annee: "2023",
+      filieres: ["C"],
+      sujets: [avant.sujets[0], { ...avant.sujets[1], corrige_markdown: "Nouveau corrigé" }],
+    };
+    expect(champsModifies(avant, apres)).toEqual(["annee", "filieres", "corrige:1"]);
+  });
+  it("ne signale pas un remplacement par un texte identique", () => {
+    expect(champsModifies(avant, { ...avant, sujets: avant.sujets.map((s) => ({ ...s })) })).toEqual([]);
+  });
+});
+
+describe("application automatique : préférence", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("vaut « oui » par défaut, se mémorise, et reste « oui » sans stockage", () => {
+    const m: Record<string, string> = {};
+    vi.stubGlobal("localStorage", { getItem: (k: string) => m[k] ?? null, setItem: (k: string, v: string) => void (m[k] = v) });
+    expect(applicationAutoInitiale()).toBe(true);
+    memoriserApplicationAuto(false);
+    expect(applicationAutoInitiale()).toBe(false);
+    memoriserApplicationAuto(true);
+    expect(applicationAutoInitiale()).toBe(true);
+    vi.stubGlobal("localStorage", { getItem: () => { throw new Error("bloqué"); }, setItem: () => { throw new Error("bloqué"); } });
+    expect(applicationAutoInitiale()).toBe(true);
+    expect(() => memoriserApplicationAuto(false)).not.toThrow();
   });
 });
