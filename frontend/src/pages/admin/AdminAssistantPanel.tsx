@@ -1,8 +1,7 @@
 import { Bot, Check, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "../../api/client";
 import { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, Avatar, ChatBubble, INPUT_MAX_HEIGHT_PX, MessageComposer, type Message } from "../../components/ChatParts";
-import { delaiReconnexion, streamAdminAsk, type AdminConversation } from "../../lib/streaming";
+import { chargerConversationAdmin, delaiReconnexion, effacerConversationAdmin, streamAdminAsk } from "../../lib/streaming";
 import {
   aDesModifications,
   applicationAutoInitiale,
@@ -16,31 +15,22 @@ import {
 
 
 /**
- * Tiroir droit de l'assistant du back-office, ouvert depuis l'onglet
- * Épreuves. Deux modes :
- * - PERSISTÉ (`epreuveId` fourni — épreuve déjà enregistrée) : la
- *   conversation « roulante » de CET admin sur ce dossier est rechargeée à
- *   l'ouverture (`GET /api/admin/assistant/conversation/{id}`), réécrite à
- *   chaque `done` du flux, et « Nouvelle conversation » la purge côté
- *   serveur (`DELETE`).
- * - ÉPHÉMÈRE (épreuve pas encore enregistrée) : la liste des messages vit
- *   dans l'état du composant, perdue à la fermeture ; rien n'est stocké.
+ * Tiroir droit de l'assistant du back-office, ouvert depuis l'onglet Épreuves. La conversation « roulante » de CET
+ * admin est mémorisée sous `conversationId` (l'id de l'épreuve enregistrée, ou `brouillon:<id>` tant qu'elle ne l'est
+ * pas) : rechargée à l'ouverture, réécrite à chaque `done` du flux, purgée par « Nouvelle conversation ».
  *
- * Le formulaire d'édition est resnapshotté à CHAQUE envoi : la prop `form`
- * (réactualisée par EpreuvesPanel à chaque frappe) est lue au moment de
- * l'appel de l'envoi — jamais un instantané figé au moment de l'ouverture.
+ * Le formulaire d'édition est resnapshotté à CHAQUE envoi : la prop `form` (réactualisée par EpreuvesPanel à chaque
+ * frappe) est lue au moment de l'appel de l'envoi — jamais un instantané figé au moment de l'ouverture.
  *
- * Fonctionnalités communes aux deux assistants : streaming SSE avec
- * RECONNEXION AUTOMATIQUE (le flux est relancé tel quel, délai croissant,
- * si la connexion s'interrompt sans `done`), horodatage HH:MM des messages
- * (date complète au survol), file d'attente (envoyer pendant une réponse
- * met la question en attente), édition inline d'une question + régénération
- * depuis ce point, et relance de la dernière question en un clic.
+ * Fonctionnalités communes aux deux assistants : streaming SSE avec RECONNEXION AUTOMATIQUE (le flux est relancé tel
+ * quel, délai croissant, si la connexion s'interrompt sans `done`), horodatage HH:MM des messages (date complète au
+ * survol), file d'attente (envoyer pendant une réponse met la question en attente), édition inline d'une question +
+ * régénération depuis ce point, et relance de la dernière question en un clic.
  */
 export function AdminAssistantPanel({
   form,
   statut,
-  epreuveId,
+  conversationId,
   onClose,
   onAppliquer,
   onAnnuler,
@@ -49,9 +39,8 @@ export function AdminAssistantPanel({
   /** Formulaire d'édition COURANT (hors `statut`, porté par la prop éponyme). */
   form: Omit<AdminEpreuveSnapshot, "statut">;
   statut: string;
-  /** Id de l'épreuve EN SAUVEGARDE : la conversation est persistée côté
-   * serveur. Absent = mode éphémère (rien n'est stocké). */
-  epreuveId?: string;
+  /** Clé de la conversation mémorisée côté serveur. */
+  conversationId: string;
   onClose: () => void;
   /** Applique au formulaire d'édition une modification proposée par l'assistant (blocs `modification-*` et
    * `remplacer-*`). Renvoie `true` si le formulaire a changé. */
@@ -102,40 +91,21 @@ export function AdminAssistantPanel({
     };
   }, []);
 
-  // Mode PERSISTÉ : recharge la conversation roulante de CET admin sur cette
-  // épreuve au montage (id, labels, horodatages inclus) — le tiroir rouvre
-  // exactement là où on l'avait laissé.
+  // Recharge la conversation de CET admin (id, horodatages inclus) : le tiroir rouvre là où on l'avait laissé.
   useEffect(() => {
-    if (!epreuveId) return;
     let annule = false;
     setEnChargement(true);
-    void (async () => {
-      try {
-        const { conversation } = await api.get<{ conversation: AdminConversation | null }>(
-          `/api/admin/assistant/conversation/${epreuveId}`
-        );
-        if (annule) return;
-        if (conversation) {
-          setMessages(
-            conversation.messages.map((m) => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.content,
-              ts: m.ts,
-            }))
-          );
-        }
-      } catch {
-        // Conversation introuvable ou serveur injoignable : panneau vide,
-        // la première question recréera la conversation côté serveur.
-      } finally {
-        if (!annule) setEnChargement(false);
+    void chargerConversationAdmin(conversationId).then((conversation) => {
+      if (annule) return;
+      if (conversation) {
+        setMessages(conversation.messages.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content, ts: m.ts })));
       }
-    })();
+      setEnChargement(false);
+    });
     return () => {
       annule = true;
     };
-  }, [epreuveId]);
-
+  }, [conversationId]);
   // Échap ferme le tiroir (même ergonomie que le panneau de l'élève).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -172,13 +142,8 @@ export function AdminAssistantPanel({
     setMessages([]);
     setErreurStream(null);
     setQueue([]);
-    // Mode persisté : purge côté serveur (le prochain envoi recrée une
-    // conversation vierge). BEST-EFFORT : un échec réseau n'empêche pas
-    // d'effacer l'écran — mais alors ne réapparaîtra pas la conversation
-    // à la prochaine ouverture du tiroir.
-    if (epreuveId) {
-      void api.del(`/api/admin/assistant/conversation/${epreuveId}`).catch(() => undefined);
-    }
+    // Best-effort : un échec réseau n'empêche pas d'effacer l'écran.
+    void effacerConversationAdmin(conversationId);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -214,7 +179,7 @@ export function AdminAssistantPanel({
    * applicatives du flux et les 4xx ne sont pas relancées. */
   async function applyExchange(question: string, base: Message[]) {
     if (sending) return;
-    const payload = buildAdminAskPayload({ ...form, statut }, base, question, epreuveId, sujetActifRang);
+    const payload = buildAdminAskPayload({ ...form, statut }, base, question, conversationId, sujetActifRang);
     const nowIso = new Date().toISOString();
 
     setMessages([...base, { role: "user", content: question, ts: nowIso }, { role: "assistant", content: "", ts: nowIso }]);
@@ -395,7 +360,7 @@ export function AdminAssistantPanel({
             <div className="min-w-0">
               <h2 className="font-serif-brand text-sm leading-tight">{ASSISTANT_TITRE}</h2>
               <p className="font-mono-tag text-[10px] text-slate">
-                {ASSISTANT_SIGNATURE} · back-office · {epreuveId ? "discussion enregistrée" : "éphémère (rien n'est enregistré)"}
+                {ASSISTANT_SIGNATURE} · back-office · discussion enregistrée
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">

@@ -562,7 +562,14 @@ def get_admin_conversation(db: Session, email: str, epreuve_id: str) -> Optional
 
 
 def create_admin_conversation(db: Session, email: str, epreuve_id: str) -> AdminAIConversationORM:
-    """Crée la conversation roulante d'un admin sur une épreuve."""
+    """Crée la conversation roulante d'un admin sur une épreuve. Les conversations de brouillons jamais
+    rattachées à une épreuve (clé `brouillon:…`) sont effacées au bout de 30 jours."""
+    if epreuve_id.startswith("brouillon:"):
+        db.query(AdminAIConversationORM).filter(
+            AdminAIConversationORM.email == email,
+            AdminAIConversationORM.epreuve_id.like("brouillon:%"),
+            AdminAIConversationORM.updated_at < utc_now() - timedelta(days=30),
+        ).delete(synchronize_session=False)
     conv = AdminAIConversationORM(email=email, epreuve_id=epreuve_id, label="Discussion admin", messages_json="[]")
     db.add(conv)
     db.commit()

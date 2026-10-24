@@ -777,7 +777,7 @@ console.log("\nAssistant d'édition : application automatique");
     await poser("Précise l'exercice 1", bloc("remplacer-sujet:1", paire("Exercice 1 : calculer la dérivée de f.", "Exercice 1 : calculer la dérivée de f(x) = x².")));
     await d.getByText("Appliqué automatiquement au formulaire").waitFor({ timeout: 10000 });
     const p = envoyees[0].epreuve;
-    ok(!("epreuve_id" in envoyees[0]), "épreuve non enregistrée : aucun epreuve_id ne doit partir");
+    ok(/^brouillon:[0-9a-f]{32}$/.test(envoyees[0].epreuve_id), `épreuve non enregistrée : la clé du brouillon est attendue, reçu ${envoyees[0].epreuve_id}`);
     ok(p.sujets[0].contenu_markdown === BROUILLON && p.contenu_markdown === BROUILLON, `l'assistant n'a pas reçu le brouillon : ${JSON.stringify(p.sujets)}`);
     ok(p.sujet_actif === 1, "le sujet affiché n'est pas transmis");
     const texte = await zone(0).inputValue();
@@ -843,6 +843,90 @@ console.log("\nAssistant d'édition : application automatique");
     await page.keyboard.press("Escape");
     await page.getByRole("tab", { name: "Sujet 2" }).click();
     ok((await zone(1).inputValue()) === "Corrigé du sujet 2" && (await surligne(":has(textarea)").count()) === 1, "la zone du corrigé n° 2 n'est pas signalée");
+  });
+  await ctx.close();
+}
+
+console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterAdmin(ctx);
+  const page = await ctx.newPage();
+  const conversation = async (cle) => (await (await ctx.request.get(`/api/admin/assistant/conversation/${cle}`)).json()).conversation;
+  const bouton = (nom) => page.getByRole("button", { name: nom, exact: true }).filter({ visible: true });
+  const journal = page.getByRole("log");
+  const poser = async (champ, question) => {
+    await page.getByLabel(champ).fill(question);
+    await page.getByRole("button", { name: "Envoyer" }).click();
+    await page.getByText(/Mode démonstration/).last().waitFor({ timeout: 15000 }); // le LLM est simulé (aucune clé en test), le reste est réel
+  };
+
+  await test("onglets : la discussion revient après rechargement (sans doublon de question), chaque onglet a la sienne", async () => {
+    const Q = `Combien de formules ? ${RUN}`;
+    await ctx.request.delete("/api/admin/assistant/conversation/onglet:formules"); // départ propre, quel que soit l'état de la base
+    await page.goto("/admin");
+    await page.getByRole("tab", { name: "Formules" }).click();
+    await bouton("Assistant").click();
+    await poser("Question à l'assistant", Q);
+    const conv = await conversation("onglet:formules");
+    ok(conv.messages.filter((m) => m.role === "user" && m.content === Q).length === 1 && conv.messages.length === 2, `la question est dupliquée en base : ${JSON.stringify(conv.messages.map((m) => m.role))}`);
+    await page.reload();
+    await page.getByRole("tab", { name: "Formules" }).click();
+    await bouton("Assistant").click();
+    await journal.getByText(Q).first().waitFor({ timeout: 10000 });
+    ok((await page.getByText(/Mode démonstration/).count()) >= 1, "la réponse n'est pas revenue");
+    await page.getByRole("tab", { name: "Calendrier" }).click(); // le tiroir reste ouvert
+    await page.getByText("Pose une question sur cet onglet").waitFor({ timeout: 10000 });
+    ok((await journal.getByText(Q).count()) === 0, "la discussion de Formules apparaît sur Calendrier");
+    await page.getByRole("tab", { name: "Formules" }).click();
+    await journal.getByText(Q).first().waitFor({ timeout: 10000 });
+    await page.screenshot({ path: `${SHOTS}/assistant-memoire.png` });
+  });
+
+  await test("onglets : « Nouvelle conversation » efface la discussion, aussi côté serveur", async () => {
+    await page.getByRole("button", { name: /Nouvelle conversation/ }).click();
+    await page.getByText("Pose une question sur cet onglet").waitFor({ timeout: 5000 });
+    await page.waitForFunction(async () => (await (await fetch("/api/admin/assistant/conversation/onglet:formules")).json()).conversation === null, null, { timeout: 8000 });
+    await page.reload();
+    await page.getByRole("tab", { name: "Formules" }).click();
+    await bouton("Assistant").click();
+    await page.getByText("Pose une question sur cet onglet").waitFor({ timeout: 10000 });
+  });
+
+  await test("éditeur : la discussion d'un brouillon revient à la réouverture, puis suit l'épreuve à l'enregistrement", async () => {
+    const cles = [];
+    page.on("request", (r) => r.url().includes("/api/admin/assistant/ask") && cles.push(r.postDataJSON().epreuve_id));
+    const Q = `Aide-moi sur ce brouillon ${RUN}`;
+    await page.goto("/admin");
+    await page.getByRole("combobox", { name: /^Niveau/ }).fill("Secondaire");
+    await page.getByRole("combobox", { name: /^Classe/ }).fill("Terminale");
+    await page.getByRole("combobox", { name: /^Évaluation/ }).fill("Baccalauréat");
+    await page.getByRole("combobox", { name: /^Année/ }).fill("2031");
+    await page.getByRole("combobox", { name: /^Matière/ }).fill(`Mémoire ${RUN}`);
+    await page.getByRole("button", { name: "C", exact: true, pressed: false }).click();
+    await page.locator("textarea").first().fill("Exercice du brouillon.");
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    const d = page.getByRole("dialog", { name: "Tuteur IA Prep" });
+    await poser("Question à Tuteur IA Prep", Q);
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    await d.getByText(Q, { exact: true }).waitFor({ timeout: 10000 }); // rechargée du serveur à la réouverture
+    ok(/^brouillon:[0-9a-f]{32}$/.test(cles[0]), `clé de brouillon attendue, reçu ${cles[0]}`);
+    await page.keyboard.press("Escape");
+    const creation = page.waitForResponse((r) => r.url().endsWith("/api/admin/epreuves") && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    const id = (await (await creation).json()).id;
+    await page.getByText("Épreuve créée (brouillon).").waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    await d.getByText(Q, { exact: true }).waitFor({ timeout: 10000 });
+    ok((await conversation(cles[0])) === null, "la discussion est restée sur la clé du brouillon");
+    ok((await conversation(id))?.messages[0].content === Q, "la discussion n'a pas suivi l'épreuve enregistrée");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: /Nouvelle épreuve/ }).click(); // nouveau brouillon : nouvelle discussion
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+    await d.getByText("Pose ta première question").waitFor({ timeout: 10000 });
+    ok((await d.getByText(Q, { exact: true }).count()) === 0, "le nouveau brouillon hérite de la discussion précédente");
+    await ctx.request.delete(`/api/admin/epreuves/${id}`);
   });
   await ctx.close();
 }

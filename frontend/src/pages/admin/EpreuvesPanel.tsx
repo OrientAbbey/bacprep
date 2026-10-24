@@ -9,7 +9,8 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { CLASSES_SECONDAIRE, EVALUATIONS, NIVEAUX, SERIES_CONNUES, classeLabel } from "../../lib/referentiel";
 import { AdminAssistantPanel } from "./AdminAssistantPanel";
-import { aDesModifications, appliquerEditions, champsModifies, type ModificationsEpreuve } from "../../lib/adminAssistant";
+import { aDesModifications, appliquerEditions, champsModifies, nouvelIdBrouillon, type ModificationsEpreuve } from "../../lib/adminAssistant";
+import { rattacherConversationAdmin } from "../../lib/streaming";
 import { authHeaders, Asset, ContentBlock, DocumentFile, EditableSelect, EMPTY_FORM, EpreuveForm, erreurDetail, escapeRegExp, extraireBaliseImage, Field, remplacerLargeur, modeEditeurInitial, type ModeEditeur } from "./shared";
 
 interface AdminEpreuveSummary {
@@ -111,6 +112,8 @@ export function EpreuvesPanel({
   const [statutForm, setStatutForm] = useState("brouillon");
   // État du tiroir droit de l'assistant admin.
   const [assistantOuvert, setAssistantOuvert] = useState(false);
+  // Clé de la discussion de l'assistant tant que l'épreuve n'est pas enregistrée ; renouvelée à chaque nouveau brouillon.
+  const [brouillonId, setBrouillonId] = useState(nouvelIdBrouillon);
   // Dernière application de l'assistant : instantané d'avant pour « Annuler », et clés des champs modifiés
   // (signalés). Valable tant que le formulaire n'a pas été touché depuis : dès la première frappe, il ne l'est plus.
   const [application, setApplication] = useState<{ avant: EpreuveForm; avantStatut: string; apres: EpreuveForm; apresStatut: string; cles: string[] } | null>(null);
@@ -275,6 +278,12 @@ export function EpreuvesPanel({
    * référentiel. Aucun toast : `save` et `publish` l'encadrent chacun avec
    * leurs messages et leur traitement d'erreur propres. Retourne vrai si
    * l'épreuve vient d'être CRÉÉE. */
+  function nouveauBrouillon() {
+    setForm(EMPTY_FORM);
+    setStatutForm("brouillon");
+    setBrouillonId(nouvelIdBrouillon());
+  }
+
   async function persister(): Promise<boolean> {
     const cree = !form.id;
     const payload = {
@@ -300,6 +309,7 @@ export function EpreuvesPanel({
       const res = await api.post<{ id: string }>("/api/admin/epreuves", payload, authHeaders(token));
       id = res.id;
       setForm((f) => ({ ...f, id: res.id }));
+      await rattacherConversationAdmin(`brouillon:${brouillonId}`, id);
     } else {
       await api.put(`/api/admin/epreuves/${form.id}`, payload, authHeaders(token));
       id = form.id!;
@@ -421,8 +431,7 @@ export function EpreuvesPanel({
       action: async () => {
         try {
           await api.del(`/api/admin/epreuves/${id}`, authHeaders(token));
-          setForm(EMPTY_FORM);
-          setStatutForm("brouillon");
+          nouveauBrouillon();
           showToast("Épreuve supprimée.", "info");
           loadAll(token, search, statutFiltre);
           onEpreuvesChange?.();
@@ -714,7 +723,7 @@ export function EpreuvesPanel({
             lieu d'allonger la page bien au-delà du formulaire de droite. */}
         <div className="space-y-2 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           <button
-            onClick={() => { setForm(EMPTY_FORM); setStatutForm("brouillon"); }}
+            onClick={nouveauBrouillon}
             disabled={enCours !== null}
             className="min-h-[44px] w-full rounded-full border border-ink-soft/25 text-sm disabled:opacity-60"
           >
@@ -1178,7 +1187,7 @@ export function EpreuvesPanel({
         <AdminAssistantPanel
           form={form}
           statut={statutForm}
-          epreuveId={form.id}
+          conversationId={form.id ?? `brouillon:${brouillonId}`}
           onClose={() => setAssistantOuvert(false)}
           onAppliquer={appliquerModifications}
           onAnnuler={derniere ? annulerApplication : undefined}

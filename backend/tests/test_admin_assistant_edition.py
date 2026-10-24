@@ -68,3 +68,24 @@ def test_conversation_de_brouillon_rattachee_a_l_epreuve_enregistree(admin, monk
 
 def test_deplacer_reserve_a_l_admin(client):
     assert client.post("/api/admin/assistant/conversation/a/deplacer", json={"vers": "b"}).status_code in (401, 403)
+
+
+def test_brouillons_abandonnes_effaces_apres_30_jours(client, db):
+    from datetime import timedelta
+
+    from app.core import store
+    from app.db import utc_now
+    from app.db_models import AdminAIConversationORM
+
+    ancien = store.create_admin_conversation(db, "a@x.cm", "brouillon:vieux")
+    store.create_admin_conversation(db, "a@x.cm", "brouillon:recent")
+    autre_admin = store.create_admin_conversation(db, "b@x.cm", "brouillon:vieux-b")
+    onglet = store.create_admin_conversation(db, "a@x.cm", "onglet:formules")
+    for c in (ancien, autre_admin, onglet):
+        c.updated_at = utc_now() - timedelta(days=40)
+    db.commit()
+    store.create_admin_conversation(db, "a@x.cm", "brouillon:nouveau")
+    restantes = {c.epreuve_id for c in db.query(AdminAIConversationORM).filter(AdminAIConversationORM.email.in_(["a@x.cm", "b@x.cm"]))}
+    assert restantes == {"brouillon:recent", "brouillon:vieux-b", "onglet:formules", "brouillon:nouveau"}
+    db.query(AdminAIConversationORM).filter(AdminAIConversationORM.email.in_(["a@x.cm", "b@x.cm"])).delete(synchronize_session=False)
+    db.commit()

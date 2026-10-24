@@ -148,6 +148,9 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   s'appliquent **seules à la fin de la réponse** au brouillon affiché, même non enregistré : case « Appliquer
   automatiquement » (cochée par défaut, mémorisée), champ modifié signalé en vert, bouton « Annuler la dernière
   application » ; un extrait introuvable ou ambigu n'applique rien. Rien n'est enregistré avant « Enregistrer ».
+  Les deux assistants **mémorisent leur discussion** côté serveur (par admin) : une par épreuve, une par onglet, et
+  une par brouillon non enregistré (clé `brouillon:<id>`, rattachée à l'épreuve à l'enregistrement, effacée après
+  30 jours si elle reste orpheline) ; rechargée à l'ouverture, effacée par « Nouvelle conversation ».
 - **Sécurité** : quotas IA journaliers (par compte et global), contexte de l'assistant vérifié côté serveur,
   IP cliente configurable, Origin du WebSocket, CSP en rapport seul, jeton de session `token_urlsafe`.
 - **Qualité / ops** : CI GitHub (pytest SQLite **et PostgreSQL**, vitest, build, ruff, **E2E Chromium**),

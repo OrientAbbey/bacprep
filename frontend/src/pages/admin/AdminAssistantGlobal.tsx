@@ -1,10 +1,10 @@
-import { Bot, Check, Loader2, Send, X } from "lucide-react";
+import { Bot, Check, Loader2, Plus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
 import { BoutonCopier } from "../../components/ChatParts";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { extraireActions, LIBELLES_OUTILS, type ActionProposee } from "../../lib/adminActions";
-import { streamAdminAsk } from "../../lib/streaming";
+import { chargerConversationAdmin, effacerConversationAdmin, streamAdminAsk } from "../../lib/streaming";
 import { authHeaders } from "./shared";
 
 type EtatAction = "attente" | "en-cours" | "fait" | "ignoree" | "erreur";
@@ -18,15 +18,35 @@ interface Message {
  * Assistant du back-office pour TOUS les onglets (l'onglet Épreuves garde son
  * assistant d'édition). Il lit un résumé de l'onglet affiché, répond aux
  * questions et PROPOSE des actions : rien ne s'exécute sans le clic
- * « Confirmer » (liste blanche et validation côté serveur). Conversation
- * éphémère : rien n'est stocké.
+ * « Confirmer » (liste blanche et validation côté serveur). La discussion de l'onglet est mémorisée côté serveur
+ * (clé `onglet:<nom>`) et rechargée à la première ouverture ; les actions proposées dans une session précédente ne
+ * sont pas rejouables : le texte revient, pas les boutons.
  */
 export function AdminAssistantGlobal({ token, onglet, onAction }: { token: string; onglet: string; onAction: () => void }) {
   const [ouvert, setOuvert] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [saisie, setSaisie] = useState("");
   const [enCours, setEnCours] = useState(false);
+  const [enChargement, setEnChargement] = useState(false);
   const fin = useRef<HTMLDivElement>(null);
+  const cle = `onglet:${onglet}`;
+  // Chaque onglet a sa discussion. `session` change avec l'onglet : une réponse encore en cours pour l'ancien n'écrit
+  // plus à l'écran (le serveur l'a mémorisée, elle reviendra au retour sur cet onglet).
+  const session = useRef(0);
+  const chargeePour = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ouvert || chargeePour.current === cle) return;
+    chargeePour.current = cle;
+    const courante = ++session.current;
+    setMessages([]);
+    setEnCours(false);
+    setEnChargement(true);
+    void chargerConversationAdmin(cle).then((conversation) => {
+      if (session.current !== courante) return;
+      setMessages((conversation?.messages ?? []).map((m) => ({ role: m.role, content: m.role === "user" ? m.content : extraireActions(m.content).texte || "(action proposée)" })));
+      setEnChargement(false);
+    });
+  }, [ouvert, cle]);
   useEffect(() => {
     // Corps de fonction (pas d'`=>` direct) : un effet ne doit RIEN renvoyer d'autre qu'un nettoyage.
     fin.current?.scrollIntoView?.({ block: "end" });
@@ -34,29 +54,39 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
 
   const envoyer = async () => {
     const question = saisie.trim();
-    if (!question || enCours) return;
+    if (!question || enCours || enChargement) return;
     const historique = messages.map((m) => ({ role: m.role, content: m.content }));
+    const courante = session.current;
+    const ecrire = (f: () => void) => session.current === courante && f();
     setSaisie("");
     setEnCours(true);
     setMessages((m) => [...m, { role: "user", content: question }, { role: "assistant", content: "" }]);
     let cumul = "";
     let erreur = "";
     try {
-      await streamAdminAsk({ question, historique: [...historique, { role: "user", content: question }], epreuve: {}, onglet }, (e) => {
+      await streamAdminAsk({ question, historique, epreuve: {}, onglet }, (e) => {
         if (e.type === "chunk") {
           cumul += e.text;
-          setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: cumul }]);
+          ecrire(() => setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: cumul }]));
         } else if (e.type === "error") erreur = e.message;
       });
     } catch (e) {
       erreur = e instanceof ApiError && e.status === 429 ? "Trop de demandes — réessaie dans quelques minutes." : "L'assistant n'a pas pu répondre.";
     }
     const { texte, actions } = extraireActions(cumul);
-    setMessages((m) => [
-      ...m.slice(0, -1),
-      { role: "assistant", content: erreur ? `⚠️ ${erreur}` : texte || "(réponse vide)", actions: actions.map((action) => ({ action, etat: "attente" as EtatAction })) },
-    ]);
-    setEnCours(false);
+    ecrire(() => {
+      setMessages((m) => [
+        ...m.slice(0, -1),
+        { role: "assistant", content: erreur ? `⚠️ ${erreur}` : texte || "(réponse vide)", actions: actions.map((action) => ({ action, etat: "attente" as EtatAction })) },
+      ]);
+      setEnCours(false);
+    });
+  };
+
+  const nouvelleConversation = () => {
+    if (enCours) return;
+    setMessages([]);
+    void effacerConversationAdmin(cle);
   };
 
   const majAction = (mi: number, ai: number, etat: EtatAction, info?: string) =>
@@ -91,12 +121,23 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
           <h2 className="font-serif-brand text-base">Assistant du back-office</h2>
           <p className="font-mono-tag text-[10px] text-slate">ONGLET : {onglet.toUpperCase()}</p>
         </div>
-        <button onClick={() => setOuvert(false)} aria-label="Fermer l'assistant" className="min-h-[44px] min-w-[44px]">
-          <X size={18} className="mx-auto" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={nouvelleConversation}
+            disabled={messages.length === 0 || enCours}
+            title="Nouvelle conversation (efface l'échange de cet onglet)"
+            className="flex min-h-[44px] items-center gap-1 rounded-full border border-ink-soft/25 px-3 font-mono-tag text-[10px] text-ink-soft disabled:opacity-40"
+          >
+            <Plus size={12} aria-hidden="true" /> Nouvelle conversation
+          </button>
+          <button onClick={() => setOuvert(false)} aria-label="Fermer l'assistant" className="min-h-[44px] min-w-[44px]">
+            <X size={18} className="mx-auto" />
+          </button>
+        </div>
       </header>
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" role="log">
-        {messages.length === 0 && (
+        {enChargement && <p className="text-sm text-slate">Chargement de la discussion…</p>}
+        {messages.length === 0 && !enChargement && (
           <p className="text-sm text-ink-soft">Pose une question sur cet onglet, ou demande une action (je te la proposerai, tu confirmes).</p>
         )}
         {messages.map((m, mi) => (
@@ -152,7 +193,7 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
           placeholder="Ex. Résous les signalements « autre » déjà traités…"
           className="min-h-[44px] flex-1 resize-none rounded border border-ink-soft/30 bg-paper px-2 py-1.5 text-sm"
         />
-        <button type="submit" disabled={enCours || !saisie.trim()} aria-label="Envoyer" className="min-h-[44px] min-w-[44px] rounded-full bg-ink text-paper disabled:opacity-50">
+        <button type="submit" disabled={enCours || enChargement || !saisie.trim()} aria-label="Envoyer" className="min-h-[44px] min-w-[44px] rounded-full bg-ink text-paper disabled:opacity-50">
           <Send size={16} className="mx-auto" />
         </button>
       </form>

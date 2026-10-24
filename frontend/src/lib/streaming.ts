@@ -1,4 +1,4 @@
-import { BASE_URL } from "../api/client";
+import { api, BASE_URL } from "../api/client";
 import type { Conversation } from "../components/AssistantPanel";
 import { t } from "../i18n";
 
@@ -153,6 +153,16 @@ export interface AdminConversation {
   created_at: string;
   updated_at: string;
 }
+
+/** Mémoire de l'assistant admin : une conversation par clé (`<id d'épreuve>`, `brouillon:<id>` ou `onglet:<nom>`).
+ * Une panne réseau se traduit par « aucune conversation » : le tiroir s'ouvre vide, il ne bloque jamais. */
+const urlConversation = (cle: string) => `/api/admin/assistant/conversation/${cle}`;
+export const chargerConversationAdmin = (cle: string) =>
+  api.get<{ conversation: AdminConversation | null }>(urlConversation(cle)).then((r) => r.conversation, () => null);
+export const effacerConversationAdmin = (cle: string) => api.del(urlConversation(cle)).catch(() => undefined);
+/** Rattache la discussion d'un brouillon à l'épreuve qui vient d'être enregistrée. */
+export const rattacherConversationAdmin = (de: string, vers: string) =>
+  api.post(`${urlConversation(de)}/deplacer`, { vers }).catch(() => undefined);
 
 /**
  * Charge utile de l'assistant ADMIN : la question de l'admin + un instantané

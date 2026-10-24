@@ -197,6 +197,10 @@ export function memoriserApplicationAuto(v: boolean): void {
   }
 }
 
+/** Identifiant d'un brouillon (`brouillon:<id>` = clé de sa conversation) : 128 bits aléatoires, sans dépendre du
+ * contexte sécurisé que demande `crypto.randomUUID`. */
+export const nouvelIdBrouillon = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
 export function aDesModifications(m: ModificationsEpreuve): boolean {
   return Object.values(m).some(Boolean);
 }

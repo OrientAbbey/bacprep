@@ -9,6 +9,7 @@ import {
   extraireModifications,
   memoriserApplicationAuto,
   nettoyerHistorique,
+  nouvelIdBrouillon,
   resumeEpreuveName,
 } from "./adminAssistant";
 
@@ -331,5 +332,14 @@ describe("application automatique : préférence", () => {
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("bloqué"); }, setItem: () => { throw new Error("bloqué"); } });
     expect(applicationAutoInitiale()).toBe(true);
     expect(() => memoriserApplicationAuto(false)).not.toThrow();
+  });
+});
+
+describe("nouvelIdBrouillon", () => {
+  it("donne 32 caractères hexadécimaux, différents à chaque appel, et tient dans la clé du serveur (64 max)", () => {
+    const [a, b] = [nouvelIdBrouillon(), nouvelIdBrouillon()];
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+    expect(a).not.toBe(b);
+    expect(`brouillon:${a}`.length).toBeLessThanOrEqual(64);
   });
 });
