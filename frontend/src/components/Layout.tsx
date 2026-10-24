@@ -7,7 +7,7 @@ import React, { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
-import { getInitials } from "../lib/initials";
+import { PhotoProfil } from "./PhotoProfil";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
 import { t } from "../i18n";
@@ -120,7 +120,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                     title={user.nom}
                     className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper after:absolute after:-inset-1 after:rounded-full after:content-['']"
                   >
-                    {getInitials(user.nom)}
+                    <PhotoProfil nom={user.nom} version={user.avatar_version} />
                   </Link>
                 </>
               ) : (
@@ -210,7 +210,7 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
                   </div>
                   <Link to="/profil" className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
                     <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-mono-tag text-[11px] font-semibold text-paper">
-                      {getInitials(user.nom)}
+                      <PhotoProfil nom={user.nom} version={user.avatar_version} />
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium">{user.nom || user.email}</span>

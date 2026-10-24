@@ -15,6 +15,8 @@ export interface User {
   /** Consentements (null = modale pas encore répondue). */
   consent_ia: boolean | null;
   consent_notes: boolean | null;
+  /** Horodatage de la photo de profil (paramètre `?v=` de son URL), absent si l'utilisateur n'en a pas. */
+  avatar_version?: string | null;
 }
 
 interface AuthContextValue {
@@ -25,11 +27,10 @@ interface AuthContextValue {
   loginMock: (email: string, nom: string) => Promise<void>;
   loginGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
-  /** Recharge /api/auth/me pour refléter un changement de consentement
-   * (modale de première connexion, réglages du profil) — renvoie l'utilisateur
-   * relu, ou null si la session est invalide : l'appelant (modale de
-   * consentement) s'en sert pour CONFIRMER côté serveur avant de se fermer. */
-  refreshConsentement: () => Promise<User | null>;
+  /** Recharge /api/auth/me pour refléter un changement de consentement ou de photo de profil — renvoie
+   * l'utilisateur relu, ou null si la session est invalide : l'appelant (modale de consentement) s'en sert pour
+   * CONFIRMER côté serveur avant de se fermer. */
+  refreshUser: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -156,7 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     showToast(t("Déconnexion réussie."), "info");
   };
 
-  const refreshConsentement = useCallback(async (): Promise<User | null> => {
+  const refreshUser = useCallback(async (): Promise<User | null> => {
     try {
       const me = await api.get<User>("/api/auth/me");
       setUser(me);
@@ -178,7 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginMock,
         loginGoogle,
         logout,
-        refreshConsentement,
+        refreshUser,
       }}
     >
       {children}

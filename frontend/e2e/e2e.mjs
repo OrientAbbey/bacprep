@@ -931,6 +931,96 @@ console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
   await ctx.close();
 }
 
+console.log("\nPhoto de profil");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1280, height: 900 } });
+  await connecterEleve(ctx, `photo-${RUN}@test.cm`);
+  const page = await ctx.newPage();
+  const envois = [];
+  page.on("request", (r) => r.method() === "POST" && r.url().endsWith("/api/me/avatar") && envois.push(r.url()));
+  await page.goto("/profil");
+  await page.getByRole("heading", { level: 1 }).waitFor({ timeout: 15000 });
+  // Image non carrée, générée dans le navigateur : le serveur doit la recadrer en carré de 256 px.
+  const png = async (largeur, hauteur) =>
+    Buffer.from(await page.evaluate(([l, h]) => { const c = document.createElement("canvas"); c.width = l; c.height = h; const g = c.getContext("2d"); g.fillStyle = "#c79a3a"; g.fillRect(0, 0, l, h); return c.toDataURL("image/png").split(",")[1]; }, [largeur, hauteur]), "base64");
+  const champ = page.getByLabel("Choisir une photo");
+  const alerte = page.getByRole("alert");
+  const photos = page.locator('a[href="/profil"] img[src*="/api/me/avatar?v="]').filter({ visible: true });
+  const choisir = (fichier) => champ.setInputFiles(fichier);
+
+  await test("sans photo : initiales dans l'en-tête, aucune image", async () => {
+    ok((await photos.count()) === 0, "image d'avatar sans photo");
+    ok((await page.locator('a[href="/profil"]').filter({ visible: true }).first().innerText()).trim().length === 2, "initiales attendues");
+    await page.getByRole("button", { name: "Ajouter une photo" }).waitFor();
+  });
+
+  await test("erreurs refusées sans envoi : fichier trop lourd, fichier qui n'est pas une image", async () => {
+    await choisir({ name: "grosse.png", mimeType: "image/png", buffer: Buffer.alloc(2 * 1024 * 1024 + 1024) });
+    await alerte.filter({ hasText: "Photo trop lourde (2 Mo maximum)" }).waitFor({ timeout: 5000 });
+    await choisir({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("pas une image") });
+    await alerte.filter({ hasText: "Fichier non reconnu comme image" }).waitFor({ timeout: 5000 });
+    ok(envois.length === 0 && (await page.getByRole("button", { name: "Enregistrer la photo" }).count()) === 0, `un envoi est parti : ${envois.length}`);
+  });
+
+  await test("erreurs du serveur : 415 réel (faux PNG), 413 et 429 traduits", async () => {
+    await choisir({ name: "faux.png", mimeType: "image/png", buffer: Buffer.from("ceci n'est pas un PNG") });
+    // Le navigateur ne sait pas afficher cet aperçu : même message que le refus du serveur.
+    await alerte.filter({ hasText: "Fichier non reconnu comme image" }).waitFor({ timeout: 5000 });
+    const bon = await png(300, 200);
+    for (const [statut, texte] of [[413, "Photo trop lourde"], [429, "Trop d'envois de photo"]]) {
+      await page.route("**/api/me/avatar", (route) => route.request().method() === "POST" ? route.fulfill({ status: statut, json: { detail: "x" } }) : route.continue());
+      await choisir({ name: "ok.png", mimeType: "image/png", buffer: bon });
+      await page.getByRole("button", { name: "Enregistrer la photo" }).click();
+      await alerte.filter({ hasText: texte }).waitFor({ timeout: 5000 });
+      await page.unroute("**/api/me/avatar");
+      await page.getByRole("button", { name: "Annuler", exact: true }).click();
+    }
+    const reel = await ctx.request.post("/api/me/avatar", { multipart: { file: { name: "faux.png", mimeType: "image/png", buffer: Buffer.from("ceci n'est pas un PNG") } } });
+    ok(reel.status() === 415, `le serveur doit refuser un faux PNG par 415, reçu ${reel.status()}`);
+    ok((await ctx.request.get("/api/me/avatar")).status() === 404, "une erreur ne doit rien enregistrer");
+  });
+
+  await test("aperçu puis enregistrement : photo carrée de 256 px dans l'en-tête et le profil, version dans l'URL", async () => {
+    await choisir({ name: "photo.png", mimeType: "image/png", buffer: await png(300, 200) });
+    await page.getByRole("img", { name: "Aperçu de la nouvelle photo" }).waitFor({ timeout: 5000 });
+    await page.screenshot({ path: `${SHOTS}/profil-apercu.png` });
+    await page.getByRole("button", { name: "Enregistrer la photo" }).click();
+    await page.getByText("Photo de profil mise à jour.").waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "Changer la photo" }).waitFor();
+    const version = (await (await ctx.request.get("/api/auth/me")).json()).avatar_version;
+    ok(!!version, "avatar_version absent de /api/auth/me");
+    await page.waitForFunction(() => { const i = document.querySelectorAll('img[src*="/api/me/avatar?v="]'); return i.length >= 2 && [...i].every((x) => x.complete && x.naturalWidth > 0); }, null, { timeout: 10000 });
+    const dims = await photos.first().evaluate((i) => [i.naturalWidth, i.naturalHeight, i.getAttribute("src")]);
+    ok(dims[0] === 256 && dims[1] === 256, `photo non recadrée en 256×256 : ${dims}`);
+    ok(dims[2].includes(`?v=${encodeURIComponent(version)}`), `version absente de l'URL : ${dims[2]}`);
+    ok((await page.locator('aside img[src*="/api/me/avatar?v="]').count()) === 1, "photo absente du profil");
+    await page.screenshot({ path: `${SHOTS}/profil-photo.png` });
+    await page.reload();
+    await photos.first().waitFor({ timeout: 10000 });
+  });
+
+  await test("mobile : l'aperçu ne fait pas déborder la page", async () => {
+    const m = await nouveauContexte({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true });
+    await connecterEleve(m, `photo-mobile-${RUN}@test.cm`); // autre compte : une seule session par compte
+    const pm = await m.newPage();
+    await pm.goto("/profil");
+    await pm.getByLabel("Choisir une photo").setInputFiles({ name: "p.png", mimeType: "image/png", buffer: await png(300, 200) });
+    await pm.getByRole("img", { name: "Aperçu de la nouvelle photo" }).waitFor({ timeout: 8000 });
+    ok(await pm.evaluate(() => { const d = document.documentElement; return innerWidth === d.clientWidth && d.scrollWidth <= d.clientWidth; }), "l'aperçu fait déborder la page");
+    await m.close();
+  });
+
+  await test("retirer la photo : retour aux initiales, aussi côté serveur", async () => {
+    await page.getByRole("button", { name: "Retirer la photo" }).click();
+    await page.getByText("Photo de profil retirée.").waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "Ajouter une photo" }).waitFor();
+    ok((await photos.count()) === 0, "l'image d'avatar est restée affichée");
+    ok((await ctx.request.get("/api/me/avatar")).status() === 404, "la photo est restée en base");
+    ok((await (await ctx.request.get("/api/auth/me")).json()).avatar_version == null, "avatar_version non effacé");
+  });
+  await ctx.close();
+}
+
 console.log("\nConnexion, état du réseau, A−/A+ flottant");
 {
   // --- connexion admin : message selon la CAUSE, et indicateur de chargement

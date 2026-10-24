@@ -24,6 +24,10 @@ métadonnées et les `storage_key` (ex.
 backend `local` stocke ces fichiers sous `backend/data/storage/` avec la
 même sémantique — aucun compte cloud n'est nécessaire pour développer.
 
+Les **photos de profil** font exception : elles restent en base (table `avatars`), recadrées par le serveur en WebP
+carré de 256 px (~15 Ko par compte), donc sans stockage objet ni variable à configurer ; elles sont supprimées avec
+le compte.
+
 ## Développement local
 
 ```bash

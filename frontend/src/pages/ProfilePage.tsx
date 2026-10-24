@@ -21,13 +21,14 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { ActiviteItem, Note, SubscriptionOut } from "../api/types";
 import { useAuth, type User } from "../auth/AuthProvider";
+import { ChangerPhoto } from "../components/ChangerPhoto";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NoteEditor } from "../components/NoteEditor";
+import { PhotoProfil } from "../components/PhotoProfil";
 import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
 import { CLASSES_SECONDAIRE, NIVEAUX, classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
-import { getInitials } from "../lib/initials";
 import { locale, t } from "../i18n";
 
 interface Profil {
@@ -82,7 +83,7 @@ export function ProfilePage() {
   const [form, setForm] = useState({ nom: "", niveau: "", classe: "", etablissement: "" });
   const [formOuvert, setFormOuvert] = useState(false);
   const [savingProfil, setSavingProfil] = useState(false);
-  const { logout, user, refreshConsentement } = useAuth();
+  const { logout, user, refreshUser } = useAuth();
   const { showToast } = useToast();
   // Consentement : réglages locaux, synchronisés au compte (révocables à
   // tout moment — pratique RGPD).
@@ -218,7 +219,7 @@ export function ProfilePage() {
     setSavingConsent(true);
     try {
       await api.put("/api/me/consentement", { partage_conversations_ia: ia, partage_notes: notesOk });
-      await refreshConsentement();
+      await refreshUser();
       showToast(t("Choix de confidentialité mis à jour."), "success");
     } catch {
       showToast(t("Le choix n'a pas pu être enregistré — réessaie."), "error");
@@ -233,7 +234,7 @@ export function ProfilePage() {
         <ErreurChargement onReessayer={refresh} />
       </div>
     ) : (
-      <div role="status" aria-busy="true" className="grid gap-6 lg:grid-cols-[300px_1fr]">
+      <div role="status" aria-busy="true" className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_1fr]">
         <div className="space-y-4">
           <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-6">
             <div className="flex items-center gap-4">
@@ -254,7 +255,7 @@ export function ProfilePage() {
     );
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_1fr]">
       {/* Colonne identité/résumé (sticky sur lg) : avatar, nom, classe,
           statut d'abonnement, dépense — et infos étendues. */}
       <aside className="h-fit lg:sticky lg:top-24">
@@ -264,13 +265,14 @@ export function ProfilePage() {
             aria-hidden="true"
             className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-ink font-mono-tag text-lg font-semibold text-paper"
           >
-            {getInitials(profil.nom)}
+            <PhotoProfil nom={profil.nom} version={user?.avatar_version} />
           </div>
           <div className="min-w-0">
             <h1 className="font-serif-brand text-2xl">{profil.nom}</h1>
             <p className="text-sm text-ink-soft">{profil.email}</p>
           </div>
         </div>
+        <ChangerPhoto avecPhoto={!!user?.avatar_version} onChange={refreshUser} />
         {profil.abonnements.length > 0 ? (
           <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-valide px-3 py-1 font-mono-tag text-[10px] text-paper">
             <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />

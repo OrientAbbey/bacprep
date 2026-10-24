@@ -125,6 +125,10 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   bon onglet). Bug corrigé : les documents `sujet.md`/`corrige.md`
   n'apparaissent plus comme des images dans le détail admin (réponse
   séparée `assets` (images) / `documents`).
+- **Photo de profil** : depuis le profil, aperçu puis enregistrement (PNG, JPEG, WebP ou GIF, 2 Mo maximum ; refus
+  immédiat côté navigateur, erreurs 413/415/429 traduites) ; le serveur la recadre en carré de 256 px WebP sans
+  métadonnées. Affichée dans l'en-tête et le profil via `/api/me/avatar?v=<avatar_version>` (une nouvelle photo change
+  l'URL, donc contourne le cache), avec repli sur les initiales ; « Retirer la photo » la supprime.
 - **Forfaits** : la page `/abonnement` est publique (tarifs consultables en
   visiteur, souscription réservée aux comptes avec retour automatique) ;
   chaque forfait est une carte (libellé, prix, description).

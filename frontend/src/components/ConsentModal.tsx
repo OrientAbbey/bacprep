@@ -20,7 +20,7 @@ import { t } from "../i18n";
  * d'erreur et le bouton reste disponible pour réessayer.
  */
 export function ConsentModal() {
-  const { user, refreshConsentement } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [iaOk, setIaOk] = useState(false);
   const [notesOk, setNotesOk] = useState(false);
   const [envoi, setEnvoi] = useState(false);
@@ -48,7 +48,7 @@ export function ConsentModal() {
       // relecture (/api/auth/me) renvoie EXACTEMENT les valeurs choisies —
       // sinon (serveur en retard, réponse incohérente) la modale reste
       // ouverte et l'élève peut réessayer.
-      const me = await refreshConsentement();
+      const me = await refreshUser();
       if (!me || me.consent_ia !== iaOk || me.consent_notes !== notesOk) {
         throw new Error("confirmation serveur incohérente");
       }
