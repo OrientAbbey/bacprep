@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
@@ -42,6 +42,15 @@ const GROUPES: { titre: string; ids: Onglet[] }[] = [
 ];
 const ONGLETS: Onglet[] = GROUPES.flatMap((g) => g.ids);
 
+const CLE_MENU = "bacprep-menu-admin";
+const menuInitialOuvert = () => {
+  try {
+    return localStorage.getItem(CLE_MENU) !== "replie";
+  } catch {
+    return true;
+  }
+};
+
 export function AdminPage() {
   const { showToast } = useToast();
   const [token, setToken] = useState("");
@@ -50,6 +59,16 @@ export function AdminPage() {
   const [showToken, setShowToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [blocker, setBlocker] = useState<{ message: string; active_email: string } | null>(null);
+  // Menu latéral des sections (grand écran) : repliable pour laisser toute la largeur à la zone d'édition ; mémorisé.
+  const [menuOuvert, setMenuOuvert] = useState(menuInitialOuvert);
+  function basculerMenu() {
+    setMenuOuvert(!menuOuvert);
+    try {
+      localStorage.setItem(CLE_MENU, menuOuvert ? "replie" : "ouvert");
+    } catch {
+      /* préférence non mémorisée */
+    }
+  }
 
   // Onglet initial lisible depuis l'URL (/admin?tab=utilisateurs) : lien
   // profond depuis le journal d'audit ou un signet — les onglets restent
@@ -362,59 +381,83 @@ export function AdminPage() {
 
       {stats && <StatsPanel stats={stats} />}
 
-      <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-6">
-        {/* Mobile : une liste déroulante groupée (dix onglets ne tiennent pas sur une ligne). */}
-        <select
-          aria-label="Section du back-office"
-          value={tab}
-          onChange={(e) => setTab(e.target.value as Onglet)}
-          className="mb-4 min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper px-3 text-sm lg:hidden"
-        >
-          {GROUPES.map((g) => (
-            <optgroup key={g.titre} label={g.titre}>
-              {g.ids.map((id) => (
-                <option key={id} value={id}>
-                  {libelleOnglet(id)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-
-        {/* Bureau : navigation latérale groupée, qui reste visible pendant le défilement. */}
-        <div
-          role="tablist"
-          aria-orientation="vertical"
-          aria-label="Sections du back-office"
-          className="hidden lg:sticky lg:top-4 lg:flex lg:flex-col lg:gap-4"
-        >
-          {GROUPES.map((g) => (
-            <div key={g.titre} className="flex flex-col gap-1">
-              <p aria-hidden="true" className="px-3 font-mono-tag text-[10px] uppercase tracking-wide text-slate">
-                {g.titre}
-              </p>
-              {g.ids.map((v) => (
-                <button
-                  key={v}
-                  role="tab"
-                  id={`admin-tab-${v}`}
-                  aria-selected={tab === v}
-                  aria-controls="admin-panel"
-                  tabIndex={tab === v ? 0 : -1}
-                  onClick={() => setTab(v)}
-                  onKeyDown={(e) => onTabsKeyDown(e, v)}
-                  className={`min-h-[44px] rounded-lg px-3 text-left text-sm ${
-                    tab === v ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/50"
-                  }`}
-                >
-                  {libelleOnglet(v)}
-                </button>
-              ))}
-            </div>
-          ))}
+      <div className={`lg:grid lg:items-start lg:gap-6 ${menuOuvert ? "lg:grid-cols-[13rem_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)]"}`}>
+        {/* Mobile, ou menu replié sur grand écran : une liste déroulante groupée (dix onglets ne tiennent pas sur une ligne). */}
+        <div className={`mb-4 flex items-center gap-2 ${menuOuvert ? "lg:hidden" : ""}`}>
+          <select
+            aria-label="Section du back-office"
+            value={tab}
+            onChange={(e) => setTab(e.target.value as Onglet)}
+            className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper px-3 text-sm lg:max-w-xs"
+          >
+            {GROUPES.map((g) => (
+              <optgroup key={g.titre} label={g.titre}>
+                {g.ids.map((id) => (
+                  <option key={id} value={id}>
+                    {libelleOnglet(id)}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={basculerMenu}
+            aria-expanded={menuOuvert}
+            className="hidden min-h-[44px] shrink-0 items-center gap-2 rounded-full border border-ink-soft/25 px-4 text-sm text-ink-soft hover:bg-highlight-soft/50 lg:flex"
+          >
+            <PanelLeftOpen size={16} strokeWidth={1.75} aria-hidden="true" />
+            Afficher le menu
+          </button>
         </div>
 
-      <div role="tabpanel" id="admin-panel" aria-labelledby={`admin-tab-${tab}`}>
+        {/* Bureau : navigation latérale groupée, qui reste visible pendant le défilement. */}
+        {menuOuvert && (
+          <div className="hidden lg:sticky lg:top-4 lg:block">
+            <button
+              type="button"
+              onClick={basculerMenu}
+              aria-expanded={menuOuvert}
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 text-sm text-ink-soft hover:bg-highlight-soft/50"
+            >
+              <PanelLeftClose size={16} strokeWidth={1.75} aria-hidden="true" />
+              Masquer le menu
+            </button>
+            <div
+              role="tablist"
+              aria-orientation="vertical"
+              aria-label="Sections du back-office"
+              className="mt-3 flex flex-col gap-4"
+            >
+              {GROUPES.map((g) => (
+                <div key={g.titre} className="flex flex-col gap-1">
+                  <p aria-hidden="true" className="px-3 font-mono-tag text-[10px] uppercase tracking-wide text-slate">
+                    {g.titre}
+                  </p>
+                  {g.ids.map((v) => (
+                    <button
+                      key={v}
+                      role="tab"
+                      id={`admin-tab-${v}`}
+                      aria-selected={tab === v}
+                      aria-controls="admin-panel"
+                      tabIndex={tab === v ? 0 : -1}
+                      onClick={() => setTab(v)}
+                      onKeyDown={(e) => onTabsKeyDown(e, v)}
+                      className={`min-h-[44px] rounded-lg px-3 text-left text-sm ${
+                        tab === v ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/50"
+                      }`}
+                    >
+                      {libelleOnglet(v)}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+      <div role="tabpanel" id="admin-panel" {...(menuOuvert ? { "aria-labelledby": `admin-tab-${tab}` } : { "aria-label": libelleOnglet(tab) })}>
         {/* EpreuvesPanel reste MONTÉ et simplement masqué quand on quitte
             l'onglet : son état (formulaire en cours, brouillon, assistant
             admin ouvert) survit à la navigation. La version précédente le

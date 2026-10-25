@@ -931,6 +931,58 @@ console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
   await ctx.close();
 }
 
+console.log("\nMenu des sections du back-office repliable");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterAdmin(ctx);
+  const page = await ctx.newPage();
+  const largeurPanneau = async () => Math.round((await page.locator("#admin-panel").boundingBox()).width);
+  const onglet = (nom) => page.getByRole("tab", { name: nom });
+  await page.goto("/admin");
+  await onglet("Épreuves").waitFor({ timeout: 15000 });
+  const largeurOuvert = await largeurPanneau();
+
+  await test("replier : le menu disparaît et la zone d'édition gagne la largeur du menu", async () => {
+    await page.getByRole("button", { name: "Masquer le menu" }).click();
+    await onglet("Épreuves").waitFor({ state: "hidden", timeout: 5000 });
+    const replie = await largeurPanneau();
+    ok(replie - largeurOuvert >= 200, `zone d'édition : ${largeurOuvert} px → ${replie} px`);
+    await page.getByRole("button", { name: "Afficher le menu" }).waitFor({ timeout: 5000 });
+    await page.screenshot({ path: `${SHOTS}/admin-menu-replie.png` });
+  });
+
+  await test("replié : on change encore de section (liste déroulante) et le choix survit au rechargement", async () => {
+    await page.getByLabel("Section du back-office").selectOption("formules");
+    await page.getByText(/Les formules actives sont proposées/).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByRole("button", { name: "Afficher le menu" }).waitFor({ timeout: 15000 });
+    ok((await onglet("Formules").count()) === 0, "le menu est revenu après rechargement");
+  });
+
+  await test("rouvrir : le menu revient avec la section courante, la navigation fonctionne, largeur d'origine", async () => {
+    await page.getByRole("button", { name: "Afficher le menu" }).click();
+    await onglet("Épreuves").waitFor({ timeout: 5000 });
+    ok((await onglet("Épreuves").getAttribute("aria-selected")) === "true", "la section courante n'est pas sélectionnée");
+    await onglet("Formules").click();
+    ok((await onglet("Formules").getAttribute("aria-selected")) === "true", "la navigation par onglets ne fonctionne plus");
+    ok(Math.abs((await largeurPanneau()) - largeurOuvert) <= 2, "largeur d'origine non retrouvée");
+    await page.reload();
+    await onglet("Épreuves").waitFor({ timeout: 15000 }); // ouvert : la préférence « ouvert » est mémorisée
+  });
+
+  await test("mobile : la préférence « replié » n'ajoute aucun bouton, la liste déroulante reste seule", async () => {
+    const m = await nouveauContexte({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true });
+    await m.addInitScript(() => localStorage.setItem("bacprep-menu-admin", "replie"));
+    await connecterAdmin(m);
+    const pm = await m.newPage();
+    await pm.goto("/admin");
+    await pm.getByLabel("Section du back-office").waitFor({ timeout: 15000 });
+    ok(!(await pm.getByRole("button", { name: "Afficher le menu" }).isVisible()), "bouton de menu visible sur mobile");
+    await m.close();
+  });
+  await ctx.close();
+}
+
 console.log("\nPhoto de profil");
 {
   const ctx = await nouveauContexte({ viewport: { width: 1280, height: 900 } });

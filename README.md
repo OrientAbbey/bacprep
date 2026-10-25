@@ -129,6 +129,8 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   immédiat côté navigateur, erreurs 413/415/429 traduites) ; le serveur la recadre en carré de 256 px WebP sans
   métadonnées. Affichée dans l'en-tête et le profil via `/api/me/avatar?v=<avatar_version>` (une nouvelle photo change
   l'URL, donc contourne le cache), avec repli sur les initiales ; « Retirer la photo » la supprime.
+- **Back-office** : le menu latéral des sections se replie (« Masquer le menu ») pour donner toute la largeur à la zone
+  d'édition ; replié, une liste déroulante permet de changer de section, et « Afficher le menu » le rouvre (choix mémorisé).
 - **Forfaits** : la page `/abonnement` est publique (tarifs consultables en
   visiteur, souscription réservée aux comptes avec retour automatique) ;
   chaque forfait est une carte (libellé, prix, description).
