@@ -196,7 +196,7 @@ export function MessageComposer({
       {queueCount > 0 && (
         <p role="status" className="flex items-center gap-1.5 px-3 pt-2 font-mono-tag text-[10px] text-slate">
           <Clock size={11} strokeWidth={1.75} aria-hidden="true" />
-          {queueCount} question{queueCount > 1 ? "s" : ""} en attente…
+          {queueCount > 1 ? t("{n} questions en attente…", { n: queueCount }) : t("{n} question en attente…", { n: queueCount })}
         </p>
       )}
       <div className="flex items-end gap-2 p-3">

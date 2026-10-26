@@ -356,7 +356,7 @@ export function ViewerPage() {
         role="alert"
         className="rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction"
       >
-        Cette épreuve n'a pas pu être chargée (elle a peut-être été retirée).{" "}
+        {t("Cette épreuve n'a pas pu être chargée (elle a peut-être été retirée).")}{" "}
         <button type="button" onClick={() => window.location.reload()} className="underline">
           {t("Réessayer")}
         </button>
@@ -437,7 +437,7 @@ export function ViewerPage() {
               {corrigeDispo && !examenEnCours && (
             <div role="tablist" aria-label={t("Contenu de l'épreuve")} className="flex rounded-full border border-ink-soft/20 p-1">
                 {([
-                  ["sujet", "Sujet", FileText],
+                  ["sujet", t("Sujet"), FileText],
                   ["corrige", t("Corrigé"), ClipboardCheck],
                 ] as [Onglet, string, typeof FileText][]).map(([o, label, Icon]) => (
                   <button
@@ -449,7 +449,7 @@ export function ViewerPage() {
                     tabIndex={onglet === o ? 0 : -1}
                     onClick={() => setOnglet(o)}
                     onKeyDown={(e) => onTabsKeyDown(e, o)}
-                    title={`${label} (raccourci : ${o === "sujet" ? "S" : "C"})`}
+                    title={t("{label} (raccourci : {k})", { label, k: o === "sujet" ? "S" : "C" })}
                     className={`flex min-h-[44px] items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
                       onglet === o ? "bg-ink text-paper" : "text-ink-soft"
                     }`}
@@ -504,7 +504,7 @@ export function ViewerPage() {
                     actif ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/40"
                   }`}
                 >
-                  Sujet {i + 1}
+                  {t("Sujet {n}", { n: i + 1 })}
                 </button>
               );
             })}
@@ -545,13 +545,12 @@ export function ViewerPage() {
               {!user && (
                 <div className="mt-3 rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
                   <p className="text-xs text-ink-soft">
-                    Consultation libre en mode visiteur — les fonctionnalités du compte sont
-                    visibles mais verrouillées :
+                    {t("Consultation libre en mode visiteur — les fonctionnalités du compte sont visibles mais verrouillées :")}
                   </p>
                   <ul className="mt-2 flex flex-wrap gap-2">
                     {[
                       t("Tuteur IA Prep — poser des questions"),
-                      "Notes personnelles",
+                      t("Notes personnelles"),
                       t("Signaler un problème"),
                     ].map((libelle) => (
                       <li
@@ -592,13 +591,12 @@ export function ViewerPage() {
             {!user && (
               <div className="rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
                 <p className="text-xs text-ink-soft">
-                  Consultation libre en mode visiteur — les fonctionnalités du compte sont
-                  visibles mais verrouillées :
+                  {t("Consultation libre en mode visiteur — les fonctionnalités du compte sont visibles mais verrouillées :")}
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {[
                     t("Tuteur IA Prep — poser des questions"),
-                    "Notes personnelles",
+                    t("Notes personnelles"),
                     t("Signaler un problème"),
                   ].map((libelle) => (
                     <li

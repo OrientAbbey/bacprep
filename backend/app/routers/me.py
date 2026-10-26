@@ -368,14 +368,18 @@ def activite(db: Session = Depends(get_db), user=Depends(require_user)) -> list[
     return items[:_MAX_ACTIVITE]
 
 
-def _activite_item(type_, date, libelle, *, epreuve_id=None, details="", conversation_id=None) -> dict:
+def _activite_item(type_, date, cle, params=None, *, epreuve_id=None, details="", conversation_id=None) -> dict:
     """Canonise une entrée de timeline — tous les bâtisseurs ci-dessous
     utilisent cette forme, le tri et le plafonnement sont centralisés dans
-    `activite`."""
+    `activite`. `cle` est le gabarit français (`{variable}`) et `params` ses valeurs : le front les traduit avec
+    `t(cle, params)` ; `libelle` en est le rendu français, conservé pour les anciens clients."""
+    params = params or {}
     return {
         "type": type_,
         "date": date,
-        "libelle": libelle,
+        "libelle": cle.format(**params),
+        "cle": cle,
+        "params": params,
         "epreuve_id": epreuve_id,
         "details": details,
         "conversation_id": conversation_id,
@@ -421,6 +425,10 @@ def _activite_connexions(db: Session, user) -> list[dict]:
     return out
 
 
+def _contexte(e: EpreuveORM) -> dict:
+    return {"matiere": e.matiere, "classe": e.classe, "evaluation": e.evaluation, "annee": e.annee}
+
+
 def _activite_consultations(consultations, epreuves) -> list[dict]:
     items = []
     for c in consultations:
@@ -433,7 +441,8 @@ def _activite_consultations(consultations, epreuves) -> list[dict]:
                 "consultation",
                 c.consulted_at,
                 # Contexte complet : matière, classe, séries, évaluation, année.
-                f"Consultation de {e.matiere} — {e.classe} ({e.evaluation} {e.annee})",
+                "Consultation de {matiere} — {classe} ({evaluation} {annee})",
+                _contexte(e),
                 epreuve_id=e.id,
                 details=f"Séries : {series}" if series else "",
             )
@@ -452,7 +461,8 @@ def _activite_abonnements(subscriptions) -> list[dict]:
             _activite_item(
                 "abonnement",
                 s.start_date,
-                f"Abonnement {s.statut} — {scope_label}",
+                "Abonnement {statut} — {portee}",
+                {"statut": s.statut, "portee": scope_label},
                 epreuve_id=s.epreuve_id,
             )
         )
@@ -464,7 +474,8 @@ def _activite_paiements(db: Session, user) -> list[dict]:
         _activite_item(
             "paiement",
             p.confirmed_at or p.created_at,
-            f"Paiement confirmé — {p.montant} FCFA ({p.provider})",
+            "Paiement confirmé — {montant} FCFA ({provider})",
+            {"montant": p.montant, "provider": p.provider},
             details=p.reference_agregateur,
         )
         for p in (
@@ -485,11 +496,8 @@ def _activite_notes(notes, epreuves) -> list[dict]:
             _activite_item(
                 "note",
                 n.updated_at,
-                (
-                    f"Note sur {e.matiere} — {e.classe} ({e.evaluation} {e.annee})"
-                    if e
-                    else "Note personnelle"
-                ),
+                "Note sur {matiere} — {classe} ({evaluation} {annee})" if e else "Note personnelle",
+                _contexte(e) if e else None,
                 epreuve_id=n.epreuve_id,
             )
         )
@@ -505,11 +513,8 @@ def _activite_discussions(conversations, epreuves) -> list[dict]:
             _activite_item(
                 "discussion_ia",
                 conv.updated_at,
-                (
-                    f"Discussion « {libelle} » — {e.matiere} ({e.evaluation} {e.annee})"
-                    if e
-                    else f"Discussion « {libelle} »"
-                ),
+                "Discussion « {libelle} » — {matiere} ({evaluation} {annee})" if e else "Discussion « {libelle} »",
+                {"libelle": libelle, **(_contexte(e) if e else {})},
                 epreuve_id=conv.epreuve_id,
                 # Permet de rouvrir l'onglet de discussion exact depuis le
                 # profil (lecteur : /epreuve/{id}?conv={id}).

@@ -6,7 +6,7 @@ export class ApiError extends Error {
   status: number;
   detail: unknown;
   constructor(status: number, detail: unknown) {
-    super(`Erreur API ${status}`);
+    super(t("Erreur API {s}", { s: status }));
     this.status = status;
     this.detail = detail;
   }

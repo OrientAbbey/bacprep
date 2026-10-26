@@ -36,7 +36,7 @@ export function CalendrierPage() {
         {j === 0 && <span className="font-mono-tag text-xs text-highlight-text">{t("Aujourd'hui")}</span>}
         {e.lien_officiel && (
           <a href={e.lien_officiel} target="_blank" rel="noopener noreferrer" className="flex min-h-[44px] items-center gap-1 text-xs underline">
-            Site officiel <ExternalLink size={12} aria-hidden="true" />
+            {t("Site officiel")} <ExternalLink size={12} aria-hidden="true" />
           </a>
         )}
       </li>

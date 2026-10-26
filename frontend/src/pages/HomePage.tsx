@@ -215,7 +215,7 @@ export function HomePage() {
               </button>
               <ChevronRight size={12} strokeWidth={2} aria-hidden="true" className="shrink-0 text-slate" />
               <span aria-current="page" className="truncate text-ink-soft">
-                NIVEAU {niveauActif.label.toUpperCase()} — CHOISIS TA CLASSE
+                {t("NIVEAU {niveau} — CHOISIS TA CLASSE", { niveau: t(niveauActif.label).toUpperCase() })}
               </span>
             </nav>
           ) : (

@@ -2,6 +2,8 @@ import { Bot, ChevronDown, ChevronRight, Plus, StickyNote, X } from "lucide-reac
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { detailServeur } from "../lib/detailServeur";
+import { libelleDiscussion } from "../lib/libelleDiscussion";
 import { delaiReconnexion, streamAssistantAsk, type AssistantAskPayload } from "../lib/streaming";
 import { ActionTexte, ASSISTANT_SIGNATURE, ASSISTANT_TITRE, Avatar, ChatBubble, INPUT_MAX_HEIGHT_PX, MessageComposer, type Message } from "./ChatParts";
 import { MarkdownContent } from "./MarkdownContent";
@@ -58,21 +60,6 @@ const LABEL_MAX_LEN = 24;
  * fermeture), et les questions partent en `epreuve_id`/`historique` sans
  * `conversation_id` (le serveur ne persiste rien non plus).
  */
-/** Extrait le message explicite d'un HTTPException FastAPI (corps
- * `{"detail": "..."}`), qu'il vienne de `ApiError.detail` (client.ts) ou de
- * l'erreur enrichie par `streamEventSource` (streaming.ts). Retourne `null`
- * si le corps ne porte pas de chaîne exploitable (ex. validation 422). */
-function detailServeur(err: unknown): string | null {
-  const brut = (err as { detail?: unknown })?.detail;
-  const detail =
-    typeof brut === "string"
-      ? brut
-      : brut && typeof brut === "object"
-        ? (brut as { detail?: unknown }).detail
-        : undefined;
-  return typeof detail === "string" && detail.trim() ? detail : null;
-}
-
 /** Libellé d'onglet lisible dérivé d'un texte (première question du élève
  * ou passage sélectionné) : nettoyé, tronqué avec ellipse. */
 function resumeLabel(text: string): string {
@@ -558,10 +545,10 @@ export function AssistantPanel({
           // boucle de reconnexion tenter à nouveau avant d'abandonner.
           erreurFinale =
             err instanceof TypeError
-              ? "Connexion au serveur interrompue."
+              ? t("Connexion au serveur interrompue.")
               : err instanceof Error
                 ? err.message
-                : "Impossible de synchroniser la discussion.";
+                : t("Impossible de synchroniser la discussion.");
         }
       }
 
@@ -608,7 +595,7 @@ export function AssistantPanel({
             }
           } else if (event.type === "error") {
             gotErrorEvent = true;
-            erreurFinale = event.message;
+            erreurFinale = t(event.message);
           }
         }, signal);
       } catch (err) {
@@ -630,7 +617,7 @@ export function AssistantPanel({
         }
         // Panne transport ou 5xx transitoire : boucle de reconnexion.
         erreurFinale =
-          err instanceof TypeError ? "Connexion au serveur interrompue." : err instanceof Error ? err.message : t("Connexion interrompue pendant la réponse.");
+          err instanceof TypeError ? t("Connexion au serveur interrompue.") : err instanceof Error ? err.message : t("Connexion interrompue pendant la réponse.");
       }
 
       if (gotDone) {
@@ -852,7 +839,7 @@ export function AssistantPanel({
             )}
           {erreurStream && (
             <p role="status" className="rounded-lg border border-correction/30 bg-correction-soft px-3 py-2 text-sm text-correction">
-              {erreurStream} — relance ta question pour réessayer.
+              {t("{erreur} — relance ta question pour réessayer.", { erreur: erreurStream })}
             </p>
           )}
         </div>
@@ -939,11 +926,11 @@ function ConversationTabs({
               onKeyDown={(e) => onKeyDown(e, c.id)}
               className="max-w-[110px] truncate"
             >
-              {c.label}
+              {libelleDiscussion(c.label)}
             </button>
             <button
               type="button"
-              aria-label={t("Fermer la discussion {label}", { label: t(c.label) })}
+              aria-label={t("Fermer la discussion {label}", { label: libelleDiscussion(c.label) })}
               onClick={() => {
                 onClose(c.id);
                 requestAnimationFrame(() => focusTab(activeId ?? ""));

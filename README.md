@@ -129,6 +129,12 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   immédiat côté navigateur, erreurs 413/415/429 traduites) ; le serveur la recadre en carré de 256 px WebP sans
   métadonnées. Affichée dans l'en-tête et le profil via `/api/me/avatar?v=<avatar_version>` (une nouvelle photo change
   l'URL, donc contourne le cache), avec repli sur les initiales ; « Retirer la photo » la supprime.
+- **Traduction FR/EN** : toute l'interface élève (la console admin reste en français). La phrase française sert de clé
+  (`t("phrase {n}", {n})`, traductions dans `src/locales/en.json`). Garde-fous : vitest vérifie que chaque `t("…")` du
+  code a sa traduction ; pytest (`test_messages_traduits.py`) vérifie que chaque message d'erreur que le serveur peut
+  envoyer à un élève a la sienne (sinon il faut le déclarer « technique », avec la raison) ; l'E2E balaie douze états
+  en anglais et signale tout texte français. Limites assumées : les noms de matières et le contenu des épreuves sont
+  des données françaises, les notifications sont rédigées par l'admin.
 - **Back-office** : le menu latéral des sections se replie (« Masquer le menu ») pour donner toute la largeur à la zone
   d'édition ; replié, une liste déroulante permet de changer de section, et « Afficher le menu » le rouvre (choix mémorisé).
 - **Forfaits** : la page `/abonnement` est publique (tarifs consultables en

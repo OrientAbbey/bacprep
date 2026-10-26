@@ -65,7 +65,7 @@ export function SelectionBar({
         onClick={onNote}
         disabled={!peutNoter}
         aria-label={t("Prendre une note sur ce passage")}
-        title={peutNoter ? "Prendre une note sur ce passage" : motifVerrou}
+        title={peutNoter ? t("Prendre une note sur ce passage") : motifVerrou}
         className={`flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
           peutNoter ? "verrou-valide" : "verrou-valide cursor-not-allowed opacity-50"
         }`}

@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "kicked_out") {
-          setKickoutMessage(data.message || t("Votre session a été fermée."));
+          setKickoutMessage(data.message ? t(data.message) : t("Votre session a été fermée."));
           intentionalClose.current = true; // plus de session à surveiller
           setUser(null);
         }
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       intentionalClose.current = false;
       reconnectAttempt.current = 0;
       openSocket();
-      showToast(`Bienvenue, ${me.nom} !`, "success");
+      showToast(t("Bienvenue, {nom} !", { nom: me.nom }), "success");
     },
     [closeSocket, openSocket, showToast],
   );

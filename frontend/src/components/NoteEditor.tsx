@@ -76,7 +76,7 @@ export function NoteEditor({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={edition ? "Modifier la note" : "Nouvelle note"}
+      aria-label={edition ? t("Modifier la note") : t("Nouvelle note")}
     >
       <div
         ref={dialogRef}
@@ -84,7 +84,7 @@ export function NoteEditor({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-ink-soft/15 px-4 py-3">
-          <p className="font-serif-brand text-lg">{edition ? "Modifier la note" : "Prendre une note"}</p>
+          <p className="font-serif-brand text-lg">{edition ? t("Modifier la note") : t("Prendre une note")}</p>
           <button
             type="button"
             onClick={onClose}
@@ -113,7 +113,7 @@ export function NoteEditor({
               className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50"
             >
               {apercu ? <Pencil size={13} strokeWidth={1.75} aria-hidden="true" /> : <Eye size={13} strokeWidth={1.75} aria-hidden="true" />}
-              {apercu ? "Écrire" : t("Aperçu")}
+              {apercu ? t("Écrire") : t("Aperçu")}
             </button>
           </div>
 
@@ -153,7 +153,7 @@ export function NoteEditor({
             className="flex min-h-[44px] items-center gap-2 rounded-full bg-ink px-5 text-sm font-medium text-paper disabled:opacity-50"
           >
             <Save size={15} strokeWidth={1.75} aria-hidden="true" />
-            {saving ? "Enregistrement…" : "Enregistrer"}
+            {saving ? t("Enregistrement…") : t("Enregistrer")}
           </button>
         </div>
       </div>

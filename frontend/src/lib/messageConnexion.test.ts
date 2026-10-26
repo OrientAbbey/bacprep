@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, ApiTimeoutError } from "../api/client";
+import { setLang } from "../i18n";
 import { messageErreurConnexion } from "./messageConnexion";
 
 describe("messageErreurConnexion", () => {
@@ -18,5 +19,10 @@ describe("messageErreurConnexion", () => {
     expect(messageErreurConnexion(new ApiError(429, { x: 1 }))).toContain("Trop de tentatives");
     expect(messageErreurConnexion(new ApiError(500, "ADMIN_ROOT non configuré"))).toContain("Erreur du serveur");
     expect(messageErreurConnexion(new ApiError(422, "x"))).toContain("code 422");
+  });
+  it("traduit le message de limite envoyé par le serveur", () => {
+    setLang("en");
+    expect(messageErreurConnexion(new ApiError(429, "Trop de tentatives de connexion — réessaie dans quelques minutes"))).toBe("Too many sign-in attempts — try again in a few minutes");
+    setLang("fr");
   });
 });

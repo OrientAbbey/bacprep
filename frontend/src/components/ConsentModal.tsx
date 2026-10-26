@@ -77,10 +77,7 @@ export function ConsentModal() {
           </h2>
         </div>
         <p className="mt-2 text-sm text-ink-soft">
-          Pour fonctionner, Tuteur IA Prep et tes notes doivent être enregistrés sur nos
-          serveurs. Tu décides quoi, et tu peux changer d'avis à tout moment dans ton
-          profil. Sans ton accord, la fonctionnalité concernée reste utilisable mais rien
-          n'est conservé après la session.
+          {t("Pour fonctionner, Tuteur IA Prep et tes notes doivent être enregistrés sur nos serveurs. Tu décides quoi, et tu peux changer d'avis à tout moment dans ton profil. Sans ton accord, la fonctionnalité concernée reste utilisable mais rien n'est conservé après la session.")}
         </p>
 
         <fieldset className="mt-4 space-y-2">
@@ -125,8 +122,7 @@ export function ConsentModal() {
 
         {erreur && (
           <p role="alert" className="mt-3 text-sm text-correction">
-            Le choix n'a pas pu être enregistré côté serveur — vérifie ta connexion
-            puis réessaie.
+            {t("Le choix n'a pas pu être enregistré côté serveur — vérifie ta connexion puis réessaie.")}
           </p>
         )}
 

@@ -25,6 +25,7 @@ import { ChangerPhoto } from "../components/ChangerPhoto";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NoteEditor } from "../components/NoteEditor";
 import { PhotoProfil } from "../components/PhotoProfil";
+import { libelleActivite } from "../lib/activite";
 import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
 import { CLASSES_SECONDAIRE, NIVEAUX, classeLabel } from "../lib/referentiel";
@@ -185,7 +186,7 @@ export function ProfilePage() {
 
   function cancel(subId: string) {
     setConfirmation({
-      titre: "Annuler cet abonnement ?",
+      titre: t("Annuler cet abonnement ?"),
       message: t("L'accès sera révoqué immédiatement."),
       tone: "danger",
       action: async () => {
@@ -276,15 +277,16 @@ export function ProfilePage() {
         {profil.abonnements.length > 0 ? (
           <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-valide px-3 py-1 font-mono-tag text-[10px] text-paper">
             <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
-            {profil.abonnements.length} abonnement{profil.abonnements.length > 1 ? "s" : ""} actif
-            {profil.abonnements.length > 1 ? "s" : ""}
+            {profil.abonnements.length > 1
+              ? t("{n} abonnements actifs", { n: profil.abonnements.length })
+              : t("{n} abonnement actif", { n: profil.abonnements.length })}
           </span>
         ) : null}
         <p className="mt-3 text-sm text-slate">
           {t("Membre depuis le {d}", { d: new Date(profil.membre_depuis).toLocaleDateString(locale()) })}
         </p>
         <p className="mt-1 text-sm text-slate">
-          Total dépensé : {profil.total_depense_fcfa} FCFA
+          {t("Total dépensé : {n} FCFA", { n: profil.total_depense_fcfa })}
         </p>
 
         {/* Infos étendues (optionnelles) : niveau, classe, établissement. */}
@@ -349,7 +351,7 @@ export function ProfilePage() {
                 disabled={savingProfil}
                 className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper disabled:opacity-50"
               >
-                {savingProfil ? "Enregistrement…" : "Enregistrer"}
+                {savingProfil ? t("Enregistrement…") : t("Enregistrer")}
               </button>
               <button
                 type="button"
@@ -362,7 +364,7 @@ export function ProfilePage() {
           </form>
         ) : (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            {profil.niveau && <span className="font-mono-tag text-[10px] text-slate">NIVEAU {profil.niveau}</span>}
+            {profil.niveau && <span className="font-mono-tag text-[10px] text-slate">{t("NIVEAU {n}", { n: profil.niveau })}</span>}
             {profil.classe && (
               <span className="rounded-full border border-ink-soft/25 px-2.5 py-1 text-xs">
                 {classeLabel(profil.classe)}
@@ -489,7 +491,7 @@ function PuceAbonnement({
 }) {
   return (
     <span
-      title={`${label} : ${valeur}`}
+      title={t("{label} : {valeur}", { label, valeur })}
       className="flex items-center gap-1.5 rounded-full border border-ink-soft/20 bg-paper px-2.5 py-1 text-xs text-ink-soft"
     >
       <Icon size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-highlight-text" />
@@ -559,7 +561,7 @@ function PanneauAbonnements({
             <div className="flex flex-wrap items-center justify-between gap-2 bg-highlight-soft/60 px-4 py-3">
               <div className="min-w-0">
                 <p className="font-mono-tag text-[10px] text-ink-soft">{t("ABONNEMENT ACTIF")}</p>
-                <p className="truncate font-serif-brand text-lg leading-tight">{s.scope_label}</p>
+                <p className="truncate font-serif-brand text-lg leading-tight">{t(s.scope_label)}</p>
               </div>
               <span className="flex shrink-0 items-center gap-1 rounded-full bg-valide px-2.5 py-1 font-mono-tag text-[10px] text-paper">
                 <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
@@ -587,10 +589,10 @@ function PanneauAbonnements({
               {/* Portée en pastilles : chaque dimension couverte, lisible d'un coup d'œil */}
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {s.epreuve_label ? (
-                  <PuceAbonnement icone={FileText} label="Épreuve" valeur={s.epreuve_label} />
+                  <PuceAbonnement icone={FileText} label={t("Épreuve")} valeur={s.epreuve_label} />
                 ) : (
                   <>
-                    <PuceAbonnement icone={GraduationCap} label="Classe" valeur={classeLabel(s.classe)} />
+                    <PuceAbonnement icone={GraduationCap} label={t("Classe")} valeur={classeLabel(s.classe)} />
                     <PuceAbonnement icone={GraduationCap} label={t("Série")} valeur={s.filiere} />
                     {s.matiere !== "ALL" && <PuceAbonnement icone={BookOpen} label={t("Matière")} valeur={s.matiere} />}
                     {s.annee !== "ALL" && <PuceAbonnement icone={Calendar} label={t("Année")} valeur={s.annee} />}
@@ -602,14 +604,13 @@ function PanneauAbonnements({
               <div className="mt-3 flex items-center gap-3 rounded-lg bg-paper px-4 py-3">
                 <span className="font-serif-brand text-3xl text-ink">{s.epreuves_couvertes}</span>
                 <span className="text-xs text-ink-soft">
-                  épreuve{s.epreuves_couvertes > 1 ? "s" : ""} débloquée
-                  {s.epreuves_couvertes > 1 ? "s" : ""} dans le catalogue
+                  {s.epreuves_couvertes > 1 ? t("épreuves débloquées dans le catalogue") : t("épreuve débloquée dans le catalogue")}
                 </span>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-ink-soft/20 pt-3">
                 <p className="font-mono-tag text-[10px] text-slate">
-                  Souscrite le {new Date(s.start_date).toLocaleDateString("fr-FR")}
+                  {t("Souscrite le {d}", { d: new Date(s.start_date).toLocaleDateString(locale()) })}
                 </p>
                 <button
                   onClick={() => onAnnuler(s.id)}
@@ -651,7 +652,7 @@ function PanneauNotes({
         <div key={n.id} className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="font-serif-brand text-base">
-              {n.matiere ? `${n.matiere} — ${n.evaluation} ${n.annee}` : "Note personnelle"}
+              {n.matiere ? `${n.matiere} — ${n.evaluation} ${n.annee}` : t("Note personnelle")}
             </p>
             <div className="flex shrink-0 items-center gap-1">
               <button
@@ -681,7 +682,7 @@ function PanneauNotes({
           )}
           <p className="mt-2 line-clamp-3 text-sm text-ink-soft">{n.contenu.replace(/\s+/g, " ")}</p>
           <p className="mt-2 font-mono-tag text-[10px] text-slate">
-            Modifiée {formatRelativeTime(n.updated_at)}
+            {t("Modifiée {quand}", { quand: formatRelativeTime(n.updated_at) })}
             {n.epreuve_id && (
               <>
                 {" · "}
@@ -714,7 +715,7 @@ function PanneauActivite({ activite }: { activite: ActiviteItem[] }) {
         const contenu = (
           <>
             <Icone size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-ink-soft" />
-            <p className="min-w-0 flex-1 truncate text-sm">{a.libelle}</p>
+            <p className="min-w-0 flex-1 truncate text-sm">{libelleActivite(a)}</p>
             <p className="shrink-0 font-mono-tag text-[10px] text-slate">{formatRelativeTime(a.date)}</p>
           </>
         );
@@ -769,8 +770,7 @@ function PanneauDonnees({
           {t("Mes données et confidentialité")}
         </p>
         <p className="mt-1 text-xs text-ink-soft">
-          Tu décides de ce qui est conservé sur nos serveurs. Un refus est effectif
-          immédiatement ; tu peux changer d'avis ici à tout moment.
+          {t("Tu décides de ce qui est conservé sur nos serveurs. Un refus est effectif immédiatement ; tu peux changer d'avis ici à tout moment.")}
         </p>
         <div className="mt-3 space-y-2">
           <label className="flex cursor-pointer items-center gap-3 text-sm">
@@ -799,13 +799,12 @@ function PanneauDonnees({
             onClick={onSauver}
             className="mt-3 min-h-[44px] rounded-full bg-ink px-4 text-xs font-medium text-paper disabled:opacity-50"
           >
-            {savingConsent ? "Enregistrement…" : "Enregistrer mes choix"}
+            {savingConsent ? t("Enregistrement…") : t("Enregistrer mes choix")}
           </button>
         )}
       </div>
       <p className="px-1 text-xs text-slate">
-        Ta demande de suppression de compte et de données peut être adressée à l'équipe
-        depuis l'adresse {user.email}.
+        {t("Ta demande de suppression de compte et de données peut être adressée à l'équipe depuis l'adresse {email}.", { email: user.email })}
       </p>
     </div>
   );

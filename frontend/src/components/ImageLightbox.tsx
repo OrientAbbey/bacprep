@@ -31,7 +31,7 @@ export function ImageLightbox({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={alt ? `Image : ${alt}` : t("Image de l'épreuve")}
+      aria-label={alt ? t("Image : {alt}", { alt }) : t("Image de l'épreuve")}
       onClick={onClose}
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
     >
@@ -52,8 +52,8 @@ export function ImageLightbox({
           <button
             type="button"
             onClick={() => setZoomed((z) => !z)}
-            title={zoomed ? t("Réduire") : "Agrandir"}
-            aria-label={zoomed ? t("Réduire l'image") : "Agrandir l'image"}
+            title={zoomed ? t("Réduire") : t("Agrandir")}
+            aria-label={zoomed ? t("Réduire l'image") : t("Agrandir l'image")}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white transition-colors hover:bg-black/85"
           >
             {zoomed ? <ZoomOut size={18} strokeWidth={2} aria-hidden="true" /> : <ZoomIn size={18} strokeWidth={2} aria-hidden="true" />}

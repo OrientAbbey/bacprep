@@ -1,10 +1,12 @@
-/** Heure courte HH:MM (locale fr) d'un horodatage ISO, ou null si la
+import { locale } from "../i18n";
+
+/** Heure courte HH:MM (langue choisie) d'un horodatage ISO, ou null si la
  * valeur est absente/invalide (messages anciens sans `ts`). */
 export function heureCourte(iso?: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d);
+  return new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
 /** Date complète + heure pour l'attribut `title` (survol) d'un message,
@@ -13,5 +15,5 @@ export function dateLongue(iso?: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "full", timeStyle: "short" }).format(d);
+  return new Intl.DateTimeFormat(locale(), { dateStyle: "full", timeStyle: "short" }).format(d);
 }

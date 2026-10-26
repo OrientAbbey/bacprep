@@ -6,6 +6,7 @@ import { MOTIFS } from "../lib/motifs";
 import { useModalFocus } from "../lib/useModalFocus";
 import { useToast } from "./Toast";
 import { t } from "../i18n";
+import { detailServeur } from "../lib/detailServeur";
 
 /**
  * Modale de signalement d'un problème sur une épreuve (bouton drapeau du
@@ -36,13 +37,7 @@ export function SignalementModal({
       showToast(t("Signalement envoyé — merci, l'équipe va vérifier le contenu."), "success");
       onClose();
     } catch (err: unknown) {
-      const detail = (err as { detail?: unknown }).detail;
-      showToast(
-        typeof detail === "string"
-          ? detail
-          : t("Le signalement n'a pas pu être envoyé — réessaie."),
-        "error"
-      );
+      showToast(detailServeur(err) ?? t("Le signalement n'a pas pu être envoyé — réessaie."), "error");
     } finally {
       setSending(false);
     }

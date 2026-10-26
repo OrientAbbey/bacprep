@@ -185,6 +185,9 @@ export interface ActiviteItem {
   libelle: string;
   epreuve_id: string | null;
   details: string;
+  /** Gabarit français (`{variable}`) et valeurs de `libelle` : le client les traduit avec `t(cle, params)`. */
+  cle?: string;
+  params?: Record<string, string | number>;
   /** Présent sur les items `discussion_ia` : permet de rouvrir l'onglet de
    * discussion exact dans le lecteur (/epreuve/{id}?conv={id}). */
   conversation_id?: string | null;

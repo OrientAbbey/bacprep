@@ -294,7 +294,7 @@ export function SubscribePage() {
         role="alert"
         className="rounded-lg border border-correction/30 bg-correction-soft p-6 text-correction"
       >
-        La grille tarifaire n'a pas pu être chargée.{" "}
+        {t("La grille tarifaire n'a pas pu être chargée.")}{" "}
         <button type="button" onClick={chargerTarifs} className="underline">
           {t("Réessayer")}
         </button>
@@ -366,9 +366,8 @@ export function SubscribePage() {
         // quasiment illisible (texte très sombre sur fond très sombre).
         <div className="space-y-4 rounded-lg border border-highlight/30 bg-highlight-soft p-6">
           <p ref={pendingTitleRef} tabIndex={-1} className="text-ink">
-            Paiement en attente — référence <span className="font-mono-tag">{reference}</span>.
-            Dans une vraie intégration, tu confirmerais via Orange Money / MTN MoMo. Ici, simule la
-            confirmation :
+            {t("Paiement en attente — référence")} <span className="font-mono-tag">{reference}</span>.{" "}
+            {t("Dans une vraie intégration, tu confirmerais via Orange Money / MTN MoMo. Ici, simule la confirmation :")}
           </p>
           <button
             onClick={simulatePayment}
@@ -417,8 +416,8 @@ export function SubscribePage() {
                     {actif && <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" className="text-highlight-text" />}
                   </span>
                   <span className={`mt-1 font-mono-tag text-sm ${actif ? "text-ink" : "text-ink-soft"}`}>
-                    {p.prix} FCFA
-                    <span className="text-[10px] text-slate"> / {p.duree_jours} j</span>
+                    {p.prix} {t("FCFA")}
+                    <span className="text-[10px] text-slate"> {t("/ {n} j", { n: p.duree_jours })}</span>
                   </span>
                   <span className="mt-1.5 text-xs text-slate">{(getLang() === "en" && p.description_en) || p.description}</span>
                 </button>
@@ -428,7 +427,7 @@ export function SubscribePage() {
 
           {scope === "epreuve" ? (
             <Combobox
-              label="Épreuve"
+              label={t("Épreuve")}
               value={epreuveId}
               onChange={setEpreuveId}
               options={epreuvesFiltrees.map((e) => ({
@@ -439,7 +438,7 @@ export function SubscribePage() {
           ) : (
             <div className="flex flex-wrap gap-4">
               <Combobox
-                label="Classe"
+                label={t("Classe")}
                 value={classe}
                 onChange={setClasse}
                 options={CLASSES_SECONDAIRE.map((c) => ({ value: c.code, label: c.label }))}
@@ -483,7 +482,7 @@ export function SubscribePage() {
                 <p className="font-serif-brand text-4xl text-ink">
                   {plan?.prix} <span className="text-lg font-sans font-normal text-ink-soft">{t("FCFA")}</span>
                 </p>
-                <p className="text-xs text-ink-soft">valable {plan?.duree_jours} jours</p>
+                <p className="text-xs text-ink-soft">{t("valable {n} jours", { n: plan?.duree_jours ?? "" })}</p>
                 {/* Description lisible de la portée choisie (2 lignes max),
                     fournie par le backend — même vocabulaire partout. */}
                 {plan?.description && <p className="mx-auto mt-2 max-w-sm text-xs text-ink-soft">{(getLang() === "en" && plan.description_en) || plan.description}</p>}
@@ -493,7 +492,7 @@ export function SubscribePage() {
                 <p className="text-sm text-ink-soft">{summarySentence()}</p>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {scope !== "epreuve" && <InfoTile icon={GraduationCap} label="Classe" value={classe ? classeLabel(classe) : "—"} />}
+                  {scope !== "epreuve" && <InfoTile icon={GraduationCap} label={t("Classe")} value={classe ? classeLabel(classe) : "—"} />}
                   {scope !== "epreuve" && <InfoTile icon={GraduationCap} label={t("Série")} value={filiere || "—"} />}
                   {scope === "epreuve" && selectedEpreuve && (
                     <InfoTile icon={GraduationCap} label={t("Séries")} value={selectedEpreuve.filieres.join(", ")} />
@@ -510,7 +509,7 @@ export function SubscribePage() {
                   {scope === "epreuve" && selectedEpreuve && (
                     <InfoTile icon={Calendar} label={t("Année")} value={selectedEpreuve.annee} />
                   )}
-                  <InfoTile icon={Layers} label="Épreuves couvertes" value={String(count ?? "…")} />
+                  <InfoTile icon={Layers} label={t("Épreuves couvertes")} value={String(count ?? "…")} />
                 </div>
 
                 {erreur && (
@@ -569,14 +568,12 @@ export function SubscribePage() {
                   )
                 ) : count !== null && dejaCouvert ? (
                   <p className="border-t border-dashed border-ink-soft/20 pt-4 text-sm text-valide">
-                    Tu as déjà accès à ce contenu (gratuit ou déjà couvert par un abonnement actif) —
-                    aucun paiement nécessaire.
+                    {t("Tu as déjà accès à ce contenu (gratuit ou déjà couvert par un abonnement actif) — aucun paiement nécessaire.")}
                   </p>
                 ) : (
                   count !== null && (
                     <p className="border-t border-dashed border-ink-soft/20 pt-4 text-sm text-correction">
-                      Cette combinaison ne couvre aucune épreuve publiée pour l'instant — ajuste ta
-                      sélection.
+                      {t("Cette combinaison ne couvre aucune épreuve publiée pour l'instant — ajuste ta sélection.")}
                     </p>
                   )
                 )}

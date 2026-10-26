@@ -442,19 +442,41 @@ console.log("\nTraduction FR/EN");
   const ctx = await nouveauContexte();
   await connecterEleve(ctx, `i18n-${RUN}@test.cm`);
   const page = await ctx.newPage();
-  // Mots français courants de l'INTERFACE ; le contenu des épreuves (français par nature) est exclu.
-  const FR = /\b(le|la|les|des|du|une?|pour|avec|dans|sur|est|pas|tu|ton|ta|tes|mes|votre|ce|cette|ces|et|ou|aux|aucune?|tous|toutes|sans|ouvrir|connecte|retour|accueil|abonnements?|épreuves?|corrigés?|rechercher|fermer|profil|publiée?s?|gratuites?|séries?|matières?|année|niveaux?|secondaire|primaire)\b|épreuve\(s\)|publiée\(s\)/i;
-  const MARQUE = /^Copies & Corrigés/;
-  const lire = () => page.evaluate(() => {
+  const en = JSON.parse(fs.readFileSync(new URL("../src/locales/en.json", import.meta.url), "utf8"));
+  const T = (cle) => en[cle] ?? cle;
+  const CLES_FR = new Set(Object.keys(en).filter((k) => en[k] !== k)); // un texte égal à une clé française traduite n'a pas été traduit
+  // Résidu = clé française telle quelle, mot français courant, ou lettre accentuée (l'interface anglaise n'en a pas).
+  // Exclus : contenu des épreuves et conversations (français par nature), noms de matières (données du référentiel).
+  const FR = /\b(le|la|les|des|du|une?|pour|avec|dans|sur|est|pas|tu|ton|ta|tes|mes|votre|ce|cette|ces|et|ou|aux|aucune?|tous|toutes|sans|ouvrir|connecte|retour|accueil|abonnements?|épreuves?|corrigés?|rechercher|fermer|profil|publiée?s?|gratuites?|séries?|matières?|année|niveaux?|secondaire|primaire|voir|examen|blanc|sujets?|officiel|enregistr\w+)\b|épreuve\(s\)|publiée\(s\)/i;
+  const ACCENT = /[àâçéèêëîïôûùüÀÂÇÉÈÊËÎÏÔÛÙÜ]/;
+  const DONNEES = /^(Élève E2E.*|ÉE|1ère|Copies & Corrigés.*)$/;
+  let matieres = /$^/;
+  const residu = (l) => {
+    if (DONNEES.test(l)) return false;
+    const reste = l.replace(matieres, "").trim();
+    return !!reste && (CLES_FR.has(reste) || FR.test(reste) || ACCENT.test(reste));
+  };
+  const lire = (pg) => pg.evaluate(() => {
     const out = new Set();
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (w.nextNode()) {
       const n = w.currentNode, t = n.textContent.trim(), p = n.parentElement;
-      if (t.length > 2 && p && !p.closest("[role=tabpanel], .markdown, script, style") && getComputedStyle(p).display !== "none") out.add(t);
+      if (t.length > 2 && p && !p.closest(".markdown, .prose-exam, [role=log], script, style") && getComputedStyle(p).display !== "none") out.add(t);
     }
-    document.querySelectorAll("[aria-label],[title],[placeholder]").forEach((e) => ["aria-label", "title", "placeholder"].forEach((a) => { const v = e.getAttribute(a); if (v && v.length > 2) out.add(v); }));
+    document.querySelectorAll("[aria-label],[title],[placeholder],[alt]").forEach((e) => ["aria-label", "title", "placeholder", "alt"].forEach((a) => { const v = e.getAttribute(a); if (v && v.length > 2) out.add(v); }));
     return [...out];
   });
+  const balayer = async (pg, etat, residus) => {
+    await pg.waitForTimeout(1500);
+    for (const l of await lire(pg)) if (residu(l)) residus.push(`${etat} → ${l.slice(0, 70)}`);
+  };
+  const enAnglais = async (options = {}) => {
+    const c = await nouveauContexte(options);
+    await c.addInitScript(() => localStorage.setItem("bacprep-lang", "en"));
+    return c;
+  };
+  let liste = [];
+  let gratuit;
 
   await test("sélecteur de langue : bascule en anglais, mémorise le choix, revient en français", async () => {
     await page.goto("/");
@@ -472,13 +494,14 @@ console.log("\nTraduction FR/EN");
 
   await test("anglais : aucun texte d'interface français sur les pages principales", async () => {
     await ctx.addInitScript(() => localStorage.setItem("bacprep-lang", "en"));
-    const liste = await (await ctx.request.get("/api/epreuves?limit=50")).json();
-    const id = liste.find((e) => e.acces === "gratuit").id;
+    liste = await (await ctx.request.get("/api/epreuves?limit=50")).json();
+    gratuit = liste.find((e) => e.acces === "gratuit").id;
+    const noms = [...new Set(liste.map((e) => e.matiere))].map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    matieres = new RegExp(noms.join("|"), "gi");
     const residus = [];
-    for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", `/epreuve/${id}`]) {
+    for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", `/epreuve/${gratuit}`]) {
       await page.goto(url);
-      await page.waitForTimeout(2500);
-      for (const l of await lire()) if (FR.test(l) && !MARQUE.test(l)) residus.push(`${url} → ${l.slice(0, 70)}`);
+      await balayer(page, url, residus);
     }
     ok(residus.length === 0, "textes français en mode anglais : " + residus.slice(0, 6).join(" | "));
   });
@@ -491,6 +514,104 @@ console.log("\nTraduction FR/EN");
     await page.goto("/abonnement");
     for (const p of anglaises.slice(0, 3)) await page.getByText(p.libelle_en, { exact: true }).first().waitFor({ timeout: 10000 });
     if (anglaises[0].description_en) await page.getByText(anglaises[0].description_en, { exact: true }).first().waitFor({ timeout: 5000 });
+  });
+
+  await test("anglais : profil d'un abonné — abonnements, notes, activité, confidentialité (états réellement atteints)", async () => {
+    const payante = liste.find((e) => e.acces !== "gratuit");
+    ok(payante, "aucune épreuve payante dans les données de test");
+    const achat = await ctx.request.post("/api/subscriptions/checkout", { data: { scope: "epreuve", epreuve_id: payante.id, provider: "orange" } });
+    ok(achat.ok(), "checkout : " + achat.status());
+    await ctx.request.post("/api/payments/simulate-webhook", { data: { reference_agregateur: (await achat.json()).reference_agregateur } });
+    await ctx.request.post(`/api/epreuves/${gratuit}/notes`, { data: { contenu: "ma note de test" } });
+    const residus = [];
+    await page.goto("/profil");
+    for (const [onglet, preuve] of [
+      ["Abonnements", T("Épreuve précise")],
+      ["Mes notes", "ma note de test"],
+      ["Activité", T("Connexion à ton compte (ordinateur)")],
+      ["Confidentialité", T("Tu décides de ce qui est conservé sur nos serveurs. Un refus est effectif immédiatement ; tu peux changer d'avis ici à tout moment.")],
+    ]) {
+      await page.getByRole("tab", { name: T(onglet) }).click();
+      await page.getByText(preuve).first().waitFor({ timeout: 10000 }); // l'état est atteint : le contrôle ne peut pas passer à vide
+      await balayer(page, `profil › ${T(onglet)}`, residus);
+    }
+    ok(residus.length === 0, "textes français : " + residus.slice(0, 6).join(" | "));
+  });
+
+  await test("anglais : lecteur (assistant, signalement), visiteur, consentement, erreurs de chargement", async () => {
+    const residus = [];
+    await page.goto(`/epreuve/${gratuit}`);
+    await page.getByRole("button", { name: T("Ouvrir Tuteur IA Prep") }).click();
+    await page.getByLabel(T("Question à Tuteur IA Prep")).waitFor({ timeout: 10000 });
+    await balayer(page, "assistant", residus);
+    await page.getByLabel(T("Question à Tuteur IA Prep")).fill("Explain question 1");
+    await page.getByRole("button", { name: T("Envoyer") }).click();
+    await page.getByText(/Mode démonstration/).first().waitFor({ timeout: 15000 });
+    await balayer(page, "assistant › réponse", residus);
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: T("Signaler un problème sur cette épreuve") }).click();
+    await page.getByRole("dialog", { name: T("Signaler un problème") }).waitFor({ timeout: 5000 });
+    await balayer(page, "signalement", residus);
+    await page.keyboard.press("Escape");
+
+    const visiteur = await enAnglais();
+    const pv = await visiteur.newPage();
+    await pv.goto(`/epreuve/${gratuit}`);
+    await pv.getByText(T("Consultation libre en mode visiteur — les fonctionnalités du compte sont visibles mais verrouillées :")).waitFor({ timeout: 10000 });
+    await balayer(pv, "visiteur", residus);
+
+    const neuf = await enAnglais();
+    ok((await neuf.request.post("/api/auth/mock-login", { data: { email: `cons-${RUN}@test.cm`, nom: "Élève E2E" } })).ok(), "mock-login sans consentement"); // aucun choix enregistré : la modale s'affiche
+    const pn = await neuf.newPage();
+    await pn.goto("/");
+    await pn.getByText(T("Pour fonctionner, Tuteur IA Prep et tes notes doivent être enregistrés sur nos serveurs. Tu décides quoi, et tu peux changer d'avis à tout moment dans ton profil. Sans ton accord, la fonctionnalité concernée reste utilisable mais rien n'est conservé après la session.")).waitFor({ timeout: 10000 });
+    await balayer(pn, "consentement", residus);
+
+    const reseau = await enAnglais();
+    await connecterEleve(reseau, `err-${RUN}@test.cm`);
+    const pr = await reseau.newPage();
+    await pr.route("**/api/epreuves?*", (r) => r.abort());
+    await pr.goto("/catalogue?q=math"); // mode liste : le mode tuiles n'appelle pas cette route
+    await pr.getByText(T("Le catalogue n'a pas pu être chargé.")).waitFor({ timeout: 15000 });
+    await balayer(pr, "catalogue en erreur", residus);
+    await pr.route("**/api/pricing*", (r) => r.abort());
+    await pr.goto("/abonnement");
+    await pr.getByText(T("La grille tarifaire n'a pas pu être chargée.")).waitFor({ timeout: 15000 });
+    await balayer(pr, "abonnement en erreur", residus);
+    for (const c of [visiteur, neuf, reseau]) await c.close();
+    ok(residus.length === 0, "textes français : " + residus.slice(0, 6).join(" | "));
+  });
+
+  await test("anglais : messages du serveur traduits — signalement en double, session fermée, bienvenue", async () => {
+    // 1. Signalement en double : le détail 409 est un texte français du serveur.
+    await page.goto(`/epreuve/${gratuit}`);
+    for (let i = 0; i < 2; i++) {
+      await page.getByRole("button", { name: T("Signaler un problème sur cette épreuve") }).click();
+      const d = page.getByRole("dialog", { name: T("Signaler un problème") });
+      await d.getByRole("button", { name: T("Erreur dans l'énoncé") }).click();
+      await d.getByRole("button", { name: T("Envoyer") }).click();
+      await page.getByText(i === 0 ? T("Signalement envoyé — merci, l'équipe va vérifier le contenu.") : T("Tu as déjà signalé ce problème sur cette épreuve — il est en attente de traitement.")).waitFor({ timeout: 10000 });
+    }
+    // 2. Session fermée : message envoyé par le serveur dans l'évènement WebSocket.
+    const email = `kick-${RUN}@test.cm`;
+    const a = await enAnglais();
+    await connecterEleve(a, email);
+    const pa = await a.newPage();
+    const ouvert = pa.waitForEvent("websocket", { predicate: (w) => w.url().includes("/ws/session"), timeout: 15000 });
+    await pa.goto("/");
+    await ouvert; // sans socket ouvert, la seconde connexion invaliderait la session sans message
+    const b = await enAnglais();
+    await connecterEleve(b, email); // seconde session : ferme la première
+    await pa.getByText(T("Votre session a été fermée car vous vous êtes connecté ailleurs.")).waitFor({ timeout: 20000 });
+    // 3. Toast de bienvenue après connexion par l'interface.
+    const c = await enAnglais();
+    const pc = await c.newPage();
+    await pc.goto("/connexion");
+    await pc.getByPlaceholder(T("ex. Franck Albert")).fill("Marie");
+    await pc.getByPlaceholder(T("ex. franck.albert@exemple.com")).fill(`bienvenue-${RUN}@test.cm`);
+    await pc.getByRole("button", { name: T("Se connecter") }).click();
+    await pc.getByText("Welcome, Marie!").waitFor({ timeout: 10000 });
+    for (const x of [a, b, c]) await x.close();
   });
   await ctx.close();
 }

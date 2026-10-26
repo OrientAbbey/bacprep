@@ -116,7 +116,7 @@ export function ExamenBlanc({
   return (
     <div className="flex items-center gap-1">
       <button onClick={demarrer} title={t("Compte à rebours, sans corrigé ni assistant")} className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
-        <ClipboardCheck size={14} aria-hidden="true" /> Examen blanc
+        <ClipboardCheck size={14} aria-hidden="true" /> {t("Examen blanc")}
       </button>
       <button onClick={() => enregistrer(null)} title={t("Revenir sur cette épreuve dans quelques jours")} className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
         <RotateCcw size={14} aria-hidden="true" /> {t("À revoir")}

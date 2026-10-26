@@ -236,7 +236,7 @@ export function CataloguePage() {
             </>
           ) : (
             <>
-              <h1 className="font-serif-brand text-2xl">Classe de {classeLabel(classe ?? "")}</h1>
+              <h1 className="font-serif-brand text-2xl">{t("Classe de {c}", { c: classeLabel(classe ?? "") })}</h1>
               <p className="text-sm text-ink-soft">
                 {t("Épreuves publiées — filtre par série, matière, année et évaluation.")}
               </p>
@@ -295,7 +295,7 @@ export function CataloguePage() {
           options={filtres.annees.map((a) => ({ value: a, label: a }))}
         />
         <Combobox
-          label="Évaluation"
+          label={t("Évaluation")}
           value={evaluation}
           onChange={setEvaluation}
           options={filtres.evaluations.map((ev) => ({ value: ev, label: ev }))}
@@ -356,7 +356,7 @@ export function CataloguePage() {
         </section>
       )}
 
-      <section aria-label={modeRecherche ? "Résultats de recherche" : "Épreuves"} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section aria-label={modeRecherche ? t("Résultats de recherche") : t("Épreuves")} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <h2 className="col-span-full font-mono-tag text-xs text-ink-soft">
           {modeRecherche ? t("RÉSULTATS") : modeTuiles ? t("MATIÈRES") : t("ÉPREUVES")}
         </h2>
@@ -366,7 +366,7 @@ export function CataloguePage() {
             onClick={() => setMatiere("")}
             className="col-span-full min-h-[44px] w-fit text-left text-sm text-ink-soft underline"
           >
-            ← Toutes les matières · <strong className="font-medium">{matiere}</strong>
+            ← {t("Toutes les matières")} · <strong className="font-medium">{matiere}</strong>
           </button>
         )}
         {modeTuiles && matieres === null && (
@@ -394,7 +394,7 @@ export function CataloguePage() {
         )}
         {erreur && !chargement && (
           <div role="alert" className="col-span-full rounded-lg border border-correction/30 bg-correction-soft p-4 text-correction">
-            Le catalogue n'a pas pu être chargé.{" "}
+            {t("Le catalogue n'a pas pu être chargé.")}{" "}
             <button
               type="button"
               onClick={() => loadFirstPage()}
@@ -469,7 +469,7 @@ export function CataloguePage() {
 
               {historiqueMap.has(e.id) && (
                 <span className="block text-xs text-slate">
-                  Consulté {formatRelativeTime(historiqueMap.get(e.id)!.consulted_at)}
+                  {t("Consulté {quand}", { quand: formatRelativeTime(historiqueMap.get(e.id)!.consulted_at) })}
                 </span>
               )}
             </button>
@@ -506,7 +506,7 @@ export function CataloguePage() {
             disabled={loadingMore}
             className="min-h-[40px] rounded-full border border-ink-soft/25 px-6 text-sm disabled:opacity-50"
           >
-            {loadingMore ? "Chargement…" : "Voir plus"}
+            {loadingMore ? t("Chargement…") : t("Voir plus")}
           </button>
         </div>
       )}

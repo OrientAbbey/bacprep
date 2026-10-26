@@ -95,6 +95,15 @@ def test_activite_enrichie_contexte(admin, epreuve_gratuite):
     assert consult[0]["details"].startswith("Séries")
 
 
+def test_activite_porte_gabarit_et_parametres_pour_la_traduction(admin, epreuve_gratuite):
+    admin.get(f"/api/epreuves/{epreuve_gratuite}")
+    items = admin.get("/api/me/activite").json()
+    assert items and all(i["cle"].format(**i["params"]) == i["libelle"] for i in items)
+    consult = next(i for i in items if i["type"] == "consultation")
+    assert consult["cle"] == "Consultation de {matiere} — {classe} ({evaluation} {annee})"
+    assert set(consult["params"]) == {"matiere", "classe", "evaluation", "annee"}
+
+
 # ---------- Gouvernance admin ----------
 
 def test_stats_comptent_les_admins(admin):
