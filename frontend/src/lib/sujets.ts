@@ -12,6 +12,24 @@ export function affichageInitial(): AffichageSujets {
     return "page";
   }
 }
+const CLE_IMMERSION = "bacprep-immersion-lecteur";
+
+/** Mode immersion du lecteur (le site s'efface, la feuille occupe l'écran) : désactivé par défaut, mémorisé. */
+export function immersionInitiale(): boolean {
+  try {
+    return localStorage.getItem(CLE_IMMERSION) === "oui";
+  } catch {
+    return false;
+  }
+}
+export function memoriserImmersion(actif: boolean): void {
+  try {
+    localStorage.setItem(CLE_IMMERSION, actif ? "oui" : "non");
+  } catch {
+    /* préférence non mémorisée */
+  }
+}
+
 export function memoriserAffichage(a: AffichageSujets): void {
   try {
     localStorage.setItem(CLE, a);

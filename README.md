@@ -137,6 +137,12 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   des données françaises, les notifications sont rédigées par l'admin.
 - **Back-office** : le menu latéral des sections se replie (« Masquer le menu ») pour donner toute la largeur à la zone
   d'édition ; replié, une liste déroulante permet de changer de section, et « Afficher le menu » le rouvre (choix mémorisé).
+  Le bloc des statistiques se replie aussi (« Masquer les statistiques », mémorisé) : l'éditeur d'épreuve remonte d'environ
+  600 px.
+- **Lecteur d'épreuves** : le texte est présenté sur une **feuille de largeur A4** (210 mm) centrée sur un « bureau »
+  (pleine largeur sur petit écran) ; A−/A+ zoome la feuille entière. Le bouton **Immersion** (désactivé par défaut,
+  mémorisé) efface l'en-tête, le pied de page et les marges du site et replie les outils derrière « Outils » : la zone
+  de lecture gagne ~250 px de hauteur ; un bouton « Retour » remplace la navigation du site.
 - **Forfaits** : la page `/abonnement` est publique (tarifs consultables en
   visiteur, souscription réservée aux comptes avec retour automatique) ;
   chaque forfait est une carte (libellé, prix, description).

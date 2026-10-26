@@ -1,6 +1,6 @@
-import { ChevronRight, ClipboardCheck, FileText, Flag, Lock } from "lucide-react";
+import { ArrowLeft, ChevronRight, ClipboardCheck, FileText, Flag, Lock, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { EpreuveDetail } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
@@ -13,7 +13,7 @@ import { ExamenBlanc } from "../components/ExamenBlanc";
 import { BasculeAffichage } from "../components/BasculeAffichage";
 import { ExportPdf } from "../components/ExportPdf";
 import { TelechargerHorsLigne } from "../components/TelechargerHorsLigne";
-import { affichageInitial, contenuAffiche, type AffichageSujets } from "../lib/sujets";
+import { affichageInitial, contenuAffiche, immersionInitiale, memoriserImmersion, type AffichageSujets } from "../lib/sujets";
 import { TailleTexte, useTailleTexte } from "../components/TailleTexte";
 import { SelectionBar } from "../components/SelectionBar";
 import { SignalementModal } from "../components/SignalementModal";
@@ -79,6 +79,21 @@ export function ViewerPage() {
   const [affichage, setAffichage] = useState<AffichageSujets>(affichageInitial);
   // Examen blanc en cours : corrigé et assistant masqués.
   const [examenEnCours, setExamenEnCours] = useState(false);
+  // Immersion : le site (en-tête, pied de page, marges) s'efface via un attribut sur <html>, la feuille occupe l'écran.
+  const navigate = useNavigate();
+  const [immersion, setImmersion] = useState(immersionInitiale);
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-immersion", immersion);
+    return () => document.documentElement.removeAttribute("data-immersion");
+  }, [immersion]);
+  // En immersion, les rangées d'outils (examen blanc, hors-ligne, PDF, chrono, onglets, sujets, métadonnées) se
+  // replient derrière « Outils » : masquées en CSS, jamais démontées (ExamenBlanc et Chronometre gardent leur état).
+  const [outils, setOutils] = useState(false);
+  const outilsVisibles = !immersion || outils || examenEnCours;
+  function basculerImmersion() {
+    setImmersion(!immersion);
+    memoriserImmersion(!immersion);
+  }
   const [searchParams] = useSearchParams();
   // Deep-link depuis le profil : /epreuve/{id}?conv={id} rouvre l'onglet de
   // discussion exact de l'historique d'activité.
@@ -394,12 +409,17 @@ export function ViewerPage() {
   };
 
   return (
-    <div className={`flex flex-col ${mobile ? "h-[calc(100dvh-6rem)]" : "h-[calc(100dvh-7rem)]"}`}>
+    <div className={`flex flex-col ${immersion ? "h-[calc(100dvh-1rem)]" : mobile ? "h-[calc(100dvh-6rem)]" : "h-[calc(100dvh-7rem)]"}`}>
       {/* Rangées d'en-tête FIXES (ne défilent pas) : tout l'espace vertical
           restant est réservé au panneau de lecture ci-dessous. */}
       <div className="shrink-0">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
+            {immersion && (
+              <button type="button" onClick={() => navigate(-1)} aria-label={t("Retour")} title={t("Retour")} className="flex min-h-[44px] min-w-[44px] items-center justify-center text-ink-soft hover:text-ink">
+                <ArrowLeft size={18} strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            )}
             <h1 className="truncate font-serif-brand text-2xl">{epreuve.matiere}</h1>
             {/* Signalement : toujours VISIBLE (découvrabilité), en rouge
                 « correction » ; désactivé en visiteur avec le motif du
@@ -423,127 +443,198 @@ export function ViewerPage() {
               l'examen) ; seuls l'export PDF et les onglets Sujet/Corrigé se
               masquent pendant l'examen. */}
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {user && <ExamenBlanc epreuveId={epreuve.id} duree={epreuve.duree} onChange={setExamenEnCours} />}
-            {user && !examenEnCours && <TelechargerHorsLigne id={epreuve.id} matiere={epreuve.matiere} annee={epreuve.annee} evaluation={epreuve.evaluation} />}
-            {!examenEnCours && (
-              <ExportPdf
-                titre={`${epreuve.matiere} — ${epreuve.evaluation} ${epreuve.annee}`}
-                sujet={contenuAffiche(epreuve.sujets ?? [], sujetActifData, "sujet", affichage)}
-                corrige={contenuAffiche(epreuve.sujets ?? [], sujetActifData, "corrige", affichage)}
-                identite={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleDateString(locale())}`}
-              />
+            <button
+              type="button"
+              onClick={basculerImmersion}
+              aria-pressed={immersion}
+              aria-label={immersion ? t("Quitter l'immersion") : t("Immersion")}
+              title={immersion ? t("Quitter l'immersion") : t("Lecture en plein écran : masque l'en-tête et le pied de page du site")}
+              className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
+            >
+              {immersion ? <Minimize2 size={14} strokeWidth={1.75} aria-hidden="true" /> : <Maximize2 size={14} strokeWidth={1.75} aria-hidden="true" />}
+              <span className="hidden sm:inline">{immersion ? t("Quitter l'immersion") : t("Immersion")}</span>
+            </button>
+            {immersion && !examenEnCours && (
+              <button
+                type="button"
+                onClick={() => setOutils(!outils)}
+                aria-expanded={outils}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
+              >
+                <SlidersHorizontal size={14} strokeWidth={1.75} aria-hidden="true" />
+                {t("Outils")}
+              </button>
             )}
-            <Chronometre dureeEpreuve={epreuve.duree || null} />
-              {corrigeDispo && !examenEnCours && (
-            <div role="tablist" aria-label={t("Contenu de l'épreuve")} className="flex rounded-full border border-ink-soft/20 p-1">
-                {([
-                  ["sujet", t("Sujet"), FileText],
-                  ["corrige", t("Corrigé"), ClipboardCheck],
-                ] as [Onglet, string, typeof FileText][]).map(([o, label, Icon]) => (
-                  <button
-                    key={o}
-                    role="tab"
-                    id={`tab-${o}`}
-                    aria-selected={onglet === o}
-                    aria-controls="panel-epreuve"
-                    tabIndex={onglet === o ? 0 : -1}
-                    onClick={() => setOnglet(o)}
-                    onKeyDown={(e) => onTabsKeyDown(e, o)}
-                    title={t("{label} (raccourci : {k})", { label, k: o === "sujet" ? "S" : "C" })}
-                    className={`flex min-h-[44px] items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
-                      onglet === o ? "bg-ink text-paper" : "text-ink-soft"
-                    }`}
-                  >
-                    <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className={outilsVisibles ? "contents" : "hidden"}>
+              {user && <ExamenBlanc epreuveId={epreuve.id} duree={epreuve.duree} onChange={setExamenEnCours} />}
+              {user && !examenEnCours && <TelechargerHorsLigne id={epreuve.id} matiere={epreuve.matiere} annee={epreuve.annee} evaluation={epreuve.evaluation} />}
+              {!examenEnCours && (
+                <ExportPdf
+                  titre={`${epreuve.matiere} — ${epreuve.evaluation} ${epreuve.annee}`}
+                  sujet={contenuAffiche(epreuve.sujets ?? [], sujetActifData, "sujet", affichage)}
+                  corrige={contenuAffiche(epreuve.sujets ?? [], sujetActifData, "corrige", affichage)}
+                  identite={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleDateString(locale())}`}
+                />
+              )}
+              <Chronometre dureeEpreuve={epreuve.duree || null} />
+                {corrigeDispo && !examenEnCours && (
+              <div role="tablist" aria-label={t("Contenu de l'épreuve")} className="flex rounded-full border border-ink-soft/20 p-1">
+                  {([
+                    ["sujet", t("Sujet"), FileText],
+                    ["corrige", t("Corrigé"), ClipboardCheck],
+                  ] as [Onglet, string, typeof FileText][]).map(([o, label, Icon]) => (
+                    <button
+                      key={o}
+                      role="tab"
+                      id={`tab-${o}`}
+                      aria-selected={onglet === o}
+                      aria-controls="panel-epreuve"
+                      tabIndex={onglet === o ? 0 : -1}
+                      onClick={() => setOnglet(o)}
+                      onKeyDown={(e) => onTabsKeyDown(e, o)}
+                      title={t("{label} (raccourci : {k})", { label, k: o === "sujet" ? "S" : "C" })}
+                      className={`flex min-h-[44px] items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
+                        onglet === o ? "bg-ink text-paper" : "text-ink-soft"
+                      }`}
+                    >
+                      <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Sujets multiples : rangée d'onglets pour choisir quel sujet
-            afficher — le bascule revient toujours sur le sujet de l'onglet
-            (jamais directement sur son corrigé). */}
-        {nbSujets > 1 && (
-          <div className="mb-3 flex flex-wrap items-center gap-3">
-          <BasculeAffichage valeur={affichage} onChange={setAffichage} />
-          {toutAfficher ? (
-            <nav aria-label={t("Aller au sujet")} className="flex flex-wrap items-center gap-1.5">
-              {(epreuve.sujets ?? []).map((s, i) => (
-                <button key={s.index} type="button" onClick={() => allerAuSujet(i + 1)} className="min-h-[44px] rounded-full border border-ink-soft/20 px-4 py-1.5 text-sm text-ink-soft hover:bg-highlight-soft/40">
-                  {t("Sujet {n}", { n: i + 1 })}
-                </button>
-              ))}
-            </nav>
-          ) : (
-          <div
-            role="tablist"
-            aria-label={t("Sujets de l'épreuve")}
-            className="flex flex-wrap items-center gap-1.5"
-          >
-            {(epreuve.sujets ?? []).map((s, i) => {
-              const actif = s.index === sujetActifData?.index;
-              return (
-                <button
-                  key={s.index}
-                  type="button"
-                  role="tab"
-                  id={`sujet-tab-${s.index}`}
-                  aria-selected={actif}
-                  aria-controls="panel-epreuve"
-                  tabIndex={actif ? 0 : -1}
-                  onClick={() => {
-                    setSujetActif(s.index);
-                    setOnglet("sujet");
-                  }}
-                  onKeyDown={(e) => onSujetsKeyDown(e, s.index)}
-                  title={t("Afficher le sujet {n}", { n: i + 1 })}
-                  className={`flex min-h-[44px] items-center rounded-full px-4 py-1.5 text-sm transition-colors ${
-                    actif ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/40"
-                  }`}
-                >
-                  {t("Sujet {n}", { n: i + 1 })}
-                </button>
-              );
-            })}
-          </div>
+        <div className={outilsVisibles ? "contents" : "hidden"}>
+          {/* Sujets multiples : rangée d'onglets pour choisir quel sujet
+              afficher — le bascule revient toujours sur le sujet de l'onglet
+              (jamais directement sur son corrigé). */}
+          {nbSujets > 1 && (
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+            <BasculeAffichage valeur={affichage} onChange={setAffichage} />
+            {toutAfficher ? (
+              <nav aria-label={t("Aller au sujet")} className="flex flex-wrap items-center gap-1.5">
+                {(epreuve.sujets ?? []).map((s, i) => (
+                  <button key={s.index} type="button" onClick={() => allerAuSujet(i + 1)} className="min-h-[44px] rounded-full border border-ink-soft/20 px-4 py-1.5 text-sm text-ink-soft hover:bg-highlight-soft/40">
+                    {t("Sujet {n}", { n: i + 1 })}
+                  </button>
+                ))}
+              </nav>
+            ) : (
+            <div
+              role="tablist"
+              aria-label={t("Sujets de l'épreuve")}
+              className="flex flex-wrap items-center gap-1.5"
+            >
+              {(epreuve.sujets ?? []).map((s, i) => {
+                const actif = s.index === sujetActifData?.index;
+                return (
+                  <button
+                    key={s.index}
+                    type="button"
+                    role="tab"
+                    id={`sujet-tab-${s.index}`}
+                    aria-selected={actif}
+                    aria-controls="panel-epreuve"
+                    tabIndex={actif ? 0 : -1}
+                    onClick={() => {
+                      setSujetActif(s.index);
+                      setOnglet("sujet");
+                    }}
+                    onKeyDown={(e) => onSujetsKeyDown(e, s.index)}
+                    title={t("Afficher le sujet {n}", { n: i + 1 })}
+                    className={`flex min-h-[44px] items-center rounded-full px-4 py-1.5 text-sm transition-colors ${
+                      actif ? "bg-ink text-paper" : "text-ink-soft hover:bg-highlight-soft/40"
+                    }`}
+                  >
+                    {t("Sujet {n}", { n: i + 1 })}
+                  </button>
+                );
+              })}
+            </div>
+            )}
+            </div>
           )}
-          </div>
-        )}
 
-        {/* MOBILE : la méta + le bandeau visiteur se replient dans une ligne
-            fine (élément <details>, replié par défaut) — zéro hauteur
-            permanente ; on ne conserve que le strict minimum (titre + onglets,
-            ci-dessus). L'épreuve gagne ainsi toute la place. */}
-        {mobile ? (
-          <details className="group mb-3 overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised">
-            <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2">
-              <ChevronRight
-                size={13}
-                strokeWidth={1.75}
-                aria-hidden="true"
-                className="shrink-0 text-slate transition-transform group-open:rotate-90"
-              />
-              <span className="truncate font-mono-tag text-[10px] uppercase tracking-wide text-ink-soft">
-                {epreuve.evaluation} {epreuve.annee} · {t("SÉRIES")} {epreuve.filieres.join(",")}
-              </span>
-              {!user && (
-                <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-highlight/40 px-2 py-0.5 font-mono-tag text-[10px] text-ink-soft">
-                  <Lock size={9} strokeWidth={2} aria-hidden="true" className="text-slate" />
-                  {t("Visiteur")}
+          {/* MOBILE : la méta + le bandeau visiteur se replient dans une ligne
+              fine (élément <details>, replié par défaut) — zéro hauteur
+              permanente ; on ne conserve que le strict minimum (titre + onglets,
+              ci-dessus). L'épreuve gagne ainsi toute la place. */}
+          {mobile ? (
+            <details className="group mb-3 overflow-hidden rounded-lg border border-ink-soft/15 bg-paper-raised">
+              <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2">
+                <ChevronRight
+                  size={13}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                  className="shrink-0 text-slate transition-transform group-open:rotate-90"
+                />
+                <span className="truncate font-mono-tag text-[10px] uppercase tracking-wide text-ink-soft">
+                  {epreuve.evaluation} {epreuve.annee} · {t("SÉRIES")} {epreuve.filieres.join(",")}
                 </span>
-              )}
-            </summary>
-            <div className="border-t border-ink-soft/15 px-4 py-3">
+                {!user && (
+                  <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-highlight/40 px-2 py-0.5 font-mono-tag text-[10px] text-ink-soft">
+                    <Lock size={9} strokeWidth={2} aria-hidden="true" className="text-slate" />
+                    {t("Visiteur")}
+                  </span>
+                )}
+              </summary>
+              <div className="border-t border-ink-soft/15 px-4 py-3">
+                <p className="font-mono-tag text-xs text-slate">
+                  {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · {t("SÉRIES")}{" "}
+                  {epreuve.filieres.join(",")}
+                  {epreuve.duree ? ` · ${epreuve.duree}` : ""}
+                </p>
+                {!user && (
+                  <div className="mt-3 rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
+                    <p className="text-xs text-ink-soft">
+                      {t("Consultation libre en mode visiteur — les fonctionnalités du compte sont visibles mais verrouillées :")}
+                    </p>
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {[
+                        t("Tuteur IA Prep — poser des questions"),
+                        t("Notes personnelles"),
+                        t("Signaler un problème"),
+                      ].map((libelle) => (
+                        <li
+                          key={libelle}
+                          title={t("Connecte-toi pour utiliser cette fonctionnalité")}
+                          className="flex min-h-[44px] cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 text-xs text-ink-soft"
+                        >
+                          <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
+                          {libelle}
+                        </li>
+                      ))}
+                    </ul>
+                    <Link
+                      to="/connexion"
+                      className="mt-2 inline-flex min-h-[44px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
+                    >
+                      {t("Se connecter pour tout débloquer")}
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </details>
+          ) : (
+            <>
               <p className="font-mono-tag text-xs text-slate">
                 {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · {t("SÉRIES")}{" "}
                 {epreuve.filieres.join(",")}
                 {epreuve.duree ? ` · ${epreuve.duree}` : ""}
               </p>
+
+              {/* Motif signature n°3 : double filet (letterhead), uniquement sur cette page */}
+              <div className="my-3" aria-hidden="true">
+                <div className="h-px bg-ink-soft/20" />
+                <div className="h-[3px] bg-paper" />
+                <div className="h-px bg-ink-soft/20" />
+              </div>
+
               {!user && (
-                <div className="mt-3 rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
+                <div className="rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
                   <p className="text-xs text-ink-soft">
                     {t("Consultation libre en mode visiteur — les fonctionnalités du compte sont visibles mais verrouillées :")}
                   </p>
@@ -571,54 +662,9 @@ export function ViewerPage() {
                   </Link>
                 </div>
               )}
-            </div>
-          </details>
-        ) : (
-          <>
-            <p className="font-mono-tag text-xs text-slate">
-              {epreuve.evaluation} {epreuve.annee} · {epreuve.matiere.toUpperCase()} · {t("SÉRIES")}{" "}
-              {epreuve.filieres.join(",")}
-              {epreuve.duree ? ` · ${epreuve.duree}` : ""}
-            </p>
-
-            {/* Motif signature n°3 : double filet (letterhead), uniquement sur cette page */}
-            <div className="my-3" aria-hidden="true">
-              <div className="h-px bg-ink-soft/20" />
-              <div className="h-[3px] bg-paper" />
-              <div className="h-px bg-ink-soft/20" />
-            </div>
-
-            {!user && (
-              <div className="rounded-lg border border-highlight/40 bg-highlight-soft/40 px-4 py-3">
-                <p className="text-xs text-ink-soft">
-                  {t("Consultation libre en mode visiteur — les fonctionnalités du compte sont visibles mais verrouillées :")}
-                </p>
-                <ul className="mt-2 flex flex-wrap gap-2">
-                  {[
-                    t("Tuteur IA Prep — poser des questions"),
-                    t("Notes personnelles"),
-                    t("Signaler un problème"),
-                  ].map((libelle) => (
-                    <li
-                      key={libelle}
-                      title={t("Connecte-toi pour utiliser cette fonctionnalité")}
-                      className="flex min-h-[44px] cursor-not-allowed items-center gap-1.5 rounded-full border border-ink-soft/25 bg-paper-raised/60 px-3 text-xs text-ink-soft"
-                    >
-                      <Lock size={11} strokeWidth={2} aria-hidden="true" className="text-slate" />
-                      {libelle}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  to="/connexion"
-                  className="mt-2 inline-flex min-h-[44px] items-center rounded-full bg-ink px-4 text-xs font-medium text-paper hover:opacity-90"
-                >
-                  {t("Se connecter pour tout débloquer")}
-                </Link>
-              </div>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Zone de lecture : height fixe, scroll INTERNE (le panneau ne défile
@@ -636,14 +682,16 @@ export function ViewerPage() {
             onKeyUp={onKeyUp}
             onCopy={onCopy}
             onContextMenu={(e) => e.preventDefault()}
-            className="absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
+            className="absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper p-2 sm:p-6"
           >
             <Watermark label={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleString(locale())}`} />
             {/* Flottant : reste visible pendant tout le défilement de l'épreuve (en bas à gauche : l'assistant occupe la droite). */}
             <div className="fixed bottom-4 left-4 z-30 rounded-full bg-paper-raised shadow-lg print:hidden">
               <TailleTexte taille={taille} onChange={changerTaille} />
             </div>
-            <div className="relative" style={{ zoom: taille }}>
+            {/* Feuille de largeur A4 (210 mm) centrée sur le « bureau » ; le zoom A−/A+ s'applique à la feuille entière.
+                Sur petit écran, elle prend toute la largeur disponible. */}
+            <div className="relative mx-auto w-full max-w-[210mm] rounded-sm border border-ink-soft/15 bg-paper-raised px-4 py-5 shadow-md sm:px-[16mm] sm:py-[14mm]" style={{ zoom: taille }}>
               <MarkdownContent content={contenuActif || ""} variant="epreuve" trackSourcePositions />
             </div>
           </div>

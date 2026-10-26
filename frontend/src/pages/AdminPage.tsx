@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
@@ -42,14 +42,25 @@ const GROUPES: { titre: string; ids: Onglet[] }[] = [
 ];
 const ONGLETS: Onglet[] = GROUPES.flatMap((g) => g.ids);
 
-const CLE_MENU = "bacprep-menu-admin";
-const menuInitialOuvert = () => {
-  try {
-    return localStorage.getItem(CLE_MENU) !== "replie";
-  } catch {
-    return true;
+/** Section repliable de la console : ouverte par défaut, état mémorisé sur l'appareil sous `cle`. */
+function useOuvert(cle: string): [boolean, () => void] {
+  const [ouvert, setOuvert] = useState(() => {
+    try {
+      return localStorage.getItem(cle) !== "replie";
+    } catch {
+      return true;
+    }
+  });
+  function basculer() {
+    setOuvert(!ouvert);
+    try {
+      localStorage.setItem(cle, ouvert ? "replie" : "ouvert");
+    } catch {
+      /* préférence non mémorisée */
+    }
   }
-};
+  return [ouvert, basculer];
+}
 
 export function AdminPage() {
   const { showToast } = useToast();
@@ -59,16 +70,9 @@ export function AdminPage() {
   const [showToken, setShowToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [blocker, setBlocker] = useState<{ message: string; active_email: string } | null>(null);
-  // Menu latéral des sections (grand écran) : repliable pour laisser toute la largeur à la zone d'édition ; mémorisé.
-  const [menuOuvert, setMenuOuvert] = useState(menuInitialOuvert);
-  function basculerMenu() {
-    setMenuOuvert(!menuOuvert);
-    try {
-      localStorage.setItem(CLE_MENU, menuOuvert ? "replie" : "ouvert");
-    } catch {
-      /* préférence non mémorisée */
-    }
-  }
+  // Menu latéral des sections (grand écran) et statistiques : repliables pour laisser toute la place à l'édition.
+  const [menuOuvert, basculerMenu] = useOuvert("bacprep-menu-admin");
+  const [statsOuvertes, basculerStats] = useOuvert("bacprep-stats-admin");
 
   // Onglet initial lisible depuis l'URL (/admin?tab=utilisateurs) : lien
   // profond depuis le journal d'audit ou un signet — les onglets restent
@@ -379,7 +383,20 @@ export function AdminPage() {
         </button>
       </div>
 
-      {stats && <StatsPanel stats={stats} />}
+      {stats && (
+        <div>
+          <button
+            type="button"
+            onClick={basculerStats}
+            aria-expanded={statsOuvertes}
+            className="mb-3 flex min-h-[44px] items-center gap-2 rounded-full border border-ink-soft/25 px-4 text-sm text-ink-soft hover:bg-highlight-soft/50"
+          >
+            {statsOuvertes ? <ChevronUp size={16} strokeWidth={1.75} aria-hidden="true" /> : <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />}
+            {statsOuvertes ? "Masquer les statistiques" : "Afficher les statistiques"}
+          </button>
+          {statsOuvertes && <StatsPanel stats={stats} />}
+        </div>
+      )}
 
       <div className={`lg:grid lg:items-start lg:gap-6 ${menuOuvert ? "lg:grid-cols-[13rem_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)]"}`}>
         {/* Mobile, ou menu replié sur grand écran : une liste déroulante groupée (dix onglets ne tiennent pas sur une ligne). */}

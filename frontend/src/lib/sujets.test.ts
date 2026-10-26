@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assemblerContenu, contenuAffiche, affichageInitial, memoriserAffichage } from "./sujets";
+import { assemblerContenu, contenuAffiche, affichageInitial, immersionInitiale, memoriserAffichage, memoriserImmersion } from "./sujets";
 
 const sujets = [
   { contenu_markdown: "Premier énoncé", corrige_markdown: "Solution 1" },
@@ -42,5 +42,21 @@ describe("préférence d'affichage", () => {
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("bloqué"); }, setItem: () => { throw new Error("bloqué"); } });
     expect(affichageInitial()).toBe("page");
     expect(() => memoriserAffichage("tout")).not.toThrow();
+  });
+});
+
+describe("préférence d'immersion", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("est désactivée par défaut, mémorisée, et reste désactivée sans stockage", () => {
+    const m: Record<string, string> = {};
+    vi.stubGlobal("localStorage", { getItem: (k: string) => m[k] ?? null, setItem: (k: string, v: string) => void (m[k] = v) });
+    expect(immersionInitiale()).toBe(false);
+    memoriserImmersion(true);
+    expect(immersionInitiale()).toBe(true);
+    memoriserImmersion(false);
+    expect(immersionInitiale()).toBe(false);
+    vi.stubGlobal("localStorage", { getItem: () => { throw new Error("bloqué"); }, setItem: () => { throw new Error("bloqué"); } });
+    expect(immersionInitiale()).toBe(false);
+    expect(() => memoriserImmersion(true)).not.toThrow();
   });
 });

@@ -46,7 +46,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-paper text-ink">
       <ServeurLent />
-      <header className="sticky top-0 z-30 border-b border-ink-soft/15 bg-paper-raised">
+      <header data-chrome className="sticky top-0 z-30 border-b border-ink-soft/15 bg-paper-raised">
         {/* Motif signature n°1 : bandeau tricolore, uniquement ici (AppBar) */}
         <div className="flex h-[3px] w-full" aria-hidden="true">
           <div className="flex-1 bg-valide" />
@@ -235,7 +235,7 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
       <main className="w-full flex-1 px-4 py-6 pb-24 sm:pb-6 md:px-6 lg:px-8">{children ?? <Outlet />}</main>
 
       <BottomNav />
-      <footer className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
+      <footer data-chrome className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
         {t("Copies & Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)")}
       </footer>
     </div>

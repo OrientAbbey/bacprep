@@ -442,3 +442,11 @@ body {
     margin: 18mm;
   }
 }
+
+/* Mode immersion du lecteur (attribut posé sur <html> par ViewerPage) : le site s'efface, seul le contenu reste. */
+html[data-immersion] [data-chrome] {
+  display: none;
+}
+html[data-immersion] main {
+  padding: 0.5rem;
+}

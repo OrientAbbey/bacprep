@@ -44,6 +44,18 @@ async function connecterEleve(ctx, email = `eleve-${RUN}@test.cm`) {
   const c = await ctx.request.put("/api/me/consentement", { data: { partage_conversations_ia: true, partage_notes: true } });
   ok(c.ok(), "consentement : " + c.status() + " " + (await c.text()).slice(0, 120));
 }
+// Épreuve publiée et gratuite à 3 sujets avec corrigés (60 lignes chacun) : assez longue pour faire défiler la page,
+// assez riche pour avoir tous les outils du lecteur. Indépendante des données des autres tests. Renvoie son id.
+async function creerEpreuveRiche(matiere, annee) {
+  const adm = await nouveauContexte();
+  await connecterAdmin(adm);
+  const lignes = (n, mot) => Array.from({ length: n }, (_, i) => `${mot} ${i + 1}.`).join("\n\n");
+  const sujets = [1, 2, 3].map((index) => ({ index, contenu_markdown: `# Sujet ${index}\n\n${lignes(60, "Question")}`, corrige_markdown: `Corrigé ${index}\n\n${lignes(60, "Réponse")}` }));
+  const cree = await (await adm.request.post("/api/admin/epreuves", { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere, annee, gratuit: true, filieres: ["C", "D"], duree: "3h", sujets } })).json();
+  await adm.request.post(`/api/admin/epreuves/${cree.id}/publish`);
+  await adm.close();
+  return cree.id;
+}
 async function connecterAdmin(ctx) {
   await connecterEleve(ctx, ADMIN.email);
   const r = await ctx.request.post("/api/admin/login", { data: ADMIN });
@@ -1052,6 +1064,92 @@ console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
   await ctx.close();
 }
 
+console.log("\nLecteur : feuille de largeur A4 et immersion");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterEleve(ctx, `feuille-${RUN}@test.cm`);
+  const page = await ctx.newPage();
+  const gratuit = await creerEpreuveRiche(`Feuille ${RUN}`, "2037");
+  const feuille = page.locator("div[style*='zoom']").first();
+  const panneau = page.locator("#panel-epreuve");
+  const boite = async (loc) => loc.boundingBox();
+  const A4 = (210 / 25.4) * 96; // 793,7 px CSS
+
+  await page.goto(`/epreuve/${gratuit}`);
+  await feuille.waitFor({ timeout: 15000 });
+
+  await test("web : le texte est présenté sur une feuille de largeur A4, centrée, et non sur toute la largeur", async () => {
+    const f = await boite(feuille), p = await boite(panneau);
+    ok(Math.abs(f.width - A4) <= 3, `largeur de la feuille ${f.width} px, attendu ${Math.round(A4)} px (210 mm)`);
+    ok(p.width - f.width >= 200, `la feuille remplit le panneau : ${f.width} / ${p.width}`);
+    ok(Math.abs((f.x - p.x) - (p.x + p.width - (f.x + f.width))) <= 24, `feuille non centrée : marge gauche ${f.x - p.x}, droite ${p.x + p.width - f.x - f.width}`);
+    await page.screenshot({ path: `${SHOTS}/lecteur-feuille.png` });
+  });
+
+  await test("web : A+ agrandit la feuille entière (zoom de page), A− la rétrécit", async () => {
+    const avant = (await boite(feuille)).width;
+    await page.getByRole("button", { name: "Agrandir le texte" }).click();
+    const plus = (await boite(feuille)).width;
+    ok(plus > avant + 5, `A+ : ${avant} → ${plus}`);
+    await page.getByRole("button", { name: "Réduire le texte" }).click();
+    await page.getByRole("button", { name: "Réduire le texte" }).click();
+    ok((await boite(feuille)).width < avant - 5, "A− ne rétrécit pas la feuille");
+    await page.getByRole("button", { name: "Agrandir le texte" }).click(); // retour à la taille d'origine
+  });
+
+  await test("mobile : la feuille prend toute la largeur utile, sans débordement", async () => {
+    const m = await nouveauContexte({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true });
+    await connecterEleve(m, `feuille-m-${RUN}@test.cm`);
+    const pm = await m.newPage();
+    await pm.goto(`/epreuve/${gratuit}`);
+    const fm = pm.locator("div[style*='zoom']").first();
+    await fm.waitFor({ timeout: 15000 });
+    const b = await fm.boundingBox();
+    ok(b.width >= 390 - 60 && b.width <= 390, `feuille mobile : ${b.width} px sur 390`);
+    ok(await pm.evaluate(() => { const d = document.documentElement; return innerWidth === d.clientWidth && d.scrollWidth <= d.clientWidth; }), "la feuille fait déborder la page mobile");
+    await m.close();
+  });
+
+  await test("immersion : le site s'efface, la zone de lecture grandit, le choix est mémorisé, le retour reste possible", async () => {
+    await page.goto("/");
+    await page.goto(`/epreuve/${gratuit}`);
+    await feuille.waitFor({ timeout: 15000 });
+    const entete = page.locator("header[data-chrome]");
+    ok(await entete.isVisible(), "en-tête absent hors immersion");
+    const h0 = (await boite(panneau)).height;
+    await page.getByRole("button", { name: "Immersion", exact: true }).click();
+    await entete.waitFor({ state: "hidden", timeout: 5000 });
+    ok(!(await page.locator("footer[data-chrome]").isVisible()), "pied de page encore visible");
+    const h1 = (await boite(panneau)).height;
+    ok(h1 >= h0 + 200, `zone de lecture : ${h0} → ${h1} px (site masqué ET outils repliés)`);
+    // Outils repliés par défaut en immersion : plus de place encore, sans démonter les composants à état (chrono, examen).
+    await page.getByRole("button", { name: "Outils", exact: true }).waitFor({ timeout: 5000 });
+    ok(!(await page.getByRole("button", { name: "Examen blanc" }).isVisible()), "les outils devraient être repliés");
+    await page.screenshot({ path: `${SHOTS}/lecteur-immersion.png` });
+    await page.getByRole("button", { name: "Outils", exact: true }).click();
+    await page.getByRole("button", { name: "Examen blanc" }).waitFor({ timeout: 5000 });
+    ok((await boite(panneau)).height < h1 - 100, "ouvrir les outils doit reprendre de la place à la lecture");
+    await page.getByRole("button", { name: "Chrono" }).evaluate((e) => (e.dataset.marque = "1")); // repère posé sur le DOM du chrono
+    await page.getByRole("button", { name: "Outils", exact: true }).click(); // replie
+    await page.getByRole("button", { name: "Outils", exact: true }).click(); // rouvre
+    ok((await page.locator("[data-marque]").count()) === 1, "le chrono a été démonté puis recréé : son état serait perdu");
+    await page.getByRole("button", { name: "Outils", exact: true }).click(); // replie à nouveau
+    await page.reload();
+    await feuille.waitFor({ timeout: 15000 });
+    ok(!(await page.locator("header[data-chrome]").isVisible()), "l'immersion n'est pas mémorisée");
+    await page.getByRole("button", { name: "Retour" }).click(); // le site a disparu : le retour est dans le lecteur
+    await page.waitForURL((u) => u.pathname === "/", { timeout: 10000 });
+    ok(await page.locator("header[data-chrome]").isVisible(), "l'immersion fuit hors du lecteur (en-tête masqué sur l'accueil)");
+    await page.goto(`/epreuve/${gratuit}`);
+    await page.getByRole("button", { name: "Quitter l'immersion" }).click();
+    await page.locator("header[data-chrome]").waitFor({ timeout: 5000 });
+    await page.reload();
+    await feuille.waitFor({ timeout: 15000 });
+    ok(await page.locator("header[data-chrome]").isVisible(), "la sortie d'immersion n'est pas mémorisée");
+  });
+  await ctx.close();
+}
+
 console.log("\nMenu des sections du back-office repliable");
 {
   const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
@@ -1089,6 +1187,23 @@ console.log("\nMenu des sections du back-office repliable");
     ok(Math.abs((await largeurPanneau()) - largeurOuvert) <= 2, "largeur d'origine non retrouvée");
     await page.reload();
     await onglet("Épreuves").waitFor({ timeout: 15000 }); // ouvert : la préférence « ouvert » est mémorisée
+  });
+
+  await test("statistiques repliables : l'éditeur remonte d'autant, l'état est mémorisé", async () => {
+    await page.goto("/admin");
+    await onglet("Épreuves").waitFor({ timeout: 15000 });
+    const haut = async () => Math.round((await page.locator("#admin-panel").boundingBox()).y);
+    const ouvert = await haut();
+    await page.getByRole("button", { name: "Masquer les statistiques" }).click();
+    await page.getByRole("heading", { name: "Statistiques" }).waitFor({ state: "hidden", timeout: 5000 });
+    const replie = await haut();
+    ok(ouvert - replie >= 300, `l'éditeur ne remonte pas assez : ${ouvert} → ${replie} px`);
+    await page.reload();
+    await page.getByRole("button", { name: "Afficher les statistiques" }).waitFor({ timeout: 15000 });
+    ok(Math.abs((await haut()) - replie) <= 4, "l'état replié n'est pas mémorisé");
+    await page.getByRole("button", { name: "Afficher les statistiques" }).click();
+    await page.getByRole("heading", { name: "Statistiques" }).waitFor({ timeout: 5000 });
+    ok(Math.abs((await haut()) - ouvert) <= 4, "la position d'origine n'est pas retrouvée");
   });
 
   await test("mobile : la préférence « replié » n'ajoute aucun bouton, la liste déroulante reste seule", async () => {
@@ -1386,13 +1501,7 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
 
 console.log("\nBoutons flottants et débordement horizontal (bureau et mobile)");
 {
-  const adm = await nouveauContexte();
-  await connecterAdmin(adm);
-  const lignes = (n, mot) => Array.from({ length: n }, (_, i) => `${mot} ${i + 1}.`).join("\n\n");
-  const sujets = [1, 2, 3].map((index) => ({ index, contenu_markdown: `# Sujet ${index}\n\n${lignes(60, "Question")}`, corrige_markdown: `Corrigé ${index}\n\n${lignes(60, "Réponse")}` }));
-  const cree = await (await adm.request.post("/api/admin/epreuves", { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: `Mathématiques appliquées ${RUN}`, annee: "2036", gratuit: true, filieres: ["C", "D"], duree: "3h", sujets } })).json();
-  await adm.request.post(`/api/admin/epreuves/${cree.id}/publish`);
-  await adm.close();
+  const cree = { id: await creerEpreuveRiche(`Mathématiques appliquées ${RUN}`, "2036") };
 
   // Position du bloc `fixed` (l'élément lui-même ou son conteneur fixe), dans la zone VISIBLE de la fenêtre.
   const position = (loc) => loc.evaluate((e) => {
