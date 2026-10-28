@@ -37,6 +37,6 @@ Base : `main` @ `7694149`. Branche : `refonte` (une série de commits par lot).
 
 ## Non réalisé (volontairement ou faute de preuve)
 - Paiement réel (en pause, documenté dans `PAIEMENT.md`).
+- Pagination des sujets en feuilles A4 (idée documentée dans `PAGINATION.md`, non implémentée).
 - Découpage de `AssistantPanel` / `EpreuvesPanel` (≈ 1 100 lignes chacun) : refactor sans gain fonctionnel, contraire à la règle « minimum de code ».
-- Messages d'erreur du serveur : restent en français dans l'interface anglaise.
 - Mesures Lighthouse et tests sur téléphone réel / site Render déployé : non faits.

@@ -175,6 +175,7 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   test de contrat frontend↔API, test de couverture de `.env.example`, logs JSON, sauvegarde hebdomadaire
   planifiée, keep-alive Supabase.
 - **Paiement** : en pause (`PAIEMENT.md`).
+- **Pagination des sujets** (feuilles A4 numérotées) : idée documentée pour plus tard, non implémentée (`PAGINATION.md`).
 
 ### Lancer les tests
 
@@ -639,3 +640,4 @@ que ce projet suit.
   pas-à-pas des identifiants externes** (connexion Google, stockage objet
   S3-compatible, clés Gemini/Groq, génération des secrets).
 - `PAIEMENT.md` — intégration du paiement réel.
+- `PAGINATION.md` — pagination des sujets en feuilles A4 (idée pour plus tard, non implémentée).
