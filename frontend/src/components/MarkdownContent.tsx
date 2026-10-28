@@ -7,7 +7,7 @@ import "katex/dist/katex.min.css";
 import { resolveMediaUrl } from "../api/client";
 import { rehypeSourceOffsets, rehypeStripAnchorText } from "../lib/markdownSource";
 import { rehypeImageWidths } from "../lib/markdownImages";
-import { normalizeLatexDelimiters } from "../lib/latex";
+import { normalizeDisplayMathDelimitersPreservingOffsets, normalizeLatexDelimiters } from "../lib/latex";
 import { ImageLightbox } from "./ImageLightbox";
 
 /** Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
@@ -93,14 +93,15 @@ export const MarkdownContent = React.memo(function MarkdownContent({
     []
   );
 
-  // Normalisation des délimiteurs LaTeX alternatifs (\( \), \[ \],
-  // \begin{...} nu) UNIQUEMENT pour les bulles de discussion (contenu
-  // généré par le LLM, moins prévisible que le Markdown d'épreuve saisi
-  // par l'admin) — jamais quand trackSourcePositions est actif, puisque
-  // cette normalisation change la longueur de la chaîne et décalerait les
-  // offsets de sélection calculés sur le texte d'origine.
+  // Les bulles de discussion gardent leur normalisation historique. Pour les
+  // épreuves, on convertit uniquement les blocs `\[ ... \]` isolés sur leurs
+  // lignes, à longueur identique : cela active KaTeX sans décaler les offsets
+  // de sélection du lecteur ni modifier le reste du Markdown.
   const normalized = useMemo(
-    () => (variant === "chat" ? normalizeLatexDelimiters(content) : content),
+    () => {
+      if (variant === "chat") return normalizeLatexDelimiters(content);
+      return normalizeDisplayMathDelimitersPreservingOffsets(content);
+    },
     [content, variant]
   );
 
@@ -119,4 +120,3 @@ export const MarkdownContent = React.memo(function MarkdownContent({
     </>
   );
 });
-

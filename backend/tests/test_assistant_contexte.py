@@ -38,3 +38,12 @@ def test_consigne_de_langue_dans_l_invite():
     from app.core import assistant
 
     assert "langue utilisée par l'élève" in inspect.getsource(assistant)
+
+
+def test_invite_eleve_impose_les_delimiteurs_latex_rendus():
+    from app.core.assistant import _build_prompt
+
+    prompt = _build_prompt({}, "", "Résous l'équation", [])
+    assert "$...$" in prompt and "$$...$$" in prompt
+    assert "N'utilise JAMAIS \\( \\), \\[ \\]" in prompt
+    assert "SA PROPRE LIGNE" in prompt

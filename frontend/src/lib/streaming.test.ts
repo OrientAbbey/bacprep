@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamAdminAsk, streamAssistantAsk } from "./streaming";
+import { normalizeLatexDelimiters } from "./latex";
 
 /** Réponse SSE construite à partir de fragments réseau arbitraires — permet
  * de tester le découpage/colmatage du tampon de `streamEventSource`
@@ -103,6 +104,31 @@ describe("streamAdminAsk — décodage du flux admin", () => {
 });
 
 describe("streamAssistantAsk — propagation des erreurs de transport", () => {
+  it("rend une formule array dont les délimiteurs et le corps arrivent dans des événements SSE distincts", async () => {
+    const fragments = [
+      "### Acide aminé\n\n\\[\n\\begin{array}{cc}\nC&N\\\\\n",
+      "H_2&|\\\\\n\\end{array}\n",
+      "\\]",
+    ];
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        ...fragments.map((text) => `data:${JSON.stringify({ type: "chunk", text })}\n\n`),
+        `data:${JSON.stringify({ type: "done", conversation: null })}\n\n`,
+      ])
+    );
+
+    let streamed = "";
+    await streamAssistantAsk({ message: "Explique" }, (event) => {
+      if (event.type === "chunk") streamed += event.text;
+    });
+
+    const renderedMarkdown = normalizeLatexDelimiters(streamed);
+    expect(renderedMarkdown).toContain("$$\n\\begin{array}{cc}");
+    expect(renderedMarkdown).toContain("C&N\\\\");
+    expect(renderedMarkdown).toContain("\\end{array}\n$$");
+    expect(renderedMarkdown).not.toContain("\\[");
+  });
+
   it("adresse /api/assistant/ask/stream avec la charge utile", async () => {
     fetchMock.mockResolvedValue(sseResponse([]));
     await streamAssistantAsk(

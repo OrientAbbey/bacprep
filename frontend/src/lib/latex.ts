@@ -228,3 +228,56 @@ export function normalizeLatexDelimiters(markdown: string): string {
   // des lignes dédiées les $$ créés ça-et-là dans le texte.
   return isolateDisplayMath(convertDelimiters(markdown));
 }
+
+/**
+ * Convertit les délimiteurs de bloc `\[ ... \]` placés seuls sur leurs lignes
+ * en `$$ ... $$`, sans changer la longueur du Markdown. Le lecteur utilise
+ * les offsets du Markdown source pour les sélections : contrairement à la
+ * normalisation complète, cette variante peut donc être utilisée quand ces
+ * offsets sont suivis.
+ */
+export function normalizeDisplayMathDelimitersPreservingOffsets(markdown: string): string {
+  const lines = markdown.split("\n");
+  const replacements: number[] = [];
+  let inFence = false;
+  let fenceMarker = "";
+  let inDollarBlock = false;
+  let openLine: number | null = null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const fence = line.match(/^\s*(`{3,}|~{3,})/);
+    if (fence) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fence[1][0];
+      } else if (line.trim().startsWith(fenceMarker)) {
+        inFence = false;
+      }
+      continue;
+    }
+    if (inFence) continue;
+
+    if (/^[\t ]*\$\$[\t \r]*$/.test(line)) {
+      inDollarBlock = !inDollarBlock;
+      continue;
+    }
+    if (inDollarBlock) continue;
+
+    if (/^[\t ]*\\\[[\t \r]*$/.test(line)) {
+      openLine = i;
+    } else if (openLine !== null && /^[\t ]*\\\][\t \r]*$/.test(line)) {
+      replacements.push(openLine, i);
+      openLine = null;
+    }
+  }
+
+  for (const lineIndex of replacements) {
+    const line = lines[lineIndex];
+    const delimiter = line.indexOf("\\[") !== -1 ? "\\[" : "\\]";
+    const at = line.indexOf(delimiter);
+    lines[lineIndex] = `${line.slice(0, at)}$$${line.slice(at + delimiter.length)}`;
+  }
+
+  return lines.join("\n");
+}

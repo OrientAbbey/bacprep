@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { normalizeLatexDelimiters } from "./latex";
+import { normalizeDisplayMathDelimitersPreservingOffsets, normalizeLatexDelimiters } from "./latex";
 
 describe("normalizeLatexDelimiters", () => {
+  it("normalise une formule LaTeX complétée par fragments SSE sans perdre le contenu", () => {
+    const fragments = [
+      "### 2. Acide 2-aminohexanoïque\n\n\\[\n\\begin{array}{cccccccc}\n&&NH_2&&&&&",
+      "\\\\\n&&|&&&&&\\\\\nCH_3&-&CH_2&-&CH_2&-&CH_2&-CH_2-CH-C(=O)-OH\\\\\n",
+      "&&&&&&&&\n\\end{array}\n\\]",
+    ];
+    let streamed = "";
+    for (const fragment of fragments) {
+      streamed += fragment;
+      // Le composant chat réapplique cette normalisation après chaque mise à
+      // jour d'état ; les préfixes incomplets ne doivent jamais lever d'erreur.
+      expect(() => normalizeLatexDelimiters(streamed)).not.toThrow();
+    }
+
+    const normalized = normalizeLatexDelimiters(streamed);
+    expect(normalized).toContain("$$\n\\begin{array}{cccccccc}");
+    expect(normalized).toContain("&&NH_2&&&&&\\\\");
+    expect(normalized).toContain("CH_3&-&CH_2&-&CH_2&-&CH_2&-CH_2-CH-C(=O)-OH");
+    expect(normalized).toContain("\\end{array}\n$$");
+    expect(normalized).not.toContain("\\[");
+  });
+
   it("isole une formule $$ au milieu d'un paragraphe", () => {
     const out = normalizeLatexDelimiters("Donc $$x=1$$ car a>b.");
     expect(out).toContain("$$\nx=1\n$$");
@@ -144,5 +166,61 @@ const out = normalizeLatexDelimiters(src);
     expect(out).toContain("\\tfrac32");
     expect(out).toContain("\\text{ variation sur }[0;2]");
     expect(out.match(/\$\$/g) || []).toHaveLength(2);
+  });
+});
+
+describe("normalizeDisplayMathDelimitersPreservingOffsets", () => {
+  it("convertit le bloc array utilisé dans l'aperçu admin sans toucher à sa structure", () => {
+    const src = String.raw`\[
+\begin{array}{cccccccc}
+&&NH_2&&&&&\\
+&&|&&&&&\\
+CH_3&-&CH_2&-&CH_2&-&CH_2&-CH_2-CH-C(=O)-OH\\
+&&&&&&&&
+\end{array}
+\]`;
+    const out = normalizeDisplayMathDelimitersPreservingOffsets(src);
+
+    expect(out).toHaveLength(src.length);
+    expect(out.startsWith("$$\n\\begin{array}{cccccccc}")).toBe(true);
+    expect(out.endsWith("\\end{array}\n$$")).toBe(true);
+    expect(out).toContain("&&NH_2&&&&&");
+    expect(out).toContain("CH_3&-&CH_2&-&CH_2&-&CH_2&-CH_2-CH-C(=O)-OH");
+  });
+
+  it("convertit un array chimique sans décaler les offsets source", () => {
+    const src = String.raw`\[
+\begin{array}{ccccccccccccc}
+&&&&&&NH_2\\
+&&&&&&|\\
+CH_3&-&CH_2&-&CH_2&-&CH_2&-&CH_2&-&CH&-&C(=O)-OH
+\end{array}
+\]`;
+    const out = normalizeDisplayMathDelimitersPreservingOffsets(src);
+
+    expect(out).toHaveLength(src.length);
+    expect(out).toContain("$$\n\\begin{array}{ccccccccccccc}");
+    expect(out).toContain("\\end{array}\n$$");
+    expect(out).toContain("&&&&&&NH_2\\\\");
+    expect(out).toContain("CH_3&-&CH_2&-&CH_2&-&CH_2&-&CH_2&-&CH&-&C(=O)-OH");
+  });
+
+  it("ne modifie ni les blocs de code ni les sauts de ligne LaTeX \\[2pt]", () => {
+    const src = "```latex\n\\[\nx\\\\[2pt]\n\\]\n```\n\\[\nx=1\n\\]";
+    const out = normalizeDisplayMathDelimitersPreservingOffsets(src);
+
+    expect(out).toContain("```latex\n\\[\nx\\\\[2pt]\n\\]\n```");
+    expect(out.endsWith("$$\nx=1\n$$")).toBe(true);
+    expect(out).toHaveLength(src.length);
+  });
+
+  it("laisse intacts les délimiteurs non appariés", () => {
+    const src = "\\[\nx=1";
+    expect(normalizeDisplayMathDelimitersPreservingOffsets(src)).toBe(src);
+  });
+
+  it("ne touche pas aux délimiteurs dans un bloc $$ existant", () => {
+    const src = "$$\n\\[\nx=1\n\\]\n$$";
+    expect(normalizeDisplayMathDelimitersPreservingOffsets(src)).toBe(src);
   });
 });

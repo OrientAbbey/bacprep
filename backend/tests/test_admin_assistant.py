@@ -82,6 +82,8 @@ def test_build_admin_prompt_contient_meta_et_contenu():
     assert prompt.count("Peux-tu reformuler ?") == 1
     # Règle strictes de format présentes (héritées de l'assistant élève).
     assert "$...$" in prompt and "$$...$$" in prompt
+    assert "N'utilise JAMAIS \\( \\), \\[ \\]" in prompt
+    assert "SA PROPRE LIGNE" in prompt
 
 
 def test_build_admin_prompt_tronque_le_contenu():
@@ -108,6 +110,14 @@ def test_build_admin_prompt_epreuve_vide_et_sans_historique():
     prompt = build_admin_prompt({}, "Reformule", [])
     assert "(épreuve vide" in prompt
     assert prompt.strip().endswith("Admin : Reformule")
+
+
+def test_prompt_onglet_admin_impose_les_delimiteurs_latex_rendus():
+    from app.core.admin_tools import prompt_onglet
+
+    prompt = prompt_onglet("formules", "État", "Explique x", [])
+    assert "$...$" in prompt and "$$...$$" in prompt
+    assert "n'utilise pas \\( \\) ni \\[ \\]" in prompt
 
 
 # ---------- Mode démo (aucune clé) ----------
