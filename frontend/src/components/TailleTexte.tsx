@@ -1,39 +1,70 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { t } from "../i18n";
+import { ZOOM_MAX, ZOOM_MIN, memoriserZoom, palierVoisin, zoomInitial, zoomPince } from "../lib/zoomLecteur";
 
-const TAILLES = [0.9, 1, 1.15, 1.3];
-const CLE = "bacprep-taille-texte";
-
-/** Taille du texte du lecteur (mémorisée sur l'appareil). `zoom` est appliqué
- * au conteneur du contenu par l'appelant. */
-export function useTailleTexte(): [number, (delta: -1 | 1) => void] {
-  const [i, setI] = useState(() => {
-    try {
-      const v = Number(localStorage.getItem(CLE));
-      return v >= 0 && v < TAILLES.length && localStorage.getItem(CLE) !== null ? v : 1;
-    } catch {
-      return 1;
-    }
-  });
+/** Zoom de la feuille du lecteur (mémorisé sur l'appareil) : `changer` passe au palier voisin (A−/A+), `pincer`
+ * applique un zoom continu pendant un pincement, `memoriser` l'enregistre à la fin du geste. `zoom` est appliqué au
+ * conteneur de la feuille par l'appelant. */
+export function useTailleTexte() {
+  const [taille, setTaille] = useState(zoomInitial);
   const changer = (delta: -1 | 1) => {
-    const n = Math.min(TAILLES.length - 1, Math.max(0, i + delta));
-    setI(n);
-    try {
-      localStorage.setItem(CLE, String(n));
-    } catch {
-      /* stockage indisponible : réglage non mémorisé */
-    }
+    const n = palierVoisin(taille, delta);
+    setTaille(n);
+    memoriserZoom(n);
   };
-  return [TAILLES[i], changer];
+  return { taille, changer, pincer: setTaille, memoriser: () => memoriserZoom(taille) };
+}
+
+/** Pincement à deux doigts SUR `ref` : zoome la feuille et non la page. `touch-action: pan-x pan-y` (classes de
+ * l'élément) retire au navigateur le zoom de page à cet endroit ; les évènements `gesture*` couvrent Safari iOS.
+ * `actif` relance l'écoute quand l'élément apparaît (le lecteur n'est monté qu'une fois l'épreuve chargée). */
+export function usePincementZoom(ref: RefObject<HTMLElement | null>, actif: boolean, taille: number, pincer: (z: number) => void, fin: () => void) {
+  const courant = useRef({ taille, pincer, fin });
+  courant.current = { taille, pincer, fin };
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !actif) return;
+    let depart: { ecart: number; zoom: number } | null = null;
+    const ecart = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    const debut = (e: TouchEvent) => {
+      if (e.touches.length === 2) depart = { ecart: ecart(e), zoom: courant.current.taille };
+    };
+    const bouge = (e: TouchEvent) => {
+      if (!depart || e.touches.length !== 2) return;
+      e.preventDefault();
+      courant.current.pincer(zoomPince(depart.zoom, depart.ecart, ecart(e)));
+    };
+    const termine = (e: TouchEvent) => {
+      if (depart && e.touches.length < 2) {
+        depart = null;
+        courant.current.fin();
+      }
+    };
+    const bloquer = (e: Event) => e.preventDefault();
+    el.addEventListener("touchstart", debut, { passive: true });
+    el.addEventListener("touchmove", bouge, { passive: false });
+    el.addEventListener("touchend", termine);
+    el.addEventListener("touchcancel", termine);
+    el.addEventListener("gesturestart", bloquer);
+    el.addEventListener("gesturechange", bloquer);
+    return () => {
+      el.removeEventListener("touchstart", debut);
+      el.removeEventListener("touchmove", bouge);
+      el.removeEventListener("touchend", termine);
+      el.removeEventListener("touchcancel", termine);
+      el.removeEventListener("gesturestart", bloquer);
+      el.removeEventListener("gesturechange", bloquer);
+    };
+  }, [ref, actif]);
 }
 
 export function TailleTexte({ taille, onChange }: { taille: number; onChange: (d: -1 | 1) => void }) {
   return (
     <div role="group" aria-label={t("Taille du texte")} className="flex items-center rounded-full border border-ink-soft/20 text-sm">
-      <button type="button" onClick={() => onChange(-1)} disabled={taille <= TAILLES[0]} aria-label={t("Réduire le texte")} className="min-h-[44px] min-w-[44px] disabled:opacity-40">
+      <button type="button" onClick={() => onChange(-1)} disabled={taille <= ZOOM_MIN + 0.001} aria-label={t("Réduire le texte")} className="min-h-[44px] min-w-[44px] disabled:opacity-40">
         A−
       </button>
-      <button type="button" onClick={() => onChange(1)} disabled={taille >= TAILLES[TAILLES.length - 1]} aria-label={t("Agrandir le texte")} className="min-h-[44px] min-w-[44px] text-base disabled:opacity-40">
+      <button type="button" onClick={() => onChange(1)} disabled={taille >= ZOOM_MAX - 0.001} aria-label={t("Agrandir le texte")} className="min-h-[44px] min-w-[44px] text-base disabled:opacity-40">
         A+
       </button>
     </div>

@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
+import { t } from "../i18n";
 import { useModalFocus } from "../lib/useModalFocus";
 
 /**
@@ -11,8 +12,8 @@ import { useModalFocus } from "../lib/useModalFocus";
 export function ConfirmDialog({
   title,
   message,
-  confirmLabel = "Confirmer",
-  cancelLabel = "Annuler",
+  confirmLabel = t("Confirmer"),
+  cancelLabel = t("Annuler"),
   tone = "default",
   onConfirm,
   onClose,
@@ -83,7 +84,7 @@ export function ConfirmDialog({
               tone === "danger" ? "bg-correction" : "bg-ink"
             }`}
           >
-            {busy ? "En cours…" : confirmLabel}
+            {busy ? t("En cours…") : confirmLabel}
           </button>
         </div>
       </div>

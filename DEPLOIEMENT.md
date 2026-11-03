@@ -284,6 +284,9 @@ l'URL au plan gratuit : l'ancienne architecture « 2 services » cassait
 l'authentification à chaque rotation). `VITE_API_URL` reste **vide**
 (même origine, `BASE_URL` = "" dans `frontend/src/api/client.ts`).
 
+> Variable facultative `VITE_CONTACT_EMAIL` (compilation) : si elle est renseignée, la page « À propos » affiche un lien
+> « Nous écrire » ; sinon aucune adresse n'est affichée (rien n'est inventé).
+
 > En développement : frontend Vite (`npm run dev`, port 5173) + backend
 > (`uvicorn`, port 8000) sur des origines différentes — c'est là que le CORS
 > et `VITE_API_URL=http://localhost:8000` sont utiles ; en production, le

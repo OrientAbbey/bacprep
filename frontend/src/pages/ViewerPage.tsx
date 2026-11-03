@@ -14,7 +14,7 @@ import { BasculeAffichage } from "../components/BasculeAffichage";
 import { ExportPdf } from "../components/ExportPdf";
 import { TelechargerHorsLigne } from "../components/TelechargerHorsLigne";
 import { affichageInitial, contenuAffiche, immersionInitiale, memoriserImmersion, type AffichageSujets } from "../lib/sujets";
-import { TailleTexte, useTailleTexte } from "../components/TailleTexte";
+import { TailleTexte, usePincementZoom, useTailleTexte } from "../components/TailleTexte";
 import { SelectionBar } from "../components/SelectionBar";
 import { SignalementModal } from "../components/SignalementModal";
 import { ViewerSkeleton } from "../components/Skeleton";
@@ -74,7 +74,7 @@ function Paywall({ necessiteConnexion }: { necessiteConnexion: boolean }) {
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const [taille, changerTaille] = useTailleTexte();
+  const { taille, changer: changerTaille, pincer, memoriser: memoriserTaille } = useTailleTexte();
   // Épreuve à plusieurs sujets : un à la fois (« page ») ou tous à la suite (« tout »), préférence mémorisée.
   const [affichage, setAffichage] = useState<AffichageSujets>(affichageInitial);
   // Examen blanc en cours : corrigé et assistant masqués.
@@ -120,6 +120,7 @@ export function ViewerPage() {
   );
   const [signalementOuvert, setSignalementOuvert] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  usePincementZoom(containerRef, !!epreuve, taille, pincer, memoriserTaille);
   const mobile = useIsMobile();
 
   // Sujet en cours d'affichage : procure les bonnes zones sujet/corrigé.
@@ -682,7 +683,7 @@ export function ViewerPage() {
             onKeyUp={onKeyUp}
             onCopy={onCopy}
             onContextMenu={(e) => e.preventDefault()}
-            className="absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper p-2 sm:p-6"
+            className="touch-pan-x touch-pan-y absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper p-2 sm:p-6"
           >
             <Watermark label={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleString(locale())}`} />
             {/* Flottant : reste visible pendant tout le défilement de l'épreuve (en bas à gauche : l'assistant occupe la droite). */}

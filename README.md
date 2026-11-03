@@ -142,7 +142,16 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
 - **Lecteur d'épreuves** : le texte est présenté sur une **feuille de largeur A4** (210 mm) centrée sur un « bureau »
   (pleine largeur sur petit écran) ; A−/A+ zoome la feuille entière. Le bouton **Immersion** (désactivé par défaut,
   mémorisé) efface l'en-tête, le pied de page et les marges du site et replie les outils derrière « Outils » : la zone
-  de lecture gagne ~250 px de hauteur ; un bouton « Retour » remplace la navigation du site.
+  de lecture gagne ~250 px de hauteur ; un bouton « Retour » remplace la navigation du site. Le **pincement à deux
+  doigts** sur la feuille zoome l'épreuve (40 % à 200 %, mémorisé) et non la page du site ; les tableaux, blocs de code
+  et formules trop larges défilent **dans** la feuille au lieu de la déborder.
+- **Alarme du chronomètre et de l'examen blanc** : à zéro, des bips se répètent en continu jusqu'à « Arrêter l'alarme »
+  (bandeau visible partout, même en immersion) ou, au plus, une minute ; couper le son l'arrête aussi.
+- **Invitation** : le bouton de partage de l'en-tête (et le lien du pied de page / du menu mobile) propose WhatsApp,
+  Facebook, Telegram, e-mail et la copie du lien, plus la feuille de partage du système quand le navigateur l'offre.
+- **Aide et À propos** (`/aide`, `/a-propos`, liens d'en-tête et de pied de page) : l'aide d'un élève décrit chaque
+  fonction ; un administrateur voit à la place l'aide de la console (en français), avec une bascule vers l'aide élève.
+  La page À propos n'affiche une adresse de contact que si `VITE_CONTACT_EMAIL` est renseignée à la compilation.
 - **Forfaits** : la page `/abonnement` est publique (tarifs consultables en
   visiteur, souscription réservée aux comptes avec retour automatique) ;
   chaque forfait est une carte (libellé, prix, description).

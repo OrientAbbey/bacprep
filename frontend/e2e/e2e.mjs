@@ -46,12 +46,13 @@ async function connecterEleve(ctx, email = `eleve-${RUN}@test.cm`) {
 }
 // Épreuve publiée et gratuite à 3 sujets avec corrigés (60 lignes chacun) : assez longue pour faire défiler la page,
 // assez riche pour avoir tous les outils du lecteur. Indépendante des données des autres tests. Renvoie son id.
-async function creerEpreuveRiche(matiere, annee) {
+async function creerEpreuveRiche(matiere, annee, corps = null, duree = "3h") {
   const adm = await nouveauContexte();
   await connecterAdmin(adm);
   const lignes = (n, mot) => Array.from({ length: n }, (_, i) => `${mot} ${i + 1}.`).join("\n\n");
   const sujets = [1, 2, 3].map((index) => ({ index, contenu_markdown: `# Sujet ${index}\n\n${lignes(60, "Question")}`, corrige_markdown: `Corrigé ${index}\n\n${lignes(60, "Réponse")}` }));
-  const cree = await (await adm.request.post("/api/admin/epreuves", { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere, annee, gratuit: true, filieres: ["C", "D"], duree: "3h", sujets } })).json();
+  const contenu = corps === null ? { sujets } : { contenu_markdown: corps }; // `corps` : contenu libre (tests de mise en page)
+  const cree = await (await adm.request.post("/api/admin/epreuves", { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere, annee, gratuit: true, filieres: ["C", "D"], duree, ...contenu } })).json();
   await adm.request.post(`/api/admin/epreuves/${cree.id}/publish`);
   await adm.close();
   return cree.id;
@@ -511,7 +512,7 @@ console.log("\nTraduction FR/EN");
     const noms = [...new Set(liste.map((e) => e.matiere))].map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     matieres = new RegExp(noms.join("|"), "gi");
     const residus = [];
-    for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", `/epreuve/${gratuit}`]) {
+    for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", "/aide", "/a-propos", `/epreuve/${gratuit}`]) {
       await page.goto(url);
       await balayer(page, url, residus);
     }
@@ -591,6 +592,11 @@ console.log("\nTraduction FR/EN");
     await pr.getByText(T("La grille tarifaire n'a pas pu être chargée.")).waitFor({ timeout: 15000 });
     await balayer(pr, "abonnement en erreur", residus);
     for (const c of [visiteur, neuf, reseau]) await c.close();
+    await page.goto("/");
+    await page.getByRole("button", { name: T("Inviter des amis") }).first().click();
+    await page.getByRole("dialog", { name: T("Inviter des amis") }).waitFor({ timeout: 5000 });
+    await balayer(page, "invitation", residus);
+    await page.keyboard.press("Escape");
     ok(residus.length === 0, "textes français : " + residus.slice(0, 6).join(" | "));
   });
 
@@ -1147,7 +1153,378 @@ console.log("\nLecteur : feuille de largeur A4 et immersion");
     await feuille.waitFor({ timeout: 15000 });
     ok(await page.locator("header[data-chrome]").isVisible(), "la sortie d'immersion n'est pas mémorisée");
   });
+
+  // ----- Contenu large : jamais au-delà du bord droit de la feuille ; zoom ; pincement -----
+  const LARGE = [
+    "# Sujet large", "",
+    "Mot très long : " + "Anticonstitutionnellement".repeat(6) + " fin.", "",
+    "URL : https://exemple.org/" + "segment-de-chemin-tres-long/".repeat(8), "",
+    "| " + Array.from({ length: 10 }, (_, i) => `Colonne ${i + 1}`).join(" | ") + " |", "|" + "---|".repeat(10), "| " + Array.from({ length: 10 }, (_, i) => i + 1).join(" | ") + " |", "",
+    "$$ f(x) = " + Array.from({ length: 14 }, (_, i) => `a_{${i}} x^{${i}}`).join(" + ") + " $$", "",
+    "```", "une_ligne_de_code_tres_longue_qui_depasse_largement_la_largeur_de_la_feuille_a4_" + "x".repeat(60), "```", "",
+    ...Array.from({ length: 30 }, (_, i) => `Question ${i + 1}.`).flatMap((l) => [l, ""]),
+  ].join("\n");
+  const large = await creerEpreuveRiche(`Large ${RUN}`, "2038", LARGE);
+  const debordements = (pg) => pg.evaluate(() => {
+    const f = document.querySelector("div[style*='zoom']"), fr = f.getBoundingClientRect(), panneau = document.querySelector("#panel-epreuve");
+    const fautifs = [];
+    for (const e of f.querySelectorAll("*")) {
+      const r = e.getBoundingClientRect();
+      if (r.width === 0 || r.right <= fr.right + 1 || e.closest(".katex-mathml")) continue; // .katex-mathml : copie accessible rognée, invisible
+      let protege = false;
+      for (let a = e.parentElement; a && a !== f; a = a.parentElement) if (/(auto|scroll)/.test(getComputedStyle(a).overflowX)) protege = true;
+      if (!protege) fautifs.push(`${e.tagName.toLowerCase()} → ${Math.round(r.right)} > ${Math.round(fr.right)}`);
+    }
+    const d = document.documentElement;
+    return { fautifs: fautifs.slice(0, 4), panneau: panneau.scrollWidth - panneau.clientWidth, feuille: f.scrollWidth - f.clientWidth, page: d.scrollWidth - d.clientWidth };
+  });
+  for (const [vue, options] of [["bureau", { viewport: { width: 1366, height: 900 } }], ["mobile", { viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true }]]) {
+    for (const zoom of ["1", "2"]) {
+      await test(`${vue} · zoom ${zoom} : tableau, code, formule, mot et adresse longs restent dans la feuille (rien ne déborde à droite)`, async () => {
+        const c = await nouveauContexte(options);
+        await c.addInitScript((z) => localStorage.setItem("bacprep-zoom-lecteur", z), zoom);
+        await connecterEleve(c, `large-${vue}-${zoom}-${RUN}@test.cm`);
+        const pg = await c.newPage();
+        await pg.goto(`/epreuve/${large}`);
+        await pg.locator("div[style*='zoom']").first().waitFor({ timeout: 15000 });
+        await pg.waitForTimeout(1200); // formules KaTeX
+        const d = await debordements(pg);
+        ok(d.fautifs.length === 0, "éléments hors de la feuille : " + d.fautifs.join(" ; "));
+        ok(d.panneau <= 1 && d.feuille <= 1 && d.page <= 0, `défilement horizontal : panneau ${d.panneau}, feuille ${d.feuille}, page ${d.page}`);
+        if (vue === "bureau" && zoom === "1") await pg.screenshot({ path: `${SHOTS}/lecteur-contenu-large.png` });
+        await c.close();
+      });
+    }
+  }
+
+  await test("A− descend jusqu'à 40 % (puis se bloque), le niveau est mémorisé", async () => {
+    const c = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+    await connecterEleve(c, `reduit-${RUN}@test.cm`);
+    const pg = await c.newPage();
+    await pg.goto(`/epreuve/${gratuit}`);
+    const f = pg.locator("div[style*='zoom']").first();
+    await f.waitFor({ timeout: 15000 });
+    const zoom = () => f.evaluate((e) => parseFloat(getComputedStyle(e).zoom));
+    for (let i = 0; i < 12; i++) if (await pg.getByRole("button", { name: "Réduire le texte" }).isEnabled()) await pg.getByRole("button", { name: "Réduire le texte" }).click();
+    ok(Math.abs((await zoom()) - 0.4) < 0.01, `zoom minimal : ${await zoom()}`);
+    ok(await pg.getByRole("button", { name: "Réduire le texte" }).isDisabled(), "A− devrait être bloqué à 40 %");
+    const largeur = (await f.boundingBox()).width;
+    ok(Math.abs(largeur - 0.4 * A4) <= 3, `feuille à 40 % : ${largeur} px`);
+    await pg.reload();
+    await f.waitFor({ timeout: 15000 });
+    ok(Math.abs((await zoom()) - 0.4) < 0.01, "le niveau n'est pas mémorisé");
+    await c.close();
+  });
+
+  await test("mobile : le pincement sur la feuille zoome l'épreuve (mémorisé), pas la page du site", async () => {
+    const c = await nouveauContexte({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true });
+    await connecterEleve(c, `pince-${RUN}@test.cm`);
+    const pg = await c.newPage();
+    await pg.goto(`/epreuve/${gratuit}`);
+    const f = pg.locator("div[style*='zoom']").first();
+    await f.waitFor({ timeout: 15000 });
+    const cdp = await c.newCDPSession(pg);
+    const doigts = (cx, cy, ecart) => [{ x: cx - ecart / 2, y: cy, id: 0 }, { x: cx + ecart / 2, y: cy, id: 1 }];
+    const pincer = async (de, vers) => {
+      const b = await f.boundingBox(), zone = await pg.locator("#panel-epreuve").boundingBox();
+      const cx = Math.round(b.x + b.width / 2), cy = Math.round(zone.y + zone.height / 2); // les doigts sont sur la feuille, pas sur les outils
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: doigts(cx, cy, de) });
+      for (let i = 1; i <= 8; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: doigts(cx, cy, de + ((vers - de) * i) / 8) });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await pg.waitForTimeout(300);
+    };
+    const zoom = () => f.evaluate((e) => parseFloat(getComputedStyle(e).zoom));
+    const page = () => pg.evaluate(() => ({ echelle: visualViewport.scale, largeur: Math.round(visualViewport.width), decalage: Math.round(visualViewport.pageLeft) }));
+    const avant = await page();
+    ok((await zoom()) === 1, "zoom de départ attendu : 100 %");
+    await pincer(100, 150); // écartement ×1,5 : 100 % → 150 %
+    ok(Math.abs((await zoom()) - 1.5) < 0.12, `pincement ×1,5 : zoom ${await zoom()}`);
+    ok(JSON.stringify(await page()) === JSON.stringify(avant), `la page a été zoomée : ${JSON.stringify(await page())} au lieu de ${JSON.stringify(avant)}`);
+    await pincer(200, 100); // ×0,5 : 150 % → 75 %
+    ok(Math.abs((await zoom()) - 0.75) < 0.1, `pincement ×0,5 : zoom ${await zoom()}`);
+    ok(JSON.stringify(await page()) === JSON.stringify(avant), "la page a été zoomée au second pincement");
+    const memorise = Number(await pg.evaluate(() => localStorage.getItem("bacprep-zoom-lecteur")));
+    ok(Math.abs(memorise - (await zoom())) < 0.01, `zoom non mémorisé : ${memorise}`);
+    await pg.reload();
+    await f.waitFor({ timeout: 15000 });
+    ok(Math.abs((await zoom()) - memorise) < 0.01, "le zoom pincé n'est pas restauré");
+    await c.close();
+  });
   await ctx.close();
+}
+
+console.log("\nAlarme sonore du chronomètre et de l'examen blanc");
+{
+  const unMn = await creerEpreuveRiche(`Alarme ${RUN}`, "2039", null, "1min"); // durée officielle : 1 minute
+  // Espion : compte les bips réellement envoyés au moteur audio (chaque bip = un oscillateur).
+  const espion = () => {
+    window.__bips = 0;
+    const AC = window.AudioContext;
+    window.AudioContext = class extends AC {
+      createOscillator() {
+        window.__bips++;
+        return super.createOscillator();
+      }
+    };
+  };
+  const nouvelleSession = async (nom, { init = [], viewport = { width: 1366, height: 900 } } = {}) => {
+    const c = await nouveauContexte({ viewport });
+    await c.addInitScript(espion);
+    for (const f of init) await c.addInitScript(f);
+    await connecterEleve(c, `alarme-${nom}-${RUN}@test.cm`);
+    return { c, pg: await c.newPage() };
+  };
+  const bips = (pg) => pg.evaluate(() => window.__bips);
+  const lancerChrono = async (pg, minutes) => {
+    await pg.getByRole("button", { name: "Chrono" }).click();
+    await pg.locator("#chrono-minutes").fill(String(minutes));
+    await pg.getByRole("button", { name: "Lancer le compte à rebours" }).click();
+  };
+  const arret = (pg) => pg.getByRole("button", { name: "Arrêter l'alarme" });
+  const idEpreuve = unMn;
+
+  await test("chrono : à zéro l'alarme sonne EN CONTINU, « Arrêter l'alarme » la coupe aussitôt", async () => {
+    const { c, pg } = await nouvelleSession("continu");
+    await pg.goto(`/epreuve/${idEpreuve}`);
+    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await lancerChrono(pg, 0.05); // 3 secondes
+    await arret(pg).waitFor({ timeout: 10000 });
+    await pg.screenshot({ path: `${SHOTS}/alarme-bandeau.png` });
+    await pg.waitForTimeout(2600);
+    const n = await bips(pg);
+    ok(n >= 4, `l'alarme devrait répéter ses bips (un toutes les 0,8 s) : ${n} bip(s) en ~2,6 s`);
+    await arret(pg).click();
+    await arret(pg).waitFor({ state: "hidden", timeout: 3000 });
+    const apres = await bips(pg);
+    await pg.waitForTimeout(1800);
+    ok((await bips(pg)) === apres, "des bips continuent après l'arrêt manuel");
+    await c.close();
+  });
+
+  await test("chrono : sans arrêt manuel, l'alarme s'éteint seule au bout d'une minute", async () => {
+    const { c, pg } = await nouvelleSession("auto");
+    await pg.clock.install();
+    await pg.goto(`/epreuve/${idEpreuve}`);
+    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await lancerChrono(pg, 0.05);
+    await pg.clock.runFor(4000); // le décompte (3 s) arrive à zéro
+    await arret(pg).waitFor({ timeout: 5000 });
+    await pg.clock.runFor(30_000);
+    ok(await arret(pg).isVisible(), "l'alarme s'est arrêtée avant une minute");
+    await pg.clock.runFor(31_000); // 61 s après le début de l'alarme
+    await arret(pg).waitFor({ state: "hidden", timeout: 5000 });
+    const n = await bips(pg);
+    ok(n >= 70, `un bip toutes les 0,8 s pendant une minute : ${n}`);
+    await pg.clock.runFor(10_000);
+    ok((await bips(pg)) === n, "des bips continuent après l'arrêt automatique");
+    await c.close();
+  });
+
+  await test("immersion, outils repliés : le bandeau reste visible et arrête l'alarme", async () => {
+    const { c, pg } = await nouvelleSession("immersion");
+    await pg.goto(`/epreuve/${idEpreuve}`);
+    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await lancerChrono(pg, 0.05);
+    await pg.getByRole("button", { name: "Immersion", exact: true }).click(); // site masqué, outils repliés (chrono caché)
+    ok(!(await pg.locator("header[data-chrome]").isVisible()), "l'immersion n'est pas active");
+    await arret(pg).waitFor({ timeout: 10000 });
+    await arret(pg).click();
+    await arret(pg).waitFor({ state: "hidden", timeout: 3000 });
+    await c.close();
+  });
+
+  await test("couper le son depuis le chronomètre pendant que l'alarme sonne l'arrête aussi", async () => {
+    const { c, pg } = await nouvelleSession("coupure");
+    await pg.goto(`/epreuve/${idEpreuve}`);
+    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await lancerChrono(pg, 0.05);
+    await arret(pg).waitFor({ timeout: 10000 });
+    await pg.getByRole("button", { name: "Couper le son de l'alarme" }).click(); // dans le panneau du chronomètre, resté ouvert
+    await arret(pg).waitFor({ state: "hidden", timeout: 3000 });
+    const n = await bips(pg);
+    await pg.waitForTimeout(1800);
+    ok((await bips(pg)) === n, "l'alarme continue après avoir coupé le son");
+    await c.close();
+  });
+
+  await test("son coupé : aucune alarme, aucun bandeau", async () => {
+    const { c, pg } = await nouvelleSession("muet", { init: [() => localStorage.setItem("bacprep-son", "off")] });
+    await pg.goto(`/epreuve/${idEpreuve}`);
+    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await lancerChrono(pg, 0.05);
+    await pg.getByText("Temps écoulé !").waitFor({ timeout: 10000 }); // le signal visuel reste
+    await pg.waitForTimeout(1500);
+    ok((await bips(pg)) === 0 && (await arret(pg).count()) === 0, "alarme ou bandeau malgré le son coupé");
+    await c.close();
+  });
+
+  await test("examen blanc : à la fin du temps l'alarme sonne jusqu'à l'arrêt manuel", async () => {
+    const { c, pg } = await nouvelleSession("examen");
+    await pg.clock.install();
+    await pg.goto(`/epreuve/${idEpreuve}`);
+    await pg.getByRole("button", { name: "Examen blanc" }).click();
+    await pg.getByRole("timer", { name: "Examen blanc en cours" }).waitFor({ timeout: 10000 });
+    await pg.clock.runFor(61_000); // durée officielle : 1 minute
+    await arret(pg).waitFor({ timeout: 5000 });
+    ok((await bips(pg)) >= 1, "aucun bip à la fin de l'examen blanc");
+    await arret(pg).click();
+    await arret(pg).waitFor({ state: "hidden", timeout: 3000 });
+    const n = await bips(pg);
+    await pg.clock.runFor(5000);
+    ok((await bips(pg)) === n, "l'alarme continue après l'arrêt manuel");
+    await c.close();
+  });
+}
+
+console.log("\nInvitation, À propos et Aide");
+{
+  const ORIGINE = new URL(process.env.E2E_URL ?? "http://localhost:8765").origin;
+  const SITE = `${ORIGINE}/`;
+  const session = async (nom, { init = [], viewport = { width: 1366, height: 900 }, droits = false } = {}) => {
+    const c = await nouveauContexte({ viewport });
+    for (const f of init) await c.addInitScript(f);
+    if (droits) await c.grantPermissions(["clipboard-read", "clipboard-write"], { origin: ORIGINE });
+    await connecterEleve(c, `invit-${nom}-${RUN}@test.cm`);
+    return { c, pg: await c.newPage() };
+  };
+  const dialogue = (pg) => pg.getByRole("dialog", { name: "Inviter des amis" });
+  const ouvrirEnTete = async (pg) => {
+    await pg.goto("/");
+    await pg.locator("header").getByRole("button", { name: "Inviter des amis" }).click();
+    await dialogue(pg).waitFor({ timeout: 5000 });
+  };
+
+  await test("invitation : liens WhatsApp, Facebook, Telegram et e-mail portent le message et l'adresse du site, bien encodés", async () => {
+    const { c, pg } = await session("liens");
+    await ouvrirEnTete(pg);
+    const d = dialogue(pg);
+    const href = (nom) => d.getByRole("link", { name: nom }).getAttribute("href");
+    const wa = new URL(await href("WhatsApp"));
+    ok(wa.origin === "https://wa.me", `WhatsApp : ${wa}`);
+    ok(wa.searchParams.get("text").includes(SITE) && wa.searchParams.get("text").includes("Copies & Corrigés"), `message WhatsApp : ${wa.searchParams.get("text")}`);
+    ok(new URL(await href("Facebook")).searchParams.get("u") === SITE, "Facebook : adresse partagée");
+    const tg = new URL(await href("Telegram"));
+    ok(tg.origin === "https://t.me" && tg.searchParams.get("url") === SITE && tg.searchParams.get("text").includes("Rejoins-moi"), "Telegram");
+    ok((await href("E-mail")).startsWith("mailto:?subject="), "e-mail");
+    for (const nom of ["WhatsApp", "Facebook", "Telegram"]) {
+      ok((await d.getByRole("link", { name: nom }).getAttribute("target")) === "_blank" && /noopener/.test(await d.getByRole("link", { name: nom }).getAttribute("rel")), `${nom} : ouverture sans fuite de contexte`);
+    }
+    await pg.screenshot({ path: `${SHOTS}/invitation.png` });
+    await pg.keyboard.press("Escape");
+    await d.waitFor({ state: "hidden", timeout: 3000 });
+    await c.close();
+  });
+
+  await test("invitation : « Copier le lien » met l'adresse du site dans le presse-papiers et le confirme", async () => {
+    const { c, pg } = await session("copie", { droits: true });
+    await ouvrirEnTete(pg);
+    await dialogue(pg).getByRole("button", { name: "Copier le lien" }).click();
+    await pg.getByText("Lien copié.").waitFor({ timeout: 5000 });
+    ok((await pg.evaluate(() => navigator.clipboard.readText())) === SITE, "le presse-papiers ne contient pas l'adresse du site");
+    await c.close();
+  });
+
+  await test("invitation : le partage natif (téléphone) s'ouvre avec titre, message et adresse ; l'annulation est silencieuse", async () => {
+    const { c, pg } = await session("natif", { init: [() => { navigator.share = async (d) => { window.__partage = d; if (window.__annule) throw new DOMException("annulé", "AbortError"); }; }] });
+    await ouvrirEnTete(pg);
+    await dialogue(pg).getByRole("button", { name: "Autres applications…" }).click();
+    await dialogue(pg).waitFor({ state: "hidden", timeout: 3000 }); // partage réussi : le dialogue se ferme
+    const donnees = await pg.evaluate(() => window.__partage);
+    ok(donnees.url === SITE && donnees.title === "Copies & Corrigés" && donnees.text.includes("Rejoins-moi"), `données de partage : ${JSON.stringify(donnees)}`);
+    await pg.evaluate(() => { window.__annule = true; });
+    await pg.locator("header").getByRole("button", { name: "Inviter des amis" }).click();
+    await dialogue(pg).getByRole("button", { name: "Autres applications…" }).click();
+    await pg.waitForTimeout(600);
+    ok(await dialogue(pg).isVisible(), "l'annulation du partage ne doit pas fermer le dialogue");
+    ok((await pg.getByText("Le partage n'a pas pu s'ouvrir").count()) === 0, "message d'erreur affiché après une simple annulation");
+    await c.close();
+  });
+
+  await test("invitation : sans partage natif (ordinateur), le bouton « Autres applications… » est absent", async () => {
+    const { c, pg } = await session("sans-natif", { init: [() => { Object.defineProperty(navigator, "share", { value: undefined, configurable: true }); }] });
+    await ouvrirEnTete(pg);
+    ok((await dialogue(pg).getByRole("button", { name: "Autres applications…" }).count()) === 0, "bouton natif présent sans navigator.share");
+    await c.close();
+  });
+
+  await test("invitation sur mobile : accessible depuis le menu, le dialogue tient dans l'écran", async () => {
+    const { c, pg } = await session("mobile", { viewport: { width: 390, height: 800 } });
+    await pg.goto("/");
+    ok(!(await pg.locator("header").getByRole("button", { name: "Inviter des amis" }).isVisible()), "l'icône d'en-tête ne doit pas encombrer le mobile");
+    await pg.getByRole("button", { name: "Ouvrir le menu" }).click();
+    await pg.getByRole("button", { name: "Inviter des amis" }).filter({ visible: true }).first().click();
+    await dialogue(pg).waitFor({ timeout: 5000 });
+    const b = await dialogue(pg).locator("> div").boundingBox();
+    ok(b.x >= 0 && b.x + b.width <= 390 && b.y >= 0 && b.y + b.height <= 800, `dialogue hors écran : ${JSON.stringify(b)}`);
+    await c.close();
+  });
+
+  await test("pied de page et en-tête : liens « Aide » et « À propos », « Inviter des amis »", async () => {
+    const { c, pg } = await session("liens-pied");
+    await pg.goto("/");
+    await pg.locator("header").getByRole("link", { name: "Aide" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 10000 });
+    await pg.locator("footer").getByRole("link", { name: "À propos" }).click();
+    await pg.getByRole("heading", { level: 1, name: "À propos de Copies & Corrigés" }).waitFor({ timeout: 10000 });
+    await pg.locator("footer").getByRole("button", { name: "Inviter des amis" }).click();
+    await dialogue(pg).waitFor({ timeout: 5000 });
+    await c.close();
+  });
+
+  await test("À propos : présente l'application, renvoie vers l'aide, n'invente aucune adresse de contact", async () => {
+    const { c, pg } = await session("apropos");
+    await pg.goto("/a-propos");
+    await pg.getByRole("heading", { name: "Nos principes" }).waitFor({ timeout: 10000 });
+    ok((await pg.getByRole("link", { name: "Nous écrire" }).count()) === 0, "adresse de contact affichée sans VITE_CONTACT_EMAIL");
+    await pg.getByRole("link", { name: "Ouvrir l'aide" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 10000 });
+    await c.close();
+  });
+
+  await test("aide d'un élève : onze rubriques, sommaire cliquable, rien de l'administration, pas de bascule", async () => {
+    const { c, pg } = await session("aide-eleve");
+    await pg.goto("/aide");
+    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 10000 });
+    ok((await pg.locator("main section h2").count()) === 11, `rubriques : ${await pg.locator("main section h2").count()}`);
+    await pg.getByRole("navigation", { name: "Sommaire" }).getByRole("link", { name: "Le Tuteur IA" }).click();
+    await pg.waitForFunction(() => location.hash === "#tuteur");
+    const r = await pg.locator("#tuteur").boundingBox();
+    ok(r.y >= 0 && r.y < 400, `la rubrique n'est pas amenée à l'écran : y = ${r.y}`);
+    ok((await pg.getByText("console d'administration").count()) === 0 && (await pg.getByRole("button", { name: "Aide administrateur" }).count()) === 0, "contenu d'administration visible par un élève");
+    await pg.goto("/aide?vue=admin"); // tentative de forcer la vue
+    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 10000 });
+    ok((await pg.getByRole("heading", { name: "Import massif" }).count()) === 0, "un élève a obtenu l'aide administrateur");
+    await pg.screenshot({ path: `${SHOTS}/aide-eleve.png` });
+    await c.close();
+  });
+
+  await test("aide d'un administrateur : aide de la console par défaut, bascule vers l'aide élève, et retour", async () => {
+    const c = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+    await connecterAdmin(c);
+    const pg = await c.newPage();
+    await pg.goto("/aide");
+    await pg.getByRole("heading", { level: 1, name: "Aide de la console d'administration" }).waitFor({ timeout: 10000 });
+    for (const rubrique of ["Import massif", "L'assistant d'édition", "Sauvegardes", "Journal d'audit"]) await pg.getByRole("heading", { level: 2, name: rubrique }).waitFor({ timeout: 5000 });
+    ok((await pg.getByRole("button", { name: "Aide administrateur" }).getAttribute("aria-pressed")) === "true", "la vue administrateur devrait être active");
+    await pg.screenshot({ path: `${SHOTS}/aide-admin.png` });
+    await pg.getByRole("button", { name: "Aide utilisateur" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 5000 });
+    await pg.getByRole("heading", { level: 2, name: "Le Tuteur IA" }).waitFor({ timeout: 5000 });
+    ok(pg.url().includes("vue=utilisateur") && (await pg.getByRole("heading", { name: "Import massif" }).count()) === 0, "la vue utilisateur n'est pas isolée");
+    await pg.getByRole("button", { name: "Aide administrateur" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Aide de la console d'administration" }).waitFor({ timeout: 5000 });
+    await c.close();
+  });
+
+  await test("aide : le sommaire et les rubriques restent lisibles sur mobile (sans débordement)", async () => {
+    const { c, pg } = await session("aide-mobile", { viewport: { width: 390, height: 800 } });
+    for (const url of ["/aide", "/a-propos"]) {
+      await pg.goto(url);
+      await pg.getByRole("heading", { level: 1 }).waitFor({ timeout: 10000 });
+      ok(await pg.evaluate(() => { const d = document.documentElement; return innerWidth === d.clientWidth && d.scrollWidth <= d.clientWidth; }), `${url} déborde sur mobile`);
+    }
+    await c.close();
+  });
 }
 
 console.log("\nMenu des sections du back-office repliable");
@@ -1562,7 +1939,7 @@ console.log("\nBoutons flottants et débordement horizontal (bureau et mobile)")
 
     await test(`${vue} › aucune page ne déborde horizontalement (sinon la fenêtre s'élargit et les boutons fixes sortent de l'écran)`, async () => {
       const fautives = [];
-      for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", `/epreuve/${cree.id}`]) {
+      for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/aide", "/a-propos", `/epreuve/${cree.id}`]) {
         await page.goto(url);
         await attendreChargement(page);
         if (await deborde(page)) fautives.push(url);

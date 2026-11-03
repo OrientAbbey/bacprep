@@ -1,13 +1,14 @@
 import { Volume2, VolumeX } from "lucide-react";
 import { useState } from "react";
 import { t } from "../i18n";
-import { reglerSon, sonActif } from "../lib/son";
+import { arreterAlarme, reglerSon, sonActif } from "../lib/son";
 
 /** Interrupteur de l'alarme sonore (préférence mémorisée sur l'appareil : en classe, on peut la couper). */
 export function BoutonSon() {
   const [actif, setActif] = useState(sonActif);
   const basculer = () => {
     reglerSon(!actif);
+    if (actif) arreterAlarme(); // couper le son éteint aussi l'alarme qui sonne
     setActif(!actif);
   };
   return (

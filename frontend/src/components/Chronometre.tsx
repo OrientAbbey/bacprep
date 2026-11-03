@@ -1,7 +1,7 @@
 import { Pause, Play, RotateCcw, Timer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dureeEnMinutes, formaterDurée } from "../lib/chronometre";
-import { jouerAlarme, preparerSon } from "../lib/son";
+import { arreterAlarme, demarrerAlarme, preparerSon } from "../lib/son";
 import { BoutonSon } from "./BoutonSon";
 import { useToast } from "./Toast";
 import { t } from "../i18n";
@@ -40,6 +40,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
   }, []);
 
   useEffect(() => stopCount, [stopCount]);
+  useEffect(() => arreterAlarme, []); // quitter le lecteur éteint l'alarme
 
   function demarrer() {
     const m = Number(minutes);
@@ -48,6 +49,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
       return;
     }
     preparerSon(); // geste utilisateur : autorise l'alarme sonore quand le décompte arrivera à zéro
+    arreterAlarme();
     stopCount();
     // Démarrage à NEUF (restant === null) : partir de la durée saisie.
     // REPRISE après pause : garder le `restant` courant — la version
@@ -74,13 +76,14 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
 
   useEffect(() => {
     if (expire) {
-      jouerAlarme();
+      demarrerAlarme();
       const t = window.setTimeout(() => setExpire(false), 6000);
       return () => window.clearTimeout(t);
     }
   }, [expire]);
 
   function relancer() {
+    arreterAlarme();
     stopCount();
     setTourne(false);
     setRestant(null);
@@ -90,6 +93,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
 
   function fermer() {
     setPanneauOuvert(false);
+    arreterAlarme();
     stopCount();
     setTourne(false);
   }
@@ -173,7 +177,7 @@ export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) 
                 </button>
               </div>
               <p className="mt-2 font-mono-tag text-[10px] text-slate">
-                {t("À zéro, le chrono passe au rouge et une notification apparaît.")}
+                {t("À zéro, le chrono passe au rouge et, si le son est activé, l'alarme sonne jusqu'à l'arrêt (une minute au plus).")}
               </p>
             </>
           ) : (

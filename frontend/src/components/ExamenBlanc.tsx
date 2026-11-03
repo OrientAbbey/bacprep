@@ -2,7 +2,7 @@ import { ClipboardCheck, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { dureeEnMinutes, formaterDurée } from "../lib/chronometre";
-import { jouerAlarme, preparerSon } from "../lib/son";
+import { arreterAlarme, demarrerAlarme, preparerSon } from "../lib/son";
 import { BoutonSon } from "./BoutonSon";
 import { useToast } from "./Toast";
 import { t } from "../i18n";
@@ -33,6 +33,8 @@ export function ExamenBlanc({
     onChange(phase === "composition");
   }, [phase, onChange]);
 
+  useEffect(() => arreterAlarme, []); // quitter le lecteur éteint l'alarme
+
   useEffect(() => {
     if (phase !== "composition") return;
     const t = window.setInterval(() => setRestant((r) => r - 1), 1000);
@@ -41,7 +43,7 @@ export function ExamenBlanc({
 
   useEffect(() => {
     if (phase === "composition" && restant <= 0) {
-      jouerAlarme();
+      demarrerAlarme();
       showToast(t("Temps écoulé ! Entre ta note pour enregistrer l'essai."), "success");
       setPhase("note");
     }
@@ -56,7 +58,8 @@ export function ExamenBlanc({
     preparerSon(); // geste utilisateur : autorise l'alarme sonore de fin de temps
     setPhase("composition");
   };
-  const enregistrer = (valeur: number | null) =>
+  const enregistrer = (valeur: number | null) => {
+    arreterAlarme();
     void api
       .post("/api/me/essais", {
         epreuve_id: epreuveId,
@@ -69,6 +72,7 @@ export function ExamenBlanc({
         setNote("");
       })
       .catch(() => showToast(t("Enregistrement impossible — réessaie."), "error"));
+  };
 
   if (phase === "composition")
     return (
@@ -107,7 +111,14 @@ export function ExamenBlanc({
         <button type="submit" className="min-h-[44px] rounded-full bg-ink px-4 text-paper">
           {t("Enregistrer")}
         </button>
-        <button type="button" onClick={() => setPhase("repos")} className="min-h-[44px] px-2 text-ink-soft underline">
+        <button
+          type="button"
+          onClick={() => {
+            arreterAlarme();
+            setPhase("repos");
+          }}
+          className="min-h-[44px] px-2 text-ink-soft underline"
+        >
           {t("Ignorer")}
         </button>
       </form>

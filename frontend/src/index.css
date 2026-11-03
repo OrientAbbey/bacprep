@@ -325,6 +325,38 @@ body {
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
+/* Le contenu ne doit jamais dépasser la largeur de la feuille (mêmes protections que le chat, voir plus bas) : mots
+   et adresses longs se coupent ; tableaux, blocs de code et formules larges défilent DANS la feuille. */
+.prose-exam {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.prose-exam table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.prose-exam th,
+.prose-exam td {
+  overflow-wrap: normal; /* coupure par mots dans les cellules : le tableau défile plutôt que de casser les lettres */
+}
+.prose-exam pre {
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--color-highlight-soft);
+  border-radius: 6px;
+  padding: 0.6em 0.75em;
+}
+.prose-exam pre code {
+  background: transparent;
+  padding: 0;
+}
+.prose-exam .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden; /* jamais `visible` : voir la note sur .prose-chat .katex-display */
+  padding: 0.2em 0.05em 0.35em;
+}
 
 /* Variante compacte, copiable, pour les bulles de discussion. Le contenu
    ne doit jamais dépasser la largeur de la bulle (formules KaTeX,

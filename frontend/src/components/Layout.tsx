@@ -2,6 +2,8 @@ import { LangSwitch } from "../i18nProvider";
 import { BottomNav } from "./BottomNav";
 import { IndicateurConnexion } from "./IndicateurConnexion";
 import { ServeurLent } from "./ServeurLent";
+import { BandeauAlarme } from "./BandeauAlarme";
+import { BoutonInviter } from "./Invitation";
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -46,6 +48,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-paper text-ink">
       <ServeurLent />
+      <BandeauAlarme />
       <header data-chrome className="sticky top-0 z-30 border-b border-ink-soft/15 bg-paper-raised">
         {/* Motif signature n°1 : bandeau tricolore, uniquement ici (AppBar) */}
         <div className="flex h-[3px] w-full" aria-hidden="true">
@@ -101,6 +104,9 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               <Link to="/abonnement" className="hover:text-ink">
                 {t("Abonnement")}
               </Link>
+              <Link to="/aide" className="hover:text-ink">
+                {t("Aide")}
+              </Link>
               {/* Console admin : réservée aux comptes de la liste blanche
                   (is_admin calculé serveur) — le lien ne s'affiche même pas
                   pour les autres ; la route reste de toute façon protégée par
@@ -136,6 +142,10 @@ export function Layout({ children }: { children?: React.ReactNode }) {
 
             <IndicateurConnexion />
             <LangSwitch />
+            <BoutonInviter
+              variante="icone"
+              className="relative hidden h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-[''] sm:flex"
+            />
             <button
               type="button"
               onClick={toggleTheme}
@@ -194,6 +204,13 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
               <Link to="/abonnement" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
                 {t("Abonnement")}
               </Link>
+              <Link to="/aide" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
+                {t("Aide")}
+              </Link>
+              <Link to="/a-propos" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
+                {t("À propos")}
+              </Link>
+              <BoutonInviter variante="lien" className="rounded-lg px-3 py-2.5 text-left hover:bg-highlight-soft" />
               {user?.is_admin && (
                 <Link to="/admin" className="rounded-lg px-3 py-2.5 font-medium text-highlight-text hover:bg-highlight-soft">
                   {t("Admin")}
@@ -236,6 +253,15 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
 
       <BottomNav />
       <footer data-chrome className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
+        <nav aria-label={t("Informations")} className="mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+          <Link to="/a-propos" className="min-h-[44px] leading-[44px] hover:text-ink">
+            {t("À propos")}
+          </Link>
+          <Link to="/aide" className="min-h-[44px] leading-[44px] hover:text-ink">
+            {t("Aide")}
+          </Link>
+          <BoutonInviter variante="lien" className="min-h-[44px] hover:text-ink" />
+        </nav>
         {t("Copies & Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)")}
       </footer>
     </div>

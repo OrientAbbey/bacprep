@@ -22,6 +22,8 @@ import { t } from "./i18n";
 const ViewerPage = React.lazy(() => import("./pages/ViewerPage").then((m) => ({ default: m.ViewerPage })));
 const ProfilePage = React.lazy(() => import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage })));
 const AdminPage = React.lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
+const AidePage = React.lazy(() => import("./pages/AidePage").then((m) => ({ default: m.AidePage })));
+const AProposPage = React.lazy(() => import("./pages/AProposPage").then((m) => ({ default: m.AProposPage })));
 
 function KickoutBanner() {
   const { kickoutMessage, clearKickoutMessage } = useAuth();
@@ -73,6 +75,22 @@ export default function App() {
                 />
                 <Route path="/abonnement" element={<SubscribePage />} />
                 <Route path="/calendrier" element={<CalendrierPage />} />
+                <Route
+                  path="/aide"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <AidePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/a-propos"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <AProposPage />
+                    </Suspense>
+                  }
+                />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
 
