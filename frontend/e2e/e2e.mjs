@@ -466,7 +466,7 @@ console.log("\nTraduction FR/EN");
   let matieres = /$^/;
   const residu = (l) => {
     if (DONNEES.test(l)) return false;
-    const reste = l.replace(matieres, "").trim();
+    const reste = l.replace(matieres, "").replaceAll("Copies & Corrigés", "").trim(); // le nom de la marque contient un « é »
     return !!reste && (CLES_FR.has(reste) || FR.test(reste) || ACCENT.test(reste));
   };
   const lire = (pg) => pg.evaluate(() => {
