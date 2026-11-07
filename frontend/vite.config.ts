@@ -34,13 +34,31 @@ export default defineConfig({
         // Le back-office (478 Ko) ne sert pas aux élèves : chargé à la demande, jamais précaché.
         globIgnores: ["**/AdminPage-*.js"],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
-        navigateFallback: "/index.html",
-        // Doc OpenAPI : servie par le backend à un chemin secret (DOCS_PATH).
-        // Liste noire générique : TOUT chemin commençant par « doc » sort du SW
-        // (« doc_path_1 », « doc_2 », « documentation »…) — il faut donc que
-        // DOCS_PATH garde ce préfixe (ex. « doc_path_1 » sur Render).
-        navigateFallbackDenylist: [/^\/api\//, /^\/ws\//, /^\/doc/],
+        // `null` est INDISPENSABLE : vite-plugin-pwa réinjecte sinon
+        // `navigateFallback: "index.html"` par défaut, dont la NavigationRoute
+        // servirait TOUJOURS l'index précaché (donc périmé après un déploiement,
+        // avec des chunks hachés supprimés → « Failed to fetch dynamically
+        // imported module »). Les navigations passent par le réseau ; hors
+        // ligne, `precacheFallback` sert la coque précachée.
+        navigateFallback: null,
         runtimeCaching: [
+          // Doc OpenAPI : servie par le backend à un chemin secret (DOCS_PATH)
+          // et jamais remplacée par la coque de l'application — même hors-ligne.
+          // Liste noire générique : TOUT chemin commençant par « doc » sort du
+          // repli (« doc_path_1 », « doc_2 », « documentation »…) — il faut donc
+          // que DOCS_PATH garde ce préfixe (ex. « doc_path_1 » sur Render).
+          {
+            urlPattern: ({ url, request }) => request.mode === "navigate" && /^\/doc/.test(url.pathname),
+            handler: "NetworkOnly",
+          },
+          // Toute navigation : réseau d'abord (HTML toujours à jour), coque
+          // précachée en repli hors-ligne — y compris pour un lien profond
+          // jamais visité (React Router prend alors le relais côté client).
+          {
+            urlPattern: ({ url, request }) => request.mode === "navigate" && url.origin === self.location.origin,
+            handler: "NetworkOnly",
+            options: { precacheFallback: { fallbackURL: "/index.html" } },
+          },
           // Épreuve ouverte ou « téléchargée » : réseau d'abord (3 s max — utile sur
           // connexion lente), repli sur la copie locale. Ne met en cache que les 200.
           {

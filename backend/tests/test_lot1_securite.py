@@ -104,3 +104,19 @@ def test_police_woff2_servie_comme_font_woff2(client):
     if f is None:
         pytest.skip("aucune police woff2 dans le bundle")
     assert client.get(f"/assets/{f.name}").headers.get("content-type", "").startswith("font/woff2")
+
+
+def test_html_sur_route_client_toujours_revalide(client):
+    """Un index.html périmé gardé par le navigateur référence des fichiers
+    hachés supprimés au déploiement suivant (404 « Failed to fetch
+    dynamically imported module »). Toute route qui renvoie l'application
+    (y compris /admin, /epreuve/x…) doit donc interdire la mise en cache."""
+    import app.main as m
+
+    if not (m.FRONTEND_DIST / "index.html").exists():
+        pytest.skip("frontend non compilé")
+    for chemin in ("/admin", "/epreuve/abc", "/"):
+        r = client.get(chemin)
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/html")
+        assert "no-cache" in r.headers.get("cache-control", ""), chemin

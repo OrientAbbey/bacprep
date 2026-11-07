@@ -1,5 +1,6 @@
 import React from "react";
 import { t } from "../i18n";
+import { rechargerSiChunkPerime } from "../lib/nouvelleVersion";
 
 interface Props {
   children: React.ReactNode;
@@ -22,6 +23,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
   // la rend introuvable. Le détail part dans la console, jamais à l'écran.
   componentDidCatch(error: Error, infos: React.ErrorInfo) {
     console.error("Erreur de rendu interceptée par ErrorBoundary :", error, infos.componentStack);
+    // Onglet resté ouvert pendant un déploiement : le chunk lazy demandé a
+    // été supprimé, recharger une fois récupère la nouvelle version.
+    rechargerSiChunkPerime(error);
   }
 
   render() {

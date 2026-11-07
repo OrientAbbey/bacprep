@@ -497,11 +497,17 @@ if FRONTEND_DIST.exists():
         répondent 404 JSON (contrat d'API) plutôt qu'index.html."""
         if full_path.startswith("api/") or full_path == "api":
             return JSONResponse(status_code=404, content={"detail": "Ressource API introuvable"})
+        # HTML servi sur N'IMPORTE QUELLE route client (/admin, /epreuve/x…) :
+        # il doit toujours être revalidé. Sinon le navigateur garde un index
+        # périmé qui référence des noms de fichiers hachés supprimés au
+        # déploiement suivant → 404 sur les chunks (page blanche / erreur de
+        # chargement dynamique). Les fichiers /assets/ restent immuables.
+        entetes_html = {"Cache-Control": "no-cache"}
         if full_path:
             candidate = (FRONTEND_DIST / full_path).resolve()
             if candidate.is_file() and candidate.is_relative_to(_FRONTEND_DIST_RESOLVED):
-                return FileResponse(candidate)
-        return FileResponse(FRONTEND_DIST / "index.html")
+                return FileResponse(candidate, headers=entetes_html if candidate.suffix == ".html" else None)
+        return FileResponse(FRONTEND_DIST / "index.html", headers=entetes_html)
 
     log.info("Service unifié activé: frontend/dist servi par le backend")
 else:
