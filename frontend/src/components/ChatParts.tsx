@@ -181,6 +181,7 @@ export function MessageComposer({
   onKeyDown,
   onSend,
   queueCount,
+  disabled = false,
   placeholder = t("Pose ta question… (Maj+Entrée pour une nouvelle ligne)"),
 }: {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -189,6 +190,9 @@ export function MessageComposer({
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
   queueCount: number;
+  /** Aucune discussion prête (chargement/création en cours) : on n'accepte
+   * pas encore de question — sans quoi le clic serait silencieusement perdu. */
+  disabled?: boolean;
   placeholder?: string;
 }) {
   return (
@@ -208,13 +212,14 @@ export function MessageComposer({
           placeholder={placeholder}
           aria-label={t("Question à Tuteur IA Prep")}
           rows={1}
+          disabled={disabled}
           style={{ maxHeight: INPUT_MAX_HEIGHT_PX }}
-          className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate"
+          className="min-h-[44px] flex-1 resize-none overflow-y-auto rounded-[2px] border border-ink-soft/20 bg-paper-raised px-4 py-2.5 text-sm text-ink outline-none placeholder:text-slate disabled:opacity-60"
         />
         <button
           type="button"
           onClick={onSend}
-          disabled={!input.trim()}
+          disabled={disabled || !input.trim()}
           aria-label={t("Envoyer")}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full verrou-highlight disabled:opacity-40"
         >

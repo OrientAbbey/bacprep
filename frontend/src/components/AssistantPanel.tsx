@@ -851,6 +851,7 @@ export function AssistantPanel({
           onKeyDown={onInputKeyDown}
           onSend={submitQuestion}
           queueCount={queue.length}
+          disabled={!active}
         />
       </div>
     </>

@@ -171,13 +171,24 @@ console.log("\nPolices, contraste, mobile");
 
   await test("polices hébergées réellement téléchargées (woff2) et appliquées", async () => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    ok(reponses.some((u) => /source-serif-4.*\.woff2$/.test(u)), "Source Serif 4 non téléchargée");
-    ok(reponses.some((u) => /ibm-plex-sans.*\.woff2$/.test(u)), "IBM Plex Sans non téléchargée");
+    // Les @font-face sont lazies : la page peut finir « networkidle » sur ses
+    // squelettes de chargement, avant tout peignage du texte serif — et donc
+    // avant la MOINDRE demande de police. Attendre le contenu réel (h1),
+    // puis demander explicitement le chargement des deux polices du texte
+    // (Source Serif 4 = 700 en font-serif-brand, IBM Plex Sans = 400 en
+    // corps), sinon un 400 jamais peigné reste « unloaded » à tort.
+    await page.locator("h1").first().waitFor({ timeout: 15000 });
     const chargee = await page.evaluate(async () => {
+      await document.fonts.load('700 16px "Source Serif 4"');
+      await document.fonts.load('400 16px "IBM Plex Sans"');
       await document.fonts.ready;
-      return [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family);
+      return [...document.fonts].filter((f) => f.status === "loaded").map((f) => `${f.family} ${f.weight}`);
     });
+    // Le CDN réseau peut servir depuis le cache du service worker (le
+    // contrôleur répond sans laisser passer l'évènement `response` de la
+    // page) : si le navigateur a la police CHARGÉE, elle a été téléchargée.
+    ok(reponses.some((u) => /source-serif-4.*\.woff2$/.test(u)) || chargee.some((f) => f.startsWith("Source Serif 4")), "Source Serif 4 non téléchargée");
+    ok(reponses.some((u) => /ibm-plex-sans.*\.woff2$/.test(u)) || chargee.some((f) => f.startsWith("IBM Plex Sans")), "IBM Plex Sans non téléchargée");
     ok(chargee.some((f) => /Source Serif 4/.test(f)) && chargee.some((f) => /IBM Plex Sans/.test(f)), "polices non chargées : " + chargee);
   });
 
@@ -361,7 +372,13 @@ console.log("\nCalendrier, examen blanc, révisions, PDF");
   const page = await ctx.newPage();
   const suffixe = Date.now().toString(36);
   const titreExamen = `Probatoire — session ${suffixe}`;
-  const dans = (jours) => new Date(Date.now() + jours * 86400000).toISOString().slice(0, 10);
+  // Date LOCALE (A-M-J) et non `toISOString()` (date UTC) : `joursAvant`
+  // compte en jours calendaires locaux — une date UTC renseignée le soir
+  // (UTC déjà passé minuit) affiche J−(n−1) et le test échoue.
+  const dans = (jours) => {
+    const d = new Date(Date.now() + jours * 86400000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
 
   await test("admin › Calendrier : ajouter un examen, il apparaît sur la page publique et en compte à rebours", async () => {
     for (const ev of await (await admin.request.get("/api/admin/evenements")).json()) await admin.request.delete(`/api/admin/evenements/${ev.id}`);
@@ -557,9 +574,15 @@ console.log("\nTraduction FR/EN");
     await page.getByRole("button", { name: T("Ouvrir Tuteur IA Prep") }).click();
     await page.getByLabel(T("Question à Tuteur IA Prep")).waitFor({ timeout: 10000 });
     await balayer(page, "assistant", residus);
+    // Compté AVANT l'envoi : le panneau désactive le champ tant que la
+    // discussion n'est pas prête (le clic attend donc son activation).
+    const avantChat = await page.locator(".prose-chat").count();
     await page.getByLabel(T("Question à Tuteur IA Prep")).fill("Explain question 1");
     await page.getByRole("button", { name: T("Envoyer") }).click();
-    await page.getByText(/Mode démonstration/).first().waitFor({ timeout: 15000 });
+    // La réponse est celle du LLM RÉEL si une clé est configurée, sinon la
+    // réponse simulée [Mode démonstration] : ne pas attendre un texte donné.
+    // 2 nouveaux blocs .prose-chat (question + réponse) prouvent l'échange.
+    await page.waitForFunction((n) => document.querySelectorAll(".prose-chat").length >= n + 2, avantChat, { timeout: 20000 });
     await balayer(page, "assistant › réponse", residus);
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: T("Signaler un problème sur cette épreuve") }).click();
@@ -995,9 +1018,14 @@ console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
   const bouton = (nom) => page.getByRole("button", { name: nom, exact: true }).filter({ visible: true });
   const journal = page.getByRole("log");
   const poser = async (champ, question) => {
-    await page.getByLabel(champ).fill(question);
+    // La réponse est celle du LLM RÉEL si une clé est configurée, sinon la
+    // réponse simulée [Mode démonstration] : ne pas attendre un texte donné.
+    // Le panneau ADMIN rend la question en texte simple : seul un nouveau
+    // bloc .prose-chat (la réponse) prouve que l'échange a été rendu.
+    const avantChat = await journal.locator(".prose-chat").count();
+    await page.getByLabel(champ).fill(question); // attend l'activation du champ (chargement de la discussion)
     await page.getByRole("button", { name: "Envoyer" }).click();
-    await page.getByText(/Mode démonstration/).last().waitFor({ timeout: 15000 }); // le LLM est simulé (aucune clé en test), le reste est réel
+    await journal.locator(".prose-chat").nth(avantChat).waitFor({ timeout: 20000 });
   };
 
   await test("onglets : la discussion revient après rechargement (sans doublon de question), chaque onglet a la sienne", async () => {
@@ -1013,9 +1041,8 @@ console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
     await page.getByRole("tab", { name: "Formules" }).click();
     await bouton("Assistant").click();
     await journal.getByText(Q).first().waitFor({ timeout: 10000 });
-    ok((await page.getByText(/Mode démonstration/).count()) >= 1, "la réponse n'est pas revenue");
+    ok((await journal.locator(".prose-chat").count()) >= 1, "la réponse n'est pas revenue");
     await page.getByRole("tab", { name: "Calendrier" }).click(); // le tiroir reste ouvert
-    await page.getByText("Pose une question sur cet onglet").waitFor({ timeout: 10000 });
     ok((await journal.getByText(Q).count()) === 0, "la discussion de Formules apparaît sur Calendrier");
     await page.getByRole("tab", { name: "Formules" }).click();
     await journal.getByText(Q).first().waitFor({ timeout: 10000 });

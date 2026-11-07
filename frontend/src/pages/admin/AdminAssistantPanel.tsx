@@ -496,6 +496,7 @@ export function AdminAssistantPanel({
           onKeyDown={onInputKeyDown}
           onSend={submitQuestion}
           queueCount={queue.length}
+          disabled={enChargement}
           placeholder="Pose ta question sur l'épreuve… (Maj+Entrée pour une nouvelle ligne)"
         />
       </div>

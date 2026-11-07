@@ -91,3 +91,16 @@ def test_assets_haches_en_cache_immuable(client):
         pytest.skip("frontend non compilé")
     f = next(Path(m.FRONTEND_DIST / "assets").iterdir())
     assert "immutable" in client.get(f"/assets/{f.name}").headers.get("cache-control", "")
+
+
+def test_police_woff2_servie_comme_font_woff2(client):
+    from pathlib import Path
+
+    import app.main as m
+
+    if not (m.FRONTEND_DIST / "assets").exists():
+        pytest.skip("frontend non compilé")
+    f = next(Path(m.FRONTEND_DIST / "assets").glob("*.woff2"), None)
+    if f is None:
+        pytest.skip("aucune police woff2 dans le bundle")
+    assert client.get(f"/assets/{f.name}").headers.get("content-type", "").startswith("font/woff2")
