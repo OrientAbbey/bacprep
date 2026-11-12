@@ -434,7 +434,9 @@ export function ViewerPage() {
   );
 
   return (
-    <div className={`flex flex-col ${immersion ? "h-[calc(100dvh-1rem)]" : mobile ? "h-[calc(100dvh-6rem)]" : "h-[calc(100dvh-7rem)]"}`}>
+    // Immersion : hauteur = écran (en-tête du site masqué). Hors immersion, la hauteur vient de la zone de lecture
+    // ci-dessous (hauteur généreuse, jamais écrasée quand la fenêtre est courte) : la page défile au besoin.
+    <div className={`flex flex-col ${immersion ? "h-[calc(100dvh-1rem)]" : ""}`}>
       {/* Rangées d'en-tête FIXES (ne défilent pas) : tout l'espace vertical
           restant est réservé au panneau de lecture ci-dessous. */}
       <div className="shrink-0">
@@ -695,11 +697,15 @@ export function ViewerPage() {
         </div>
       </div>
 
-      {/* Zone de lecture : height fixe, scroll INTERNE (le panneau ne défile
-          plus avec la page). Le tiroir de l'assistant (bureau) est une
-          colonne SŒUR du lecteur (même rangée flex, même hauteur) — jamais
-          posé par-dessus : l'épreuve reste intégralement lisible. */}
-      <div className="mt-3 flex min-h-0 flex-1">
+      {/* Zone de lecture : hauteur GÉNÉREUSE hors immersion (jamais réduite à la place restante sur un écran court),
+          plein écran en immersion. Scroll INTERNE (le panneau ne défile plus avec la page). Le tiroir de l'assistant
+          (bureau) est une colonne SŒUR du lecteur (même rangée flex, même hauteur) — jamais posé par-dessus :
+          l'épreuve reste intégralement lisible. */}
+      <div
+        className={`mt-3 flex min-h-0 ${
+          immersion ? "flex-1" : "h-[max(26rem,calc(100dvh-11rem))] sm:h-[max(32rem,calc(100dvh-10rem))]"
+        }`}
+      >
         <div className="relative min-h-0 min-w-0 flex-1">
           <div
             ref={containerRef}
