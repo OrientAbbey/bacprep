@@ -442,11 +442,9 @@ export function ViewerPage() {
       <div className="shrink-0">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            {immersion && (
-              <button type="button" onClick={() => navigate(-1)} aria-label={t("Retour")} title={t("Retour")} className="flex min-h-[44px] min-w-[44px] items-center justify-center text-ink-soft hover:text-ink">
-                <ArrowLeft size={18} strokeWidth={1.75} aria-hidden="true" />
-              </button>
-            )}
+            <button type="button" onClick={() => navigate(-1)} aria-label={t("Retour")} title={t("Retour")} className="flex min-h-[44px] min-w-[44px] items-center justify-center text-ink-soft hover:text-ink">
+              <ArrowLeft size={18} strokeWidth={1.75} aria-hidden="true" />
+            </button>
             <h1 className="truncate font-serif-brand text-2xl">{epreuve.matiere}</h1>
             {/* Signalement : toujours VISIBLE (découvrabilité), en rouge
                 « correction » ; désactivé en visiteur avec le motif du
