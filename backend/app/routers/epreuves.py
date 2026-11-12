@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, false as sql_false
 from sqlalchemy import func
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from ..core.assistant_context import contexte_verifie
@@ -187,6 +188,19 @@ def navigation(db: Session = Depends(get_db)) -> dict:
     return {"niveaux": niveaux}
 
 
+def _catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, q, corrige, acces_type):
+    """Requête de catalogue filtrée — commune à la liste et aux groupes."""
+    query = _apply_filters(
+        db, db.query(EpreuveORM), filiere, matiere, annee, evaluation, None, corrige, acces_type,
+        user_id=user.id if user else None,
+    )
+    if q:
+        query = _search_filter(db, query, q)
+    elif classe:
+        query = query.filter(EpreuveORM.classe == classe)
+    return query
+
+
 @router.get("", response_model=list[EpreuveListItem])
 def list_epreuves(
     classe: Optional[str] = None,
@@ -210,22 +224,7 @@ def list_epreuves(
     session élève : le filtre `acces_type="ouvert"|"payant"` en a besoin
     pour distinguer les épreuves payantes couvertes par un abonnement actif
     (résolu côté serveur, AVANT pagination)."""
-    query = _apply_filters(
-        db,
-        db.query(EpreuveORM),
-        filiere,
-        matiere,
-        annee,
-        evaluation,
-        None,
-        corrige,
-        acces_type,
-        user_id=user.id if user else None,
-    )
-    if q:
-        query = _search_filter(db, query, q)
-    elif classe:
-        query = query.filter(EpreuveORM.classe == classe)
+    query = _catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, q, corrige, acces_type)
     epreuves = (
         query.order_by(EpreuveORM.annee.desc(), EpreuveORM.matiere.asc())
         .offset(offset)
@@ -238,6 +237,63 @@ def list_epreuves(
     if user:
         covered_ids = {row[0] for row in _covered_epreuve_ids(db, user.id).all()}
     return [_to_list_item(e, covered_ids) for e in epreuves]
+
+
+@router.get("/groupes")
+def list_groupes(
+    classe: Optional[str] = None,
+    filiere: Optional[str] = None,
+    matiere: Optional[str] = None,
+    annee: Optional[str] = None,
+    evaluation: Optional[str] = None,
+    q: Optional[str] = None,
+    corrige: Optional[str] = None,
+    acces_type: Optional[str] = None,
+    limit: int = Query(default=12, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    user=Depends(optional_user),
+) -> dict:
+    """Catalogue REGROUPÉ : une entrée par (matière, évaluation, classe) avec
+    toutes ses années, au lieu d'une carte par épreuve. Mêmes filtres que la
+    liste ; la pagination porte sur les GROUPES (jamais coupés en deux entre
+    deux pages). Les années sont triées de la plus récente à la plus ancienne."""
+    ids = select(_catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, q, corrige, acces_type)
+                 .with_entities(EpreuveORM.id).subquery().c.id)
+    cle = (EpreuveORM.matiere, EpreuveORM.evaluation, EpreuveORM.classe)
+    groupes_q = db.query(*cle).filter(EpreuveORM.id.in_(ids)).group_by(*cle)
+    total = groupes_q.count()
+    cles = groupes_q.order_by(*cle).offset(offset).limit(limit).all()
+    if not cles:
+        return {"total": total, "groupes": []}
+    rows = (
+        db.query(EpreuveORM)
+        .filter(EpreuveORM.id.in_(ids), tuple_(*cle).in_([tuple(k) for k in cles]))
+        .order_by(EpreuveORM.annee.desc())
+        .all()
+    )
+    covered = {r[0] for r in _covered_epreuve_ids(db, user.id).all()} if user else None
+    par_cle: dict[tuple, list[EpreuveORM]] = {tuple(k): [] for k in cles}
+    for e in rows:
+        par_cle[(e.matiere, e.evaluation, e.classe)].append(e)
+    return {
+        "total": total,
+        "groupes": [
+            {
+                "matiere": m, "evaluation": ev, "classe": cl,
+                "nb_epreuves": len(items),
+                "annees": [
+                    {
+                        "id": e.id, "annee": e.annee, "filieres": e.filieres,
+                        "corrige_disponible": e.corrige_disponible,
+                        "acces": _to_list_item(e, covered).acces,
+                    }
+                    for e in items
+                ],
+            }
+            for (m, ev, cl), items in par_cle.items()
+        ],
+    }
 
 
 @router.get("/matieres")

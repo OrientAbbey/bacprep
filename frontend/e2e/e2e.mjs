@@ -94,20 +94,33 @@ console.log("\nCatalogue et recherche");
   await test("catalogue : tuiles par matière avec compteurs", async () => {
     await page.goto("/secondaire/terminale");
     await page.getByRole("heading", { name: "MATIÈRES" }).waitFor({ timeout: 15000 });
-    const tuile = page.getByRole("button", { name: /^Mathématiques\s*\d+ épreuves/ });
+    ok(await page.getByRole("group", { name: "Affichage du catalogue" }).getByRole("button", { name: "Liste" }).getAttribute("aria-pressed") === "true", "la vue Liste doit être sélectionnée par défaut");
+    const tuile = page.locator('[data-testid="matiere-tile"][data-matiere="Mathématiques"]');
     await tuile.waitFor({ timeout: 10000 });
     ok((await page.locator("text=/\\d+ épreuves? ·? ?/").count()) >= 4, "au moins 4 tuiles");
     await page.screenshot({ path: `${SHOTS}/catalogue-tuiles.png` });
   });
 
   await test("catalogue : une matière → liste groupée par année, retour aux matières", async () => {
-    await page.getByRole("button", { name: /^Mathématiques/ }).click();
+    await page.locator('[data-testid="matiere-tile"][data-matiere="Mathématiques"]').click();
     await page.locator("h3").first().waitFor({ timeout: 10000 });
     const annees = await page.locator("h3").allTextContents();
     ok(annees.length >= 2 && annees.every((a, i) => i === 0 || a < annees[i - 1]) && /^\d{4}$/.test(annees[0]), "en-têtes d'année (uniques, décroissants) : " + annees.slice(0, 4));
     ok((await page.locator("button[aria-label^='Épreuve de Physique']").count()) === 0, "une seule matière listée");
     await page.screenshot({ path: `${SHOTS}/catalogue-annees.png` });
     await page.getByRole("button", { name: /Toutes les matières/ }).click();
+    await page.getByRole("heading", { name: "MATIÈRES" }).waitFor();
+  });
+
+  await test("catalogue : vue Par matière regroupe les années et peut revenir à Liste", async () => {
+    await page.getByRole("button", { name: "Par matière" }).click();
+    ok(await page.evaluate(() => localStorage.getItem("catalogueVue")) === "groupes", "la préférence Par matière n'est pas mémorisée");
+    await page.locator("ul.grid > li").first().waitFor({ timeout: 15000 });
+    ok((await page.locator("ul.grid > li").count()) > 0, "cartes groupe visibles");
+    ok((await page.locator("ul.grid > li button").count()) > 0, "pastilles d'années visibles");
+    await page.screenshot({ path: `${SHOTS}/catalogue-groupes.png` });
+    await page.getByRole("button", { name: "Liste" }).click();
+    ok(await page.evaluate(() => localStorage.getItem("catalogueVue")) === "liste", "la préférence Liste n'est pas mémorisée");
     await page.getByRole("heading", { name: "MATIÈRES" }).waitFor();
   });
 
@@ -144,7 +157,7 @@ console.log("\nChargement et réseau lent");
     await page.locator(".skeleton").first().waitFor({ timeout: 8000 });
     await nav;
     await page.getByRole("heading", { name: "MATIÈRES" }).waitFor();
-    await page.getByRole("button", { name: /^Mathématiques/ }).waitFor({ timeout: 10000 });
+    await page.locator('[data-testid="matiere-tile"][data-matiere="Mathématiques"]').waitFor({ timeout: 10000 });
     await page.unroute("**/api/epreuves/matieres**");
   });
 
@@ -644,7 +657,7 @@ console.log("\nTraduction FR/EN");
     await connecterEleve(reseau, `err-${RUN}@test.cm`);
     const pr = await reseau.newPage();
     await pr.route("**/api/epreuves?*", (r) => r.abort());
-    await pr.goto("/catalogue?q=math"); // mode liste : le mode tuiles n'appelle pas cette route
+    await pr.goto("/catalogue?q=math"); // mode liste : la recherche globale utilise cette route
     await pr.getByText(T("Le catalogue n'a pas pu être chargé.")).waitFor({ timeout: 15000 });
     await balayer(pr, "catalogue en erreur", residus);
     await pr.route("**/api/pricing*", (r) => r.abort());
@@ -1189,10 +1202,14 @@ console.log("\nLecteur : feuille de largeur A4 et immersion");
     ok(await entete.isVisible(), "en-tête absent hors immersion");
     const h0 = (await boite(panneau)).height;
     await page.getByRole("button", { name: "Immersion", exact: true }).click();
+    await page.getByRole("button", { name: "Retour" }).waitFor({ timeout: 5000 });
     await entete.waitFor({ state: "hidden", timeout: 5000 });
     ok(!(await page.locator("footer[data-chrome]").isVisible()), "pied de page encore visible");
     const h1 = (await boite(panneau)).height;
-    ok(h1 >= h0 + 200, `zone de lecture : ${h0} → ${h1} px (site masqué ET outils repliés)`);
+    // Le panneau hors immersion a maintenant une hauteur plancher généreuse :
+    // la disparition du chrome et le repli des outils le font encore grandir,
+    // mais moins qu'avec l'ancien lecteur bas qui ne remplissait pas la page.
+    ok(h1 >= h0 + 40, `zone de lecture : ${h0} → ${h1} px (site masqué ET outils repliés)`);
     // Outils repliés par défaut en immersion : plus de place encore, sans démonter les composants à état (chrono, examen).
     await page.getByRole("button", { name: "Outils", exact: true }).waitFor({ timeout: 5000 });
     ok(!(await page.getByRole("button", { name: "Examen blanc" }).isVisible()), "les outils devraient être repliés");
@@ -1212,6 +1229,7 @@ console.log("\nLecteur : feuille de largeur A4 et immersion");
     await page.waitForURL((u) => u.pathname === "/", { timeout: 10000 });
     ok(await page.locator("header[data-chrome]").isVisible(), "l'immersion fuit hors du lecteur (en-tête masqué sur l'accueil)");
     await page.goto(`/epreuve/${gratuit}`);
+    await page.getByRole("button", { name: "Retour" }).waitFor({ timeout: 5000 });
     await page.getByRole("button", { name: "Quitter l'immersion" }).click();
     await page.locator("header[data-chrome]").waitFor({ timeout: 5000 });
     await page.reload();

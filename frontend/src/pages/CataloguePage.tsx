@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { Consultation, EpreuveListItem, Filtres } from "../api/types";
+import { CatalogueGroupes } from "../components/CatalogueGroupes";
 import { Combobox } from "../components/Combobox";
 import { MetaBadge } from "../components/MetaBadge";
 import { CatalogueSkeleton } from "../components/Skeleton";
@@ -54,9 +55,27 @@ export function CataloguePage() {
   const [acces, setAcces] = useState<AccesFiltre>("tous");
   const [initialized, setInitialized] = useState(false);
   const [matieres, setMatieres] = useState<{ matiere: string; total: number; gratuits: number }[] | null>(null);
-  // Sans matière choisie ni recherche ni filtre d'accès : une tuile par matière
-  // (avec son nombre d'épreuves) plutôt qu'une longue liste mélangée.
-  const modeTuiles = !modeRecherche && !matiere && corrige === "tous" && acces === "tous";
+  // Vue « groupes » (une carte par matière × évaluation, les années en
+  // pastilles) ou « liste » (le catalogue historique, par défaut).
+  // Le choix est mémorisé d'une visite à l'autre.
+  const [vue, setVue] = useState<"groupes" | "liste">(() => {
+    try {
+      return localStorage.getItem("catalogueVue") === "groupes" ? "groupes" : "liste";
+    } catch {
+      return "liste";
+    }
+  });
+  // En mode Liste, préserver le catalogue historique : une tuile par matière
+  // quand aucun filtre n'impose une liste d'épreuves.
+  const modeTuiles = vue === "liste" && !modeRecherche && !matiere && corrige === "tous" && acces === "tous";
+  function choisirVue(v: "groupes" | "liste") {
+    setVue(v);
+    try {
+      localStorage.setItem("catalogueVue", v);
+    } catch {
+      /* mémorisation sans conséquence */
+    }
+  }
 
   // Filtres dynamiques : recalculés dans le cadre de la classe courante.
   useEffect(() => {
@@ -87,6 +106,22 @@ export function CataloguePage() {
     return () => ac.abort();
   }, [classe]);
 
+  useEffect(() => {
+    if (!initialized || !modeTuiles) return;
+    const ac = new AbortController();
+    const params = new URLSearchParams();
+    if (classe) params.set("classe", classe);
+    if (filiere) params.set("filiere", filiere);
+    if (annee) params.set("annee", annee);
+    if (evaluation) params.set("evaluation", evaluation);
+    setMatieres(null);
+    api
+      .get<{ matiere: string; total: number; gratuits: number }[]>(`/api/epreuves/matieres?${params}`, undefined, ac.signal)
+      .then((m) => !ac.signal.aborted && setMatieres(m))
+      .catch(() => !ac.signal.aborted && setMatieres([]));
+    return () => ac.abort();
+  }, [initialized, modeTuiles, classe, filiere, annee, evaluation]);
+
   function buildParams(offset: number): URLSearchParams {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
     if (modeRecherche) {
@@ -109,22 +144,6 @@ export function CataloguePage() {
     return params;
   }
 
-  useEffect(() => {
-    if (!initialized || !modeTuiles) return;
-    const ac = new AbortController();
-    const params = new URLSearchParams();
-    if (classe) params.set("classe", classe);
-    if (filiere) params.set("filiere", filiere);
-    if (annee) params.set("annee", annee);
-    if (evaluation) params.set("evaluation", evaluation);
-    setMatieres(null);
-    api
-      .get<{ matiere: string; total: number; gratuits: number }[]>(`/api/epreuves/matieres?${params}`, undefined, ac.signal)
-      .then((m) => !ac.signal.aborted && setMatieres(m))
-      .catch(() => !ac.signal.aborted && setMatieres([]));
-    return () => ac.abort();
-  }, [initialized, modeTuiles, classe, filiere, annee, evaluation]);
-
   // Séquence des requêtes de liste : le dernier appel gagne. Une réponse
   // portant un jeton périmé ne peut plus écraser (première page) ni
   // concaténer (« Voir plus ») une liste qui correspond à d'autres filtres.
@@ -145,6 +164,10 @@ export function CataloguePage() {
   // courante (courses de réponses).
   async function loadFirstPage(signal?: AbortSignal) {
     const jeton = ++seqRef.current;
+    if (vue !== "liste") {
+      setChargement(false);
+      return;
+    }
     if (modeTuiles) {
       setEpreuves([]);
       setHasMore(false);
@@ -169,12 +192,12 @@ export function CataloguePage() {
   }
 
   useEffect(() => {
-    if (!initialized) return;
+    if (!initialized || vue !== "liste") return;
     const ac = new AbortController();
     loadFirstPage(ac.signal);
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filiere, matiere, annee, evaluation, corrige, acces, initialized, query]);
+  }, [filiere, matiere, annee, evaluation, corrige, acces, initialized, query, vue]);
 
   async function loadMore() {
     // Deux clics rapprochés partiraient sur le même `epreuves.length` et
@@ -221,6 +244,12 @@ export function CataloguePage() {
       return;
     }
     navigate(`/epreuve/${e.id}`);
+  }
+
+  /** Ouvre une année depuis une carte groupée : accès direct au lecteur,
+   *  ou page d'abonnement si l'épreuve est payante. */
+  function ouvrirAnnee(a: { id: string; acces: string }) {
+    navigate(a.acces === "payant" ? `/abonnement?epreuve_id=${a.id}` : `/epreuve/${a.id}`);
   }
 
   return (
@@ -356,39 +385,67 @@ export function CataloguePage() {
         </section>
       )}
 
-      <section aria-label={modeRecherche ? t("Résultats de recherche") : t("Épreuves")} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <h2 className="col-span-full font-mono-tag text-xs text-ink-soft">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-mono-tag text-xs text-ink-soft">
           {modeRecherche ? t("RÉSULTATS") : modeTuiles ? t("MATIÈRES") : t("ÉPREUVES")}
         </h2>
-        {!modeRecherche && matiere && (
-          <button
-            type="button"
-            onClick={() => setMatiere("")}
-            className="col-span-full min-h-[44px] w-fit text-left text-sm text-ink-soft underline"
-          >
-            ← {t("Toutes les matières")} · <strong className="font-medium">{matiere}</strong>
-          </button>
-        )}
+        {/* Vue du catalogue : par matière (années en pastilles) ou liste
+            détaillée. Le choix est mémorisé (localStorage). */}
+        <div role="group" aria-label={t("Affichage du catalogue")} className="flex items-center gap-1 rounded-full border border-ink-soft/20 p-0.5 text-xs">
+          {(["groupes", "liste"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => choisirVue(v)}
+              aria-pressed={vue === v}
+              className={`min-h-[32px] rounded-full px-3 ${vue === v ? "bg-ink text-paper" : "text-ink-soft"}`}
+            >
+              {v === "groupes" ? t("Par matière") : t("Liste")}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!modeRecherche && matiere && (
+        <button
+          type="button"
+          onClick={() => setMatiere("")}
+          className="min-h-[44px] w-fit text-left text-sm text-ink-soft underline"
+        >
+          ← {t("Toutes les matières")} · <strong className="font-medium">{matiere}</strong>
+        </button>
+      )}
+
+      {vue === "groupes" &&
+        (initialized ? (
+          <CatalogueGroupes params={signatureFiltres()} afficherClasse={modeRecherche} onOpen={ouvrirAnnee} />
+        ) : (
+          <CatalogueSkeleton />
+        ))}
+
+      {vue === "liste" && (
+      <section aria-label={modeRecherche ? t("Résultats de recherche") : t("Épreuves")} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {modeTuiles && matieres === null && (
           <div className="col-span-full">
             <CatalogueSkeleton count={6} />
           </div>
         )}
-        {modeTuiles &&
-          matieres?.map((m) => (
-            <button
-              key={m.matiere}
-              type="button"
-              onClick={() => setMatiere(m.matiere)}
-              className="flex flex-col gap-1 rounded-lg border border-ink-soft/15 bg-paper-raised p-4 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
-            >
-              <span className="font-serif-brand text-lg leading-snug">{m.matiere}</span>
-              <span className="font-mono-tag text-[11px] text-slate">
-                {t(m.total > 1 ? "{n} épreuves" : "{n} épreuve", { n: m.total })}
-                {m.gratuits > 0 ? ` · ${t(m.gratuits > 1 ? "{n} gratuites" : "{n} gratuite", { n: m.gratuits })}` : ""}
-              </span>
-            </button>
-          ))}
+        {modeTuiles && matieres?.map((m) => (
+          <button
+            key={m.matiere}
+            type="button"
+            data-testid="matiere-tile"
+            data-matiere={m.matiere}
+            onClick={() => setMatiere(m.matiere)}
+            className="flex flex-col gap-1 rounded-lg border border-ink-soft/15 bg-paper-raised p-4 text-left transition-colors hover:border-highlight/50 hover:bg-highlight-soft/40 focus-visible:border-highlight/50"
+          >
+            <span className="font-serif-brand text-lg leading-snug">{m.matiere}</span>
+            <span className="font-mono-tag text-[11px] text-slate">
+              {t(m.total > 1 ? "{n} épreuves" : "{n} épreuve", { n: m.total })}
+              {m.gratuits > 0 ? ` · ${t(m.gratuits > 1 ? "{n} gratuites" : "{n} gratuite", { n: m.gratuits })}` : ""}
+            </span>
+          </button>
+        ))}
         {modeTuiles && matieres?.length === 0 && (
           <p className="col-span-full text-sm text-slate">{t("Aucune épreuve ne correspond à ces filtres.")}</p>
         )}
@@ -485,8 +542,9 @@ export function CataloguePage() {
           </p>
         )}
       </section>
+      )}
 
-      {erreurSuite && (
+      {vue === "liste" && erreurSuite && (
         <div role="alert" className="flex items-center justify-center gap-3 text-sm text-correction">
           <span>{t("Le chargement des épreuves supplémentaires a échoué.")}</span>
           <button
@@ -499,7 +557,7 @@ export function CataloguePage() {
         </div>
       )}
 
-      {hasMore && (
+      {vue === "liste" && hasMore && (
         <div className="flex justify-center">
           <button
             onClick={loadMore}
