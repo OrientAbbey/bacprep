@@ -286,6 +286,9 @@ body {
    d'événement `onCopy` côté React (voir ViewerPage), pas via
    `user-select: none` qui empêcherait la sélection elle-même. */
 .prose-exam {
+  /* Échelle choisie avec les boutons A−/A+ en lecture paginée (variable posée par le lecteur) : tout le contenu est en
+     `em`. En défilement continu la variable n'est pas posée et le zoom CSS de la feuille s'applique (facteur 1 ici). */
+  font-size: calc(1rem * var(--exam-scale, 1));
   font-family: var(--font-sans);
   line-height: 1.75;
   color: var(--color-ink);
@@ -356,6 +359,41 @@ body {
   overflow-x: auto;
   overflow-y: hidden; /* jamais `visible` : voir la note sur .prose-chat .katex-display */
   padding: 0.2em 0.05em 0.35em;
+}
+
+/* Lecture page par page (PagedContent) : une colonne = une page. Hauteur et largeur de colonne sont posées en style
+   par le composant ; `--page-h` borne les images à la hauteur d'une page. */
+.paged-flux {
+  column-fill: auto;
+}
+.paged-flux > * {
+  margin-top: 0;
+}
+.paged-flux img {
+  max-height: calc(var(--page-h, 100vh) - 2em);
+  width: auto;
+  object-fit: contain;
+}
+.paged-flux img,
+.paged-flux figure,
+.paged-flux pre,
+.paged-flux tr,
+.paged-flux blockquote {
+  break-inside: avoid;
+}
+.paged-flux .katex-display {
+  break-inside: avoid;
+}
+.paged-flux h1,
+.paged-flux h2,
+.paged-flux h3,
+.paged-flux h4 {
+  break-after: avoid;
+}
+.paged-flux p,
+.paged-flux li {
+  orphans: 2;
+  widows: 2;
 }
 
 /* Variante compacte, copiable, pour les bulles de discussion. Le contenu

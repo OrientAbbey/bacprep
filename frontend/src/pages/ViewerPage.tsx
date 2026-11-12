@@ -14,7 +14,10 @@ import { BasculeAffichage } from "../components/BasculeAffichage";
 import { ExportPdf } from "../components/ExportPdf";
 import { TelechargerHorsLigne } from "../components/TelechargerHorsLigne";
 import { affichageInitial, contenuAffiche, immersionInitiale, memoriserImmersion, type AffichageSujets } from "../lib/sujets";
-import { TailleTexte, usePincementZoom, useTailleTexte } from "../components/TailleTexte";
+import { PagedContent } from "../components/PagedContent";
+import { ControlesLecture } from "../components/ControlesLecture";
+import { ecrireAffichage, lireAffichage, type Affichage as AffichageTexte } from "../lib/pagination";
+import { usePincementZoom, useTailleTexte } from "../components/TailleTexte";
 import { SelectionBar } from "../components/SelectionBar";
 import { SignalementModal } from "../components/SignalementModal";
 import { ViewerSkeleton } from "../components/Skeleton";
@@ -74,9 +77,17 @@ function Paywall({ necessiteConnexion }: { necessiteConnexion: boolean }) {
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { taille, changer: changerTaille, pincer, memoriser: memoriserTaille } = useTailleTexte();
+  const { taille, changer: changerTaille, regler: reglerTaille, pincer, memoriser: memoriserTaille } = useTailleTexte();
   // Épreuve à plusieurs sujets : un à la fois (« page ») ou tous à la suite (« tout »), préférence mémorisée.
   const [affichage, setAffichage] = useState<AffichageSujets>(affichageInitial);
+  // Lecture PAGINÉE du texte (feuille A4, une page à l'écran) : indépendante du choix « un sujet / tous les sujets ».
+  // Désactivée par défaut (comportement historique en défilement continu), préférence mémorisée.
+  const [pagine, setPagine] = useState(() => lireAffichage() === "pages");
+  function changerPagine(actif: boolean) {
+    const a: AffichageTexte = actif ? "pages" : "defilement";
+    ecrireAffichage(a);
+    setPagine(actif);
+  }
   // Examen blanc en cours : corrigé et assistant masqués.
   const [examenEnCours, setExamenEnCours] = useState(false);
   // Immersion : le site (en-tête, pied de page, marges) s'efface via un attribut sur <html>, la feuille occupe l'écran.
@@ -389,6 +400,8 @@ export function ViewerPage() {
   const toutAfficher = affichage === "tout" && nbSujets > 1;
   // En mode « tout », le corrigé est disponible dès qu'UN sujet en a un.
   const corrigeDispo = toutAfficher ? (epreuve.sujets ?? []).some((x) => x.corrige_disponible) : Boolean(sujetActifData?.corrige_disponible);
+  // Filigrane DANS la feuille (opaque : derrière, il serait caché) — continu comme paginé.
+  const filigrane = <Watermark label={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleString(locale())}`} />;
 
   /** Mode « tout » : fait défiler jusqu'au titre du sujet N (les titres servent d'ancres). */
   function allerAuSujet(n: number) {
@@ -408,6 +421,17 @@ export function ViewerPage() {
     onClose: () => setAssistantOpen(false),
     onSaveAsNote: (contenu: string, contexte: string) => setNoteOuverte({ contexte, contenu }),
   };
+
+  // Pastille unique des contrôles de lecture : lecture paginée, A−, pourcentage (retour à 100 %) et A+.
+  const controles = (
+    <ControlesLecture
+      taille={taille}
+      pagine={pagine}
+      onPagine={changerPagine}
+      onZoom={changerTaille}
+      onReset={() => reglerTaille(1)}
+    />
+  );
 
   return (
     <div className={`flex flex-col ${immersion ? "h-[calc(100dvh-1rem)]" : mobile ? "h-[calc(100dvh-6rem)]" : "h-[calc(100dvh-7rem)]"}`}>
@@ -516,13 +540,16 @@ export function ViewerPage() {
             <div className="mb-3 flex flex-wrap items-center gap-3">
             <BasculeAffichage valeur={affichage} onChange={setAffichage} />
             {toutAfficher ? (
-              <nav aria-label={t("Aller au sujet")} className="flex flex-wrap items-center gap-1.5">
-                {(epreuve.sujets ?? []).map((s, i) => (
-                  <button key={s.index} type="button" onClick={() => allerAuSujet(i + 1)} className="min-h-[44px] rounded-full border border-ink-soft/20 px-4 py-1.5 text-sm text-ink-soft hover:bg-highlight-soft/40">
-                    {t("Sujet {n}", { n: i + 1 })}
-                  </button>
-                ))}
-              </nav>
+              // En lecture paginée, le défilement par ancres ne s'applique pas : on n'affiche pas les raccourcis de sujet.
+              pagine ? null : (
+                <nav aria-label={t("Aller au sujet")} className="flex flex-wrap items-center gap-1.5">
+                  {(epreuve.sujets ?? []).map((s, i) => (
+                    <button key={s.index} type="button" onClick={() => allerAuSujet(i + 1)} className="min-h-[44px] rounded-full border border-ink-soft/20 px-4 py-1.5 text-sm text-ink-soft hover:bg-highlight-soft/40">
+                      {t("Sujet {n}", { n: i + 1 })}
+                    </button>
+                  ))}
+                </nav>
+              )
             ) : (
             <div
               role="tablist"
@@ -683,19 +710,49 @@ export function ViewerPage() {
             onKeyUp={onKeyUp}
             onCopy={onCopy}
             onContextMenu={(e) => e.preventDefault()}
-            className="touch-pan-x touch-pan-y absolute inset-0 overflow-y-auto rounded-lg border border-ink-soft/15 bg-paper p-2 sm:p-6"
+            // Échelle du texte en mode paginé seulement : en continu, le zoom CSS de la feuille fait déjà le travail.
+            style={pagine ? ({ "--exam-scale": taille } as React.CSSProperties) : undefined}
+            className={`touch-pan-x touch-pan-y absolute inset-0 rounded-lg border border-ink-soft/15 bg-paper ${
+              pagine ? "flex flex-col overflow-hidden p-2 sm:p-4" : "overflow-y-auto p-2 sm:p-6"
+            }`}
           >
-            <Watermark label={`${user?.email ?? t("Consultation invitée")} · ${new Date().toLocaleString(locale())}`} />
-            {/* Flottant : reste visible pendant tout le défilement de l'épreuve (en bas à gauche : l'assistant occupe la droite). */}
-            <div className="fixed bottom-4 left-4 z-30 rounded-full bg-paper-raised shadow-lg print:hidden">
-              <TailleTexte taille={taille} onChange={changerTaille} />
-            </div>
-            {/* Feuille de largeur A4 (210 mm) centrée sur le « bureau » ; le zoom A−/A+ s'applique à la feuille entière.
-                Sur petit écran, elle prend toute la largeur disponible. */}
-            <div className="relative mx-auto w-full max-w-[210mm] rounded-sm border border-ink-soft/15 bg-paper-raised px-4 py-5 shadow-md sm:px-[16mm] sm:py-[14mm]" style={{ zoom: taille }}>
-              <MarkdownContent content={contenuActif || ""} variant="epreuve" trackSourcePositions />
-            </div>
+            {pagine ? (
+              <>
+                {/* Une page (une colonne, ou deux en double page) par écran sur feuille A4. Clé : on repart page 1 au
+                    changement de contenu ; `reflow` retrouve le passage lu après un changement de taille de texte. */}
+                <PagedContent
+                  key={`${onglet}-${sujetActifData?.index ?? 0}-${affichage}`}
+                  reflow={taille}
+                  filigrane={filigrane}
+                  onPageChange={() => {
+                    // La sélection est restée sur l'ancienne page : on l'oublie, barre comprise.
+                    window.getSelection()?.removeAllRanges();
+                    setSelection(null);
+                  }}
+                >
+                  <MarkdownContent content={contenuActif || ""} variant="epreuve" trackSourcePositions />
+                </PagedContent>
+                {/* Sur téléphone, la pastille prend sa place SOUS la barre de pages (jamais par-dessus) ; sur ordinateur
+                    elle rejoint la gouttière du bas, hors de la feuille. */}
+                <div className="mt-1 flex shrink-0 pl-1 sm:fixed sm:bottom-4 sm:left-4 sm:z-30 sm:mt-0 sm:pl-0 print:hidden">
+                  {controles}
+                </div>
+              </>
+            ) : (
+              // Feuille de largeur A4 (210 mm) centrée sur le « bureau » ; le zoom A−/A+ s'applique à la feuille entière.
+              // Sur petit écran, elle prend toute la largeur disponible. Le filigrane est DANS la feuille : il en couvre
+              // toute la hauteur, pas seulement le premier écran.
+              <div className="relative mx-auto w-full max-w-[210mm] rounded-sm border border-ink-soft/15 bg-paper-raised px-4 py-5 shadow-md sm:px-[16mm] sm:py-[14mm]" style={{ zoom: taille }}>
+                <MarkdownContent content={contenuActif || ""} variant="epreuve" trackSourcePositions />
+                {filigrane}
+              </div>
+            )}
           </div>
+
+          {/* Défilement continu : contrôles flottants, hors de la feuille, en bas à gauche (l'assistant occupe la droite). */}
+          {!pagine && (
+            <div className="fixed bottom-4 left-4 z-30 print:hidden">{controles}</div>
+          )}
 
           {/* Barre de sélection : TOUJOURS affichée (découvrabilité) — les
               actions compte y sont désactivées avec leur motif en info-bulle ;

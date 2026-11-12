@@ -2,11 +2,12 @@ import { Layers, Rows3 } from "lucide-react";
 import { t } from "../i18n";
 import { memoriserAffichage, type AffichageSujets } from "../lib/sujets";
 
-/** « Page par page » / « Toutes les pages » : visible seulement quand l'épreuve a plusieurs sujets. */
+/** « Un sujet à la fois » / « Tous les sujets » : visible seulement quand l'épreuve a plusieurs sujets.
+ *  Ne pas confondre avec « Lecture paginée » (BasculePages), qui pagine le texte sur une feuille A4. */
 export function BasculeAffichage({ valeur, onChange }: { valeur: AffichageSujets; onChange: (a: AffichageSujets) => void }) {
   const options: [AffichageSujets, string, typeof Layers][] = [
-    ["page", t("Page par page"), Rows3],
-    ["tout", t("Toutes les pages"), Layers],
+    ["page", t("Un sujet à la fois"), Rows3],
+    ["tout", t("Tous les sujets"), Layers],
   ];
   return (
     <div role="group" aria-label={t("Affichage des sujets")} className="flex overflow-hidden rounded-full border border-ink-soft/20 text-xs">

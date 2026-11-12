@@ -269,6 +269,43 @@ console.log("\nLecteur et assistant élève");
     ok(apresReload === apres, `non mémorisé : ${apresReload} ≠ ${apres}`);
   });
 
+  await test("lecture paginée : bascule, navigation page suivante/précédente et préférence mémorisée", async () => {
+    // Épreuve riche dédiée : plusieurs pages garanties, indépendante du contenu des autres scénarios. Année PASSÉE :
+    // une année future passerait devant les épreuves à formules dans les recherches triées par année (autres scénarios).
+    const riche = await creerEpreuveRiche("Mathématiques", "1998");
+    await page.goto(`/epreuve/${riche}`);
+    await page.locator(".prose-exam").first().waitFor({ timeout: 15000 });
+    const statut = page.locator("[data-testid=page-status]");
+    await page.getByRole("button", { name: "Lecture paginée" }).click();
+    await page.locator("[data-testid=feuille]").first().waitFor({ timeout: 15000 });
+    await statut.waitFor({ timeout: 15000 });
+    const premier = (await statut.textContent())?.trim() ?? "";
+    const m = premier.match(/^Page 1 \/ (\d+)$/);
+    ok(m, `statut initial inattendu : ${premier}`);
+    const total = Number(m[1]);
+    ok(total > 1, `le contenu n'est pas paginé : ${premier}`);
+    // La feuille paginée ne doit pas recourir au zoom CSS de la feuille continue.
+    ok((await page.locator("div[style*='zoom']").count()) === 0, "zoom CSS encore posé en lecture paginée");
+
+    await page.getByRole("button", { name: "Suivant" }).click();
+    await page.waitForTimeout(300);
+    ok((await statut.textContent())?.trim() === `Page 2 / ${total}`, `après Suivant : ${(await statut.textContent())?.trim()}`);
+
+    // Clavier : ← revient à la page précédente depuis la zone de lecture.
+    await page.getByRole("group", { name: "Contenu de l'épreuve" }).press("ArrowLeft");
+    await page.waitForTimeout(300);
+    ok((await statut.textContent())?.trim() === `Page 1 / ${total}`, `après ← : ${(await statut.textContent())?.trim()}`);
+
+    // Préférence mémorisée : le rechargement rouvre directement en lecture paginée.
+    await page.reload();
+    await page.locator("[data-testid=feuille]").first().waitFor({ timeout: 15000 });
+    ok(((await statut.textContent())?.trim() ?? "").startsWith("Page 1 /"), "préférence non mémorisée");
+
+    // Retour au défilement continu pour ne pas influencer les scénarios suivants.
+    await page.getByRole("button", { name: "Lecture paginée" }).click();
+    await page.locator("div[style*='zoom']").first().waitFor({ timeout: 10000 });
+  });
+
   await test("assistant : le texte étranger à l'épreuve est écarté côté serveur", async () => {
     const detail = await (await ctx.request.get(`/api/epreuves/${epreuveId}`)).json();
     const vraiPassage = detail.contenu_markdown.replace(/[#$]/g, "").slice(0, 160);
@@ -832,7 +869,8 @@ console.log("\nPanneaux de discussion (élève et admin d'épreuve)");
   await connecterEleve(ctx, `chat-${RUN}@test.cm`);
   const page = await ctx.newPage();
   const liste = await (await ctx.request.get("/api/epreuves?q=mathematiques&limit=50")).json();
-  const id = liste.find((e) => e.acces === "gratuit").id;
+  // L'épreuve du jeu de test (formules KaTeX) : la première gratuite peut être une épreuve sans contenu.
+  const id = (liste.find((e) => e.acces === "gratuit" && /Exercice sur les fonctions/.test(e.extrait ?? "")) ?? liste.find((e) => e.acces === "gratuit")).id;
   const boite = () => page; // le panneau élève est un volet latéral (pas un role=dialog) : champs et boutons ont des noms uniques sur la page
   const poser = async (q) => {
     await boite().getByLabel("Question à Tuteur IA Prep").fill(q);

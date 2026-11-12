@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { t } from "../i18n";
-import { ZOOM_MAX, ZOOM_MIN, memoriserZoom, palierVoisin, zoomInitial, zoomPince } from "../lib/zoomLecteur";
+import { borner, memoriserZoom, palierVoisin, zoomInitial, zoomPince } from "../lib/zoomLecteur";
 
 /** Zoom de la feuille du lecteur (mémorisé sur l'appareil) : `changer` passe au palier voisin (A−/A+), `pincer`
  * applique un zoom continu pendant un pincement, `memoriser` l'enregistre à la fin du geste. `zoom` est appliqué au
@@ -12,7 +11,12 @@ export function useTailleTexte() {
     setTaille(n);
     memoriserZoom(n);
   };
-  return { taille, changer, pincer: setTaille, memoriser: () => memoriserZoom(taille) };
+  const regler = (zoom: number) => {
+    const n = borner(zoom);
+    setTaille(n);
+    memoriserZoom(n);
+  };
+  return { taille, changer, regler, pincer: setTaille, memoriser: () => memoriserZoom(taille) };
 }
 
 /** Pincement à deux doigts SUR `ref` : zoome la feuille et non la page. `touch-action: pan-x pan-y` (classes de
@@ -56,17 +60,4 @@ export function usePincementZoom(ref: RefObject<HTMLElement | null>, actif: bool
       el.removeEventListener("gesturechange", bloquer);
     };
   }, [ref, actif]);
-}
-
-export function TailleTexte({ taille, onChange }: { taille: number; onChange: (d: -1 | 1) => void }) {
-  return (
-    <div role="group" aria-label={t("Taille du texte")} className="flex items-center rounded-full border border-ink-soft/20 text-sm">
-      <button type="button" onClick={() => onChange(-1)} disabled={taille <= ZOOM_MIN + 0.001} aria-label={t("Réduire le texte")} className="min-h-[44px] min-w-[44px] disabled:opacity-40">
-        A−
-      </button>
-      <button type="button" onClick={() => onChange(1)} disabled={taille >= ZOOM_MAX - 0.001} aria-label={t("Agrandir le texte")} className="min-h-[44px] min-w-[44px] text-base disabled:opacity-40">
-        A+
-      </button>
-    </div>
-  );
 }
