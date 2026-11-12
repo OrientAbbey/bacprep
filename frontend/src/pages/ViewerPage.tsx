@@ -712,7 +712,7 @@ export function ViewerPage() {
             onContextMenu={(e) => e.preventDefault()}
             // Échelle du texte en mode paginé seulement : en continu, le zoom CSS de la feuille fait déjà le travail.
             style={pagine ? ({ "--exam-scale": taille } as React.CSSProperties) : undefined}
-            className={`touch-pan-x touch-pan-y absolute inset-0 rounded-lg border border-ink-soft/15 bg-paper ${
+            className={`touch-pan-x touch-pan-y absolute inset-0 rounded-lg border border-ink-soft/15 bg-ink/5 ${
               pagine ? "flex flex-col overflow-hidden p-2 sm:p-4" : "overflow-y-auto p-2 sm:p-6"
             }`}
           >
