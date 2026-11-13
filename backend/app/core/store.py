@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Optional
 
 from fastapi import WebSocket
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import utc_now
@@ -434,20 +435,38 @@ def scope_already_covered(
 
 # ---------- Historique de consultation ----------
 
-def record_consultation(db: Session, user_id: str, epreuve_id: str) -> None:
-    """Enregistre/rafraîchit l'horodatage de consultation d'une épreuve —
-    une ligne par (utilisateur, épreuve), mise à jour plutôt que dupliquée
-    à chaque nouvelle visite (évite une croissance illimitée de la table)."""
-    row = (
+def _consultation_row(db: Session, user_id: str, epreuve_id: str) -> Optional[ConsultationORM]:
+    return (
         db.query(ConsultationORM)
         .filter(ConsultationORM.user_id == user_id, ConsultationORM.epreuve_id == epreuve_id)
         .one_or_none()
     )
+
+
+def record_consultation(db: Session, user_id: str, epreuve_id: str) -> None:
+    """Enregistre/rafraîchit l'horodatage de consultation d'une épreuve —
+    une ligne par (utilisateur, épreuve), mise à jour plutôt que dupliquée
+    à chaque nouvelle visite (évite une croissance illimitée de la table).
+
+    Deux ouvertures SIMULTANÉES de la même épreuve (page + préchargement
+    hors-ligne, par exemple) peuvent lire « aucune ligne » toutes les deux :
+    l'insertion de la seconde viole la contrainte UNIQUE et renvoyait une 500
+    à l'élève. On rafraîchit alors la ligne créée par la première requête."""
+    row = _consultation_row(db, user_id, epreuve_id)
     if row:
         row.consulted_at = utc_now()
-    else:
-        db.add(ConsultationORM(user_id=user_id, epreuve_id=epreuve_id, consulted_at=utc_now()))
-    db.commit()
+        db.commit()
+        return
+    db.add(ConsultationORM(user_id=user_id, epreuve_id=epreuve_id, consulted_at=utc_now()))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        row = _consultation_row(db, user_id, epreuve_id)
+        if row is None:
+            raise
+        row.consulted_at = utc_now()
+        db.commit()
 
 
 def get_recent_consultations(db: Session, user_id: str, limit: int = MAX_HISTORIQUE) -> list[ConsultationORM]:
