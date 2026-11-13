@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, Loader2, Plus, Search, X } from "lucide-react";
 import { api, ApiError, ensureReferentielOption } from "../../api/client";
 import { AdminEpreuveCounts, EpreuveDetail, ReferentielOptions } from "../../api/types";
+import { AtelierExercicesModal } from "../../components/AtelierExercicesModal";
 import { BasculeAffichage } from "../../components/BasculeAffichage";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { ajouterALaSuite } from "../../lib/atelier";
 import { affichageInitial, contenuAffiche, type AffichageSujets } from "../../lib/sujets";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
@@ -112,6 +114,8 @@ export function EpreuvesPanel({
   const [statutForm, setStatutForm] = useState("brouillon");
   // État du tiroir droit de l'assistant admin.
   const [assistantOuvert, setAssistantOuvert] = useState(false);
+  // Atelier d'exercices (génération d'un brouillon sujet + corrigé).
+  const [atelierOuvert, setAtelierOuvert] = useState(false);
   // Clé de la discussion de l'assistant tant que l'épreuve n'est pas enregistrée ; renouvelée à chaque nouveau brouillon.
   const [brouillonId, setBrouillonId] = useState(nouvelIdBrouillon);
   // Dernière application de l'assistant : instantané d'avant pour « Annuler », et clés des champs modifiés
@@ -712,6 +716,53 @@ export function EpreuvesPanel({
     setApplication(null);
   }
 
+  /** Insertions de l'atelier d'exercices : instantané des deux textes d'avant
+   * pour « Annuler l'insertion ». Le brouillon généré est AJOUTÉ à la suite du
+   * sujet et du corrigé du sujet affiché — l'épreuve ne change qu'avec
+   * « Enregistrer ». */
+  const insertionsAtelier = useRef<
+    { id: string; index: number; avantSujet: string; avantCorrige: string; apresSujet: string; apresCorrige: string }[]
+  >([]);
+
+  function insererAtelier(sujet: string, corrige: string): string | null {
+    const courant = form.sujets.find((s) => s.index === sujetActif) ?? form.sujets[0];
+    if (!courant) return null;
+    const apresSujet = ajouterALaSuite(courant.contenu_markdown, sujet);
+    const apresCorrige = ajouterALaSuite(courant.corrige_markdown, corrige);
+    const id = `atelier:${courant.index}:${insertionsAtelier.current.length}:${Date.now()}`;
+    insertionsAtelier.current.push({
+      id,
+      index: courant.index,
+      avantSujet: courant.contenu_markdown,
+      avantCorrige: courant.corrige_markdown,
+      apresSujet,
+      apresCorrige,
+    });
+    setForm((f) => ({
+      ...f,
+      sujets: f.sujets.map((s) => (s.index === courant.index ? { ...s, contenu_markdown: apresSujet, corrige_markdown: apresCorrige } : s)),
+    }));
+    return id;
+  }
+
+  /** Annule une insertion de l'atelier, SAUF si le texte a été retouché depuis
+   * (on n'écrase jamais une frappe de l'admin). */
+  function annulerInsertionAtelier(id: string): "ok" | "modifie" | "inconnu" {
+    const i = insertionsAtelier.current.findIndex((r) => r.id === id);
+    if (i < 0) return "inconnu";
+    const r = insertionsAtelier.current[i];
+    const actuel = form.sujets.find((s) => s.index === r.index);
+    if (!actuel || actuel.contenu_markdown !== r.apresSujet || actuel.corrige_markdown !== r.apresCorrige) return "modifie";
+    setForm((cur) => ({
+      ...cur,
+      sujets: cur.sujets.map((s) =>
+        s.index === r.index ? { ...s, contenu_markdown: r.avantSujet, corrige_markdown: r.avantCorrige } : s
+      ),
+    }));
+    insertionsAtelier.current.splice(i, 1);
+    return "ok";
+  }
+
   // Sujet actuellement affiché dans les zones d'édition (onglet actif).
   const sujetActifData = form.sujets.find((s) => s.index === sujetActif) ?? form.sujets[0];
   const rangSujetActif = form.sujets.findIndex((s) => s.index === sujetActifData.index) + 1;
@@ -1127,6 +1178,13 @@ export function EpreuvesPanel({
               )}
               {enCours === "save" ? "Enregistrement…" : "Enregistrer"}
             </button>
+            <button
+              type="button"
+              onClick={() => setAtelierOuvert(true)}
+              className="min-h-[44px] rounded-full border border-ink-soft/25 px-5 text-sm"
+            >
+              Atelier d'exercices
+            </button>
             {form.id && (
               <>
                 <button
@@ -1192,6 +1250,17 @@ export function EpreuvesPanel({
           onAppliquer={appliquerModifications}
           onAnnuler={derniere ? annulerApplication : undefined}
           sujetActifRang={Math.max(1, form.sujets.findIndex((s) => s.index === sujetActif) + 1)}
+        />
+      )}
+
+      {atelierOuvert && (
+        <AtelierExercicesModal
+          meta={{ matiere: form.matiere, classe: form.classe, evaluation: form.evaluation, filieres: form.filieres }}
+          epreuveId={form.id}
+          publiee={statutForm === "publie"}
+          onInserer={insererAtelier}
+          onAnnuler={annulerInsertionAtelier}
+          onClose={() => setAtelierOuvert(false)}
         />
       )}
 

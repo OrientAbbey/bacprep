@@ -1,0 +1,58 @@
+{
+  "id": "suite-geometrique",
+  "titre": "Suite géométrique : terme général, terme de rang n et somme",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Suites numériques",
+  "difficulte": 2,
+  "variables": {
+    "u0": {
+      "entier": [
+        1,
+        5
+      ]
+    },
+    "q": {
+      "choix": [
+        2,
+        3,
+        -2,
+        -3
+      ]
+    },
+    "n": {
+      "entier": [
+        4,
+        7
+      ]
+    }
+  },
+  "calculs": {
+    "un": "u0*q**n",
+    "somme": "u0*(q**(n + 1) - 1)/(q - 1)"
+  },
+  "enonce": "Soit $(v_n)$ la suite géométrique de premier terme $v_0 = {{u0}}$ et de raison $q = {{q}}$.",
+  "questions": [
+    {
+      "enonce": "Exprimer $v_n$ en fonction de $n$.",
+      "reponse": "$v_n = {{u0}} \\times {{par(q)}}^{n}$",
+      "etapes": "Pour une suite géométrique, $v_n = v_0 \\times q^{n}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer $v_{ {{n}} }$.",
+      "reponse": "$v_{ {{n}} } = {{un}}$",
+      "etapes": "$v_{ {{n}} } = {{u0}} \\times {{par(q)}}^{ {{n}} } = {{un}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer la somme $S = v_0 + v_1 + \\dots + v_{ {{n}} }$.",
+      "reponse": "$S = {{somme}}$",
+      "etapes": "Comme $q \\neq 1$ : $S = v_0 \\times \\dfrac{1 - q^{n+1} }{1 - q} = {{u0}} \\times \\dfrac{1 - {{par(q)}}^{ {{n + 1}} } }{1 - {{par(q)}} } = {{somme}}$.",
+      "points": 2
+    }
+  ]
+}

@@ -433,6 +433,37 @@ class SignalementORM(Base):
     resolved_at = Column(UTCDateTime, nullable=True)
 
 
+class GabaritValidationORM(Base):
+    """Validation d'un gabarit d'exercice paramétré (`app/gabarits/*.json`)
+    par un enseignant. Liée au HASH du contenu : si le fichier change, le hash
+    ne correspond plus et le gabarit cesse d'être montré aux élèves tant qu'il
+    n'est pas revalidé. Seuls les gabarits validés sont publics."""
+
+    __tablename__ = "gabarit_validations"
+
+    gabarit_id = Column(String, primary_key=True)
+    hash_contenu = Column(String, nullable=False)
+    valide_par = Column(String, nullable=False)  # e-mail de l'admin
+    valide_le = Column(UTCDateTime, default=utc_now)
+
+
+class GabaritSignalementORM(Base):
+    """Signalement d'une variante fautive d'un gabarit : le couple
+    (gabarit, graine) retrouve exactement l'énoncé vu par l'élève. Supprimé
+    avec le compte."""
+
+    __tablename__ = "gabarit_signalements"
+
+    id = Column(String, primary_key=True, default=_uid)
+    gabarit_id = Column(String, nullable=False, index=True)
+    graine = Column(Integer, nullable=False)
+    user_id = Column(String, nullable=False, index=True)  # sans clé étrangère : la suppression de compte purge ces lignes explicitement
+    message = Column(Text, nullable=False, default="")
+    statut = Column(String, nullable=False, default="ouvert")  # ouvert|resolu
+    created_at = Column(UTCDateTime, default=utc_now)
+    resolved_at = Column(UTCDateTime, nullable=True)
+
+
 class ReferentielOptionORM(Base):
     """Option d'une liste énumérative du référentiel (chantier « paramètres
     à valeurs discrètes reconfigurables ») : `scope` nomme la liste (niveau,

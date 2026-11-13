@@ -24,6 +24,7 @@ const ProfilePage = React.lazy(() => import("./pages/ProfilePage").then((m) => (
 const AdminPage = React.lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
 const AidePage = React.lazy(() => import("./pages/AidePage").then((m) => ({ default: m.AidePage })));
 const AProposPage = React.lazy(() => import("./pages/AProposPage").then((m) => ({ default: m.AProposPage })));
+const EntrainementPage = React.lazy(() => import("./pages/EntrainementPage").then((m) => ({ default: m.EntrainementPage })));
 
 function KickoutBanner() {
   const { kickoutMessage, clearKickoutMessage } = useAuth();
@@ -75,6 +76,14 @@ export default function App() {
                 />
                 <Route path="/abonnement" element={<SubscribePage />} />
                 <Route path="/calendrier" element={<CalendrierPage />} />
+                <Route
+                  path="/entrainement"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <EntrainementPage />
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="/aide"
                   element={

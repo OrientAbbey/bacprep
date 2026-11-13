@@ -1,0 +1,75 @@
+{
+  "id": "solution-nacl-concentration-dilution",
+  "titre": "Concentration et dilution d'une solution de chlorure de sodium",
+  "matiere": "Physique-Chimie",
+  "classes": [
+    "2nde",
+    "1ere"
+  ],
+  "chapitre": "Solutions aqueuses",
+  "difficulte": 1,
+  "variables": {
+    "k": {
+      "choix": [
+        0.1,
+        0.2,
+        0.25,
+        0.5,
+        1
+      ]
+    },
+    "v": {
+      "choix": [
+        250,
+        500,
+        1000
+      ]
+    },
+    "v0": {
+      "choix": [
+        10,
+        20,
+        25,
+        50
+      ]
+    },
+    "v1": {
+      "choix": [
+        100,
+        200,
+        250,
+        500
+      ]
+    }
+  },
+  "calculs": {
+    "m": "58.5*k",
+    "vl": "v/1000",
+    "c": "k/vl",
+    "cf": "c*v0/v1"
+  },
+  "contraintes": [
+    "v0 < v1"
+  ],
+  "enonce": "On dissout une masse $m$ de chlorure de sodium $\\mathrm{NaCl}$ (masse molaire $M = 58{,}5\\ \\mathrm{g/mol}$) dans de l'eau pour obtenir ${{v}}\\ \\mathrm{mL}$ de solution. La quantité de matière dissoute est $n = {{decimal(k)}}\\ \\mathrm{mol}$.",
+  "questions": [
+    {
+      "enonce": "Calculer la masse $m$ de chlorure de sodium dissoute.",
+      "reponse": "$m = {{decimal(m)}}\\ \\mathrm{g}$",
+      "etapes": "$m = n \\times M = {{decimal(k)}} \\times 58{,}5 = {{decimal(m)}}\\ \\mathrm{g}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer la concentration molaire $C$ de la solution.",
+      "reponse": "$C = {{decimal(c)}}\\ \\mathrm{mol/L}$",
+      "etapes": "Le volume est $V = {{decimal(vl)}}\\ \\mathrm{L}$ : $C = \\dfrac{n}{V} = \\dfrac{ {{decimal(k)}} }{ {{decimal(vl)}} } = {{decimal(c)}}\\ \\mathrm{mol/L}$.",
+      "points": 1.5
+    },
+    {
+      "enonce": "On prélève ${{v0}}\\ \\mathrm{mL}$ de cette solution et on complète avec de l'eau distillée jusqu'à ${{v1}}\\ \\mathrm{mL}$. Calculer la concentration $C'$ de la solution obtenue.",
+      "reponse": "$C' = {{decimal(cf)}}\\ \\mathrm{mol/L}$",
+      "etapes": "La quantité de matière se conserve : $C \\times V_0 = C' \\times V_1$, donc $C' = C \\times \\dfrac{V_0}{V_1} = {{decimal(c)}} \\times \\dfrac{ {{v0}} }{ {{v1}} } = {{decimal(cf)}}\\ \\mathrm{mol/L}$.",
+      "points": 1.5
+    }
+  ]
+}

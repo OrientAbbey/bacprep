@@ -101,6 +101,9 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               <Link to="/" className="hover:text-ink">
                 {t("Accueil")}
               </Link>
+              <Link to="/entrainement" className="hover:text-ink">
+                {t("Entraînement")}
+              </Link>
               <Link to="/abonnement" className="hover:text-ink">
                 {t("Abonnement")}
               </Link>
@@ -200,6 +203,9 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
             <nav className="flex flex-col gap-1">
               <Link to="/" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
                 {t("Accueil")}
+              </Link>
+              <Link to="/entrainement" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
+                {t("Entraînement")}
               </Link>
               <Link to="/abonnement" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
                 {t("Abonnement")}

@@ -13,7 +13,7 @@ APP = RACINE / "backend" / "app"
 EN = json.loads((RACINE / "frontend" / "src" / "locales" / "en.json").read_text(encoding="utf-8"))
 
 # Routeurs que l'interface élève appelle (la console admin reste volontairement en français).
-ROUTEURS_ELEVE = ["auth", "me", "epreuves", "assistant", "subscriptions", "essais", "files", "notifications", "calendrier", "avatar", "ws", "deps"]
+ROUTEURS_ELEVE = ["auth", "me", "epreuves", "assistant", "subscriptions", "essais", "entrainement", "files", "notifications", "calendrier", "avatar", "ws", "deps"]
 
 # Messages produits hors `HTTPException`/`message=` : évènement d'erreur du flux, session fermée, IA indisponible.
 HORS_ROUTEURS = [

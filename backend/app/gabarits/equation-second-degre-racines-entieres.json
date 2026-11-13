@@ -1,0 +1,59 @@
+{
+  "id": "equation-second-degre-racines-entieres",
+  "titre": "Résoudre une équation du second degré",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Équations du second degré",
+  "difficulte": 1,
+  "variables": {
+    "a": {
+      "choix": [
+        1,
+        2,
+        3
+      ]
+    },
+    "r1": {
+      "entier": [
+        -6,
+        3
+      ]
+    },
+    "r2": {
+      "entier": [
+        -3,
+        6
+      ]
+    }
+  },
+  "calculs": {
+    "b": "-a*(r1 + r2)",
+    "c": "a*r1*r2",
+    "delta": "b*b - 4*a*c",
+    "rd": "racine(delta)",
+    "den": "2*a",
+    "n1": "-b - rd",
+    "n2": "-b + rd"
+  },
+  "contraintes": [
+    "r1 < r2"
+  ],
+  "enonce": "Résoudre dans $\\mathbb{R}$ l'équation $(E)$ : ${{poly(a, b, c)}} = 0$.",
+  "questions": [
+    {
+      "enonce": "Calculer le discriminant $\\Delta$ de $(E)$.",
+      "reponse": "$\\Delta = {{delta}}$",
+      "etapes": "$\\Delta = b^{2} - 4ac = {{par(b)}}^{2} - 4 \\times {{par(a)}} \\times {{par(c)}} = {{delta}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "En déduire les solutions de $(E)$.",
+      "reponse": "$S = \\{ {{r1}} ; {{r2}} \\}$",
+      "etapes": "Comme $\\Delta > 0$, l'équation a deux solutions : $x_{1} = \\dfrac{-b - \\sqrt{\\Delta} }{2a} = \\dfrac{ {{n1}} }{ {{den}} } = {{r1}}$ et $x_{2} = \\dfrac{-b + \\sqrt{\\Delta} }{2a} = \\dfrac{ {{n2}} }{ {{den}} } = {{r2}}$.",
+      "points": 2
+    }
+  ]
+}

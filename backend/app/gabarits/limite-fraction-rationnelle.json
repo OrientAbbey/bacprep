@@ -1,0 +1,66 @@
+{
+  "id": "limite-fraction-rationnelle",
+  "titre": "Limite d'une fraction rationnelle en +∞ et asymptote horizontale",
+  "matiere": "Mathématiques",
+  "classes": [
+    "terminale"
+  ],
+  "chapitre": "Limites de fonctions",
+  "difficulte": 2,
+  "variables": {
+    "a": {
+      "entier": [
+        1,
+        6
+      ]
+    },
+    "b": {
+      "entier": [
+        -6,
+        6
+      ]
+    },
+    "c": {
+      "entier": [
+        -6,
+        6
+      ]
+    },
+    "d": {
+      "entier": [
+        1,
+        5
+      ]
+    },
+    "e": {
+      "entier": [
+        -6,
+        6
+      ]
+    },
+    "g": {
+      "entier": [
+        -6,
+        6
+      ]
+    }
+  },
+  "calculs": {
+    "lim": "a/d"
+  },
+  "enonce": "Soit $f$ la fonction définie pour $x$ assez grand par $f(x) = \\dfrac{ {{poly(a, b, c)}} }{ {{poly(d, e, g)}} }$.",
+  "questions": [
+    {
+      "enonce": "Calculer $\\displaystyle \\lim_{x \\to +\\infty} f(x)$.",
+      "reponse": "$\\displaystyle \\lim_{x \\to +\\infty} f(x) = {{tex(lim)}}$",
+      "etapes": "En $+\\infty$, une fraction rationnelle a la même limite que le quotient de ses termes de plus haut degré : $\\displaystyle \\lim_{x \\to +\\infty} f(x) = \\lim_{x \\to +\\infty} \\dfrac{ {{a}}x^{2} }{ {{d}}x^{2} } = \\dfrac{ {{a}} }{ {{d}} } = {{tex(lim)}}$.",
+      "points": 2
+    },
+    {
+      "enonce": "Que peut-on en déduire pour la courbe représentative de $f$ ?",
+      "reponse": "La droite d'équation $y = {{tex(lim)}}$ est asymptote horizontale à la courbe en $+\\infty$.",
+      "etapes": "Puisque $f(x)$ tend vers ${{tex(lim)}}$ quand $x$ tend vers $+\\infty$, la courbe admet une asymptote horizontale d'équation $y = {{tex(lim)}}$.",
+      "points": 1
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "id": "suite-arithmetique",
+  "titre": "Suite arithmétique : terme général, terme de rang n et somme",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Suites numériques",
+  "difficulte": 1,
+  "variables": {
+    "u0": {
+      "entier": [
+        -10,
+        10
+      ]
+    },
+    "r": {
+      "entier": [
+        -5,
+        5
+      ],
+      "non_nul": true
+    },
+    "n": {
+      "entier": [
+        8,
+        20
+      ]
+    }
+  },
+  "calculs": {
+    "un": "u0 + n*r",
+    "somme": "(n + 1)*(2*u0 + n*r)/2"
+  },
+  "contraintes": [
+    "(n + 1)*(2*u0 + n*r) % 2 == 0"
+  ],
+  "enonce": "Soit $(u_n)$ la suite arithmétique de premier terme $u_0 = {{u0}}$ et de raison $r = {{r}}$.",
+  "questions": [
+    {
+      "enonce": "Exprimer $u_n$ en fonction de $n$.",
+      "reponse": "$u_n = {{poly(r, u0, 'n')}}$",
+      "etapes": "Pour une suite arithmétique, $u_n = u_0 + n \\times r$, donc $u_n = {{poly(r, u0, 'n')}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer $u_{ {{n}} }$.",
+      "reponse": "$u_{ {{n}} } = {{un}}$",
+      "etapes": "$u_{ {{n}} } = {{par(r)}} \\times {{n}} + {{par(u0)}} = {{un}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer la somme $S = u_0 + u_1 + \\dots + u_{ {{n}} }$.",
+      "reponse": "$S = {{somme}}$",
+      "etapes": "La somme de $n + 1$ termes consécutifs vaut $(n + 1) \\times \\dfrac{u_0 + u_{n} }{2}$. Ici $n = {{n}}$ : $S = {{n + 1}} \\times \\dfrac{ {{u0}} + {{par(un)}} }{2} = {{somme}}$.",
+      "points": 2
+    }
+  ]
+}

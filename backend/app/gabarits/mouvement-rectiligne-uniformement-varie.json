@@ -1,0 +1,57 @@
+{
+  "id": "mouvement-rectiligne-uniformement-varie",
+  "titre": "Mouvement rectiligne uniformément varié : vitesse et distance",
+  "matiere": "Physique-Chimie",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Cinématique",
+  "difficulte": 1,
+  "variables": {
+    "v0": {
+      "entier": [
+        0,
+        10
+      ]
+    },
+    "acc": {
+      "entier": [
+        1,
+        5
+      ]
+    },
+    "t": {
+      "entier": [
+        2,
+        10
+      ]
+    }
+  },
+  "calculs": {
+    "v": "v0 + acc*t",
+    "dist": "v0*t + acc*t*t/2",
+    "vkmh": "v*18/5"
+  },
+  "enonce": "Un mobile se déplace en ligne droite avec une accélération constante $a = {{acc}}\\ \\mathrm{m/s^2}$. À l'instant $t = 0$, sa vitesse est $v_0 = {{v0}}\\ \\mathrm{m/s}$.",
+  "questions": [
+    {
+      "enonce": "Calculer sa vitesse à l'instant $t = {{t}}\\ \\mathrm{s}$.",
+      "reponse": "$v = {{v}}\\ \\mathrm{m/s}$",
+      "etapes": "$v = v_0 + a\\,t = {{v0}} + {{acc}} \\times {{t}} = {{v}}\\ \\mathrm{m/s}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer la distance parcourue entre $t = 0$ et $t = {{t}}\\ \\mathrm{s}$.",
+      "reponse": "$d = {{dec(dist, 1)}}\\ \\mathrm{m}$",
+      "etapes": "$d = v_0\\,t + \\dfrac{1}{2}\\,a\\,t^{2} = {{v0}} \\times {{t}} + \\dfrac{1}{2} \\times {{acc}} \\times {{t}}^{2} = {{dec(dist, 1)}}\\ \\mathrm{m}$.",
+      "points": 2
+    },
+    {
+      "enonce": "Exprimer en km/h la vitesse trouvée à la première question.",
+      "reponse": "$v = {{dec(vkmh, 1)}}\\ \\mathrm{km/h}$",
+      "etapes": "$1\\ \\mathrm{m/s} = 3{,}6\\ \\mathrm{km/h}$, donc $v = {{v}} \\times 3{,}6 = {{dec(vkmh, 1)}}\\ \\mathrm{km/h}$.",
+      "points": 1
+    }
+  ]
+}

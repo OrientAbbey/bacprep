@@ -1,0 +1,70 @@
+{
+  "id": "benefice-maximal-commerce",
+  "titre": "Bénéfice maximal d'un commerçant",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Dérivabilité et étude de fonctions",
+  "difficulte": 2,
+  "variables": {
+    "a": {
+      "entier": [
+        1,
+        5
+      ]
+    },
+    "xs": {
+      "entier": [
+        5,
+        20
+      ]
+    },
+    "c": {
+      "entier": [
+        10,
+        60
+      ]
+    },
+    "ville": {
+      "entier": [
+        0,
+        4
+      ]
+    }
+  },
+  "calculs": {
+    "b1": "2*a*xs",
+    "d1": "-2*a",
+    "d0": "2*a*xs",
+    "bmax": "a*xs*xs - c",
+    "xmax": "2*xs",
+    "bfcfa": "bmax*1000",
+    "mx": "-d1"
+  },
+  "contraintes": [
+    "c < a*xs*xs"
+  ],
+  "enonce": "Un commerçant du marché de {{texte(ville, \"Mokolo\", \"Bafoussam\", \"Douala\", \"Yaoundé\", \"Garoua\")}} vend $x$ sacs de riz par jour ($0 \\leq x \\leq {{xmax}}$). Son bénéfice journalier, en milliers de FCFA, est $B(x) = {{poly(-a, b1, -c)}}$.",
+  "questions": [
+    {
+      "enonce": "Calculer $B'(x)$ pour tout $x$ de $[0\\ ;\\ {{xmax}}]$.",
+      "reponse": "$B'(x) = {{poly(d1, d0)}}$",
+      "etapes": "On dérive terme à terme : $B'(x) = {{poly(d1, d0)}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Étudier le signe de $B'(x)$ et en déduire le nombre de sacs qui rend le bénéfice maximal.",
+      "reponse": "$B'(x) = 0$ pour $x = {{xs}}$ ; $B$ est croissante sur $[0\\ ;\\ {{xs}}]$ puis décroissante : le bénéfice est maximal pour ${{xs}}$ sacs.",
+      "etapes": "$B'(x) = 0 \\iff x = \\dfrac{ {{d0}} }{ {{mx}} } = {{xs}}$. Le coefficient de $x$ dans $B'(x)$ est négatif (${{d1}}$) : $B'(x) > 0$ avant ${{xs}}$ et $B'(x) < 0$ après.",
+      "points": 2
+    },
+    {
+      "enonce": "Calculer le bénéfice maximal.",
+      "reponse": "$B({{xs}}) = {{bmax}}$ milliers de FCFA, soit ${{milliers_tex(bfcfa)}}$ FCFA.",
+      "etapes": "$B({{xs}}) = {{par(-a)}} \\times {{xs}}^{2} + {{b1}} \\times {{xs}} {{plus(-c)}} = {{bmax}}$ milliers de FCFA.",
+      "points": 2
+    }
+  ]
+}

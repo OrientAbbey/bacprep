@@ -1,0 +1,107 @@
+{
+  "id": "moyenne-ponderee-bulletin",
+  "titre": "Moyenne pondérée d'un bulletin de notes",
+  "matiere": "Mathématiques",
+  "classes": [
+    "3e",
+    "2nde",
+    "1ere"
+  ],
+  "chapitre": "Statistiques",
+  "difficulte": 1,
+  "variables": {
+    "cm": {
+      "choix": [
+        2,
+        3,
+        4
+      ]
+    },
+    "cf": {
+      "choix": [
+        2,
+        3
+      ]
+    },
+    "ca": {
+      "choix": [
+        1,
+        2
+      ]
+    },
+    "cs": {
+      "choix": [
+        1,
+        2,
+        3
+      ]
+    },
+    "nm": {
+      "decimal": [
+        4,
+        18,
+        0.5
+      ]
+    },
+    "nf": {
+      "decimal": [
+        4,
+        18,
+        0.5
+      ]
+    },
+    "na": {
+      "decimal": [
+        4,
+        18,
+        0.5
+      ]
+    },
+    "ns": {
+      "decimal": [
+        4,
+        18,
+        0.5
+      ]
+    },
+    "nom": {
+      "entier": [
+        0,
+        4
+      ]
+    }
+  },
+  "calculs": {
+    "coefs": "cm + cf + ca + cs",
+    "pts": "cm*nm + cf*nf + ca*na + cs*ns",
+    "moy": "pts/coefs",
+    "seuil": "10*coefs"
+  },
+  "enonce": "{{texte(nom, \"Mballa\", \"Fotso\", \"Ngono\", \"Tchoumi\", \"Atangana\")}} consulte son bulletin du trimestre :\n\n| Matière | Coefficient | Note sur 20 |\n|---|---|---|\n| Mathématiques | {{cm}} | ${{decimal(nm)}}$ |\n| Français | {{cf}} | ${{decimal(nf)}}$ |\n| Anglais | {{ca}} | ${{decimal(na)}}$ |\n| SVT | {{cs}} | ${{decimal(ns)}}$ |",
+  "questions": [
+    {
+      "enonce": "Calculer la somme des coefficients.",
+      "reponse": "${{coefs}}$",
+      "etapes": "${{cm}} + {{cf}} + {{ca}} + {{cs}} = {{coefs}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer le total des points pondérés.",
+      "reponse": "${{decimal(pts)}}$",
+      "etapes": "${{cm}} \\times {{decimal(nm)}} + {{cf}} \\times {{decimal(nf)}} + {{ca}} \\times {{decimal(na)}} + {{cs}} \\times {{decimal(ns)}} = {{decimal(pts)}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer la moyenne du trimestre (arrondir au centième).",
+      "reponse": "$M \\approx {{dec(moy, 2)}}$ sur 20.",
+      "etapes": "$M = \\dfrac{ {{decimal(pts)}} }{ {{coefs}} } \\approx {{dec(moy, 2)}}$.",
+      "points": 2
+    },
+    {
+      "enonce": "La moyenne atteint-elle 10 sur 20 ? Justifier.",
+      "reponse": "{{si(pts >= seuil, \"Oui\", \"Non\")}} : la moyenne est {{si(pts >= seuil, \"supérieure ou égale\", \"inférieure\")}} à 10.",
+      "etapes": "On compare le total ${{decimal(pts)}}$ à $10 \\times {{coefs}} = {{seuil}}$ : ${{decimal(pts)}} {{si(pts >= seuil, \"≥\", \"<\")}} {{seuil}}$.",
+      "points": 1
+    }
+  ]
+}

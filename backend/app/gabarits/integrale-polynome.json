@@ -1,0 +1,56 @@
+{
+  "id": "integrale-polynome",
+  "titre": "Primitive et intégrale d'un polynôme de degré 2",
+  "matiere": "Mathématiques",
+  "classes": [
+    "terminale"
+  ],
+  "chapitre": "Calcul intégral",
+  "difficulte": 2,
+  "variables": {
+    "a": {
+      "entier": [
+        1,
+        6
+      ]
+    },
+    "b": {
+      "entier": [
+        -6,
+        6
+      ]
+    },
+    "c": {
+      "entier": [
+        -6,
+        6
+      ]
+    },
+    "k": {
+      "entier": [
+        1,
+        4
+      ]
+    }
+  },
+  "calculs": {
+    "pa": "a/3",
+    "pb": "b/2",
+    "vi": "a*k**3/3 + b*k**2/2 + c*k"
+  },
+  "enonce": "On considère la fonction $f$ définie sur $\\mathbb{R}$ par $f(x) = {{poly(a, b, c)}}$.",
+  "questions": [
+    {
+      "enonce": "Déterminer une primitive $F$ de $f$ sur $\\mathbb{R}$.",
+      "reponse": "$F(x) = {{poly(pa, pb, c, 0)}}$",
+      "etapes": "Une primitive de $x^{n}$ est $\\dfrac{x^{n+1} }{n+1}$, donc une primitive de $f$ est $F(x) = {{poly(pa, pb, c, 0)}}$.",
+      "points": 1.5
+    },
+    {
+      "enonce": "Calculer $I = \\displaystyle \\int_{0}^{ {{k}} } f(x)\\,dx$.",
+      "reponse": "$I = {{tex(vi)}}$",
+      "etapes": "$I = \\left[ F(x) \\right]_{0}^{ {{k}} } = F({{k}}) - F(0) = {{tex(vi)}}$ car $F(0) = 0$.",
+      "points": 1.5
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "id": "probabilite-urne",
+  "titre": "Probabilités : tirages dans une urne",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Probabilités et dénombrement",
+  "difficulte": 2,
+  "variables": {
+    "r": {
+      "entier": [
+        2,
+        6
+      ]
+    },
+    "v": {
+      "entier": [
+        2,
+        6
+      ]
+    },
+    "bl": {
+      "entier": [
+        1,
+        5
+      ]
+    }
+  },
+  "calculs": {
+    "n": "r + v + bl",
+    "pr": "r/n",
+    "pairs": "comb(n, 2)",
+    "same": "comb(r, 2) + comb(v, 2) + comb(bl, 2)",
+    "pm": "same/pairs",
+    "rv": "r*v",
+    "prv": "r*v/pairs"
+  },
+  "enonce": "Une urne contient ${{r}}$ boules rouges, ${{v}}$ boules vertes et ${{bl}}$ boules bleues, indiscernables au toucher.",
+  "questions": [
+    {
+      "enonce": "On tire une boule au hasard. Calculer la probabilité d'obtenir une boule rouge.",
+      "reponse": "$P = {{tex(pr)}}$",
+      "etapes": "Il y a ${{n}}$ boules en tout, dont ${{r}}$ rouges : $P = \\dfrac{ {{r}} }{ {{n}} } = {{tex(pr)}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "On tire simultanément deux boules. Calculer la probabilité qu'elles soient de la même couleur.",
+      "reponse": "$P = {{tex(pm)}}$",
+      "etapes": "Il y a $\\binom{ {{n}} }{2} = {{pairs}}$ tirages possibles. Ceux de deux boules de même couleur sont au nombre de $\\binom{ {{r}} }{2} + \\binom{ {{v}} }{2} + \\binom{ {{bl}} }{2} = {{same}}$. Donc $P = \\dfrac{ {{same}} }{ {{pairs}} } = {{tex(pm)}}$.",
+      "points": 2
+    },
+    {
+      "enonce": "On tire simultanément deux boules. Calculer la probabilité d'obtenir une boule rouge et une boule verte.",
+      "reponse": "$P = {{tex(prv)}}$",
+      "etapes": "Il y a ${{r}} \\times {{v}} = {{rv}}$ façons de choisir une rouge et une verte parmi ${{pairs}}$ tirages : $P = \\dfrac{ {{rv}} }{ {{pairs}} } = {{tex(prv)}}$.",
+      "points": 2
+    }
+  ]
+}

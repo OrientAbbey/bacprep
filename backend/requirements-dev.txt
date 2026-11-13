@@ -1,3 +1,6 @@
 -r requirements.txt
 pytest>=9.1.1,<=9.999.999
+# Vérification INDÉPENDANTE des gabarits d'exercices (scripts_dev/verif_gabarits.py) :
+# jamais installée en production, les tests concernés sont ignorés si absente.
+sympy>=1.14.0,<=1.999.999
 ruff>=0.16.10,<=0.16.999

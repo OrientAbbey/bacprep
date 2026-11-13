@@ -1,0 +1,56 @@
+{
+  "id": "delegues-classe-probabilites",
+  "titre": "Probabilités : le choix de deux délégués de classe",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Probabilités et dénombrement",
+  "difficulte": 2,
+  "variables": {
+    "f": {
+      "entier": [
+        10,
+        25
+      ]
+    },
+    "g": {
+      "entier": [
+        10,
+        30
+      ]
+    }
+  },
+  "calculs": {
+    "n": "f + g",
+    "pairs": "comb(n, 2)",
+    "pf2": "comb(f, 2)",
+    "pg2": "comb(g, 2)",
+    "fg": "f*g",
+    "p2f": "pf2/pairs",
+    "pfg": "fg/pairs",
+    "pau": "1 - pg2/pairs"
+  },
+  "enonce": "Dans une classe de Terminale de ${{n}}$ élèves, il y a ${{f}}$ filles et ${{g}}$ garçons. Pour représenter la classe, on choisit au hasard deux délégués simultanément.",
+  "questions": [
+    {
+      "enonce": "Calculer la probabilité que les deux délégués soient des filles.",
+      "reponse": "$P = {{tex(p2f)}}$",
+      "etapes": "Il y a $\\binom{ {{n}} }{2} = {{pairs}}$ choix possibles de deux délégués, dont $\\binom{ {{f}} }{2} = {{pf2}}$ choix de deux filles : $P = \\dfrac{ {{pf2}} }{ {{pairs}} } = {{tex(p2f)}}$.",
+      "points": 1.5
+    },
+    {
+      "enonce": "Calculer la probabilité d'obtenir un garçon et une fille.",
+      "reponse": "$P = {{tex(pfg)}}$",
+      "etapes": "On choisit un garçon et une fille de ${{g}} \\times {{f}} = {{fg}}$ façons : $P = \\dfrac{ {{fg}} }{ {{pairs}} } = {{tex(pfg)}}$.",
+      "points": 1.5
+    },
+    {
+      "enonce": "Calculer la probabilité qu'au moins un délégué soit une fille.",
+      "reponse": "$P = {{tex(pau)}}$",
+      "etapes": "L'événement contraire est « aucune fille », c'est-à-dire deux garçons : $\\dfrac{ {{pg2}} }{ {{pairs}} }$. Donc $P = 1 - \\dfrac{ {{pg2}} }{ {{pairs}} } = {{tex(pau)}}$.",
+      "points": 2
+    }
+  ]
+}

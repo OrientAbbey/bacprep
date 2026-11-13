@@ -18,6 +18,7 @@ import { Spinner } from "../components/Spinner";
 import { messageErreurConnexion } from "../lib/messageConnexion";
 import { AdminAssistantGlobal } from "./admin/AdminAssistantGlobal";
 import { CalendrierPanel } from "./admin/CalendrierPanel";
+import { GabaritsPanel } from "./admin/GabaritsPanel";
 import { EpreuvesPanel } from "./admin/EpreuvesPanel";
 import { ImportPanel } from "./admin/ImportPanel";
 import { JournalPanel } from "./admin/JournalPanel";
@@ -37,6 +38,7 @@ type Onglet =
   | "utilisateurs"
   | "parametres"
   | "formules"
+  | "gabarits"
   | "calendrier"
   | "journal"
   | "signalements"
@@ -47,7 +49,7 @@ type Onglet =
  * (pages/admin/*) — ce fichier ne fait que le routage interne. */
 /** Les onglets, regroupés en trois familles (navigation latérale sur écran large). */
 const GROUPES: { titre: string; ids: Onglet[] }[] = [
-  { titre: "Contenu", ids: ["epreuves", "import", "formules", "calendrier"] },
+  { titre: "Contenu", ids: ["epreuves", "import", "formules", "gabarits", "calendrier"] },
   { titre: "Communauté", ids: ["utilisateurs", "signalements", "notifications"] },
   { titre: "Système", ids: ["parametres", "sauvegardes", "journal"] },
 ];
@@ -394,6 +396,7 @@ export function AdminPage() {
       epreuves: "Épreuves",
       import: "Import massif",
       formules: "Formules",
+      gabarits: "Exercices types",
       calendrier: "Calendrier",
       utilisateurs: "Utilisateurs",
       signalements: "Signalements",
@@ -570,6 +573,8 @@ export function AdminPage() {
           <ParametresPanel token={token} />
         ) : tab === "formules" ? (
           <PlansPanel token={token} />
+        ) : tab === "gabarits" ? (
+          <GabaritsPanel token={token} />
         ) : tab === "calendrier" ? (
           <CalendrierPanel token={token} />
         ) : tab === "notifications" ? (

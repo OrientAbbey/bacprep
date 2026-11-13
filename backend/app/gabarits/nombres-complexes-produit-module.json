@@ -1,0 +1,81 @@
+{
+  "id": "nombres-complexes-produit-module",
+  "titre": "Nombres complexes : produit, conjugué et module",
+  "matiere": "Mathématiques",
+  "classes": [
+    "terminale"
+  ],
+  "chapitre": "Nombres complexes",
+  "difficulte": 2,
+  "variables": {
+    "a": {
+      "entier": [
+        -5,
+        5
+      ]
+    },
+    "b": {
+      "entier": [
+        -5,
+        5
+      ]
+    },
+    "c": {
+      "entier": [
+        -5,
+        5
+      ]
+    },
+    "d": {
+      "entier": [
+        -5,
+        5
+      ]
+    },
+    "m": {
+      "entier": [
+        2,
+        4
+      ]
+    },
+    "nn": {
+      "entier": [
+        1,
+        3
+      ]
+    }
+  },
+  "calculs": {
+    "pr": "a*c - b*d",
+    "pi": "a*d + b*c",
+    "mod2": "a*a + b*b",
+    "p": "m*m - nn*nn",
+    "q": "2*m*nn",
+    "h": "m*m + nn*nn",
+    "p2q2": "p*p + q*q"
+  },
+  "contraintes": [
+    "(a != 0 or b != 0) and (c != 0 or d != 0) and m > nn"
+  ],
+  "enonce": "On pose $z_1 = {{cplx(a, b)}}$ et $z_2 = {{cplx(c, d)}}$.",
+  "questions": [
+    {
+      "enonce": "Calculer $z_1 z_2$ sous forme algébrique.",
+      "reponse": "$z_1 z_2 = {{cplx(pr, pi)}}$",
+      "etapes": "On développe en utilisant $i^{2} = -1$ : $z_1 z_2 = ({{a}} \\times {{par(c)}} - {{par(b)}} \\times {{par(d)}}) + ({{a}} \\times {{par(d)}} + {{par(b)}} \\times {{par(c)}})i = {{cplx(pr, pi)}}$.",
+      "points": 2
+    },
+    {
+      "enonce": "Calculer $z_1 \\overline{z_1}$.",
+      "reponse": "$z_1 \\overline{z_1} = {{mod2}}$",
+      "etapes": "Le conjugué est $\\overline{z_1} = {{cplx(a, -b)}}$ et $z_1 \\overline{z_1} = a^{2} + b^{2} = {{par(a)}}^{2} + {{par(b)}}^{2} = {{mod2}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer le module de $w = {{cplx(p, q)}}$.",
+      "reponse": "$|w| = {{h}}$",
+      "etapes": "$|w| = \\sqrt{ {{par(p)}}^{2} + {{par(q)}}^{2} } = \\sqrt{ {{p2q2}} } = {{h}}$.",
+      "points": 1
+    }
+  ]
+}

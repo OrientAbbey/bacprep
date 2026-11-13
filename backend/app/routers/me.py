@@ -13,6 +13,7 @@ from ..db_models import (
     EpreuveORM,
     AvatarORM,
     EssaiORM,
+    GabaritSignalementORM,
     KickoutNoticeORM,
     NoteORM,
     NotificationReadORM,
@@ -275,6 +276,10 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
             {"epreuve_id": c.epreuve_id, "epreuve": epreuves.get(c.epreuve_id), "consulted_at": c.consulted_at}
             for c in db.query(ConsultationORM).filter(ConsultationORM.user_id == user.id).all()
         ],
+        "signalements_exercices": [
+            {"gabarit_id": r.gabarit_id, "graine": r.graine, "message": r.message, "statut": r.statut, "created_at": r.created_at}
+            for r in db.query(GabaritSignalementORM).filter(GabaritSignalementORM.user_id == user.id).all()
+        ],
         "avatar": {"present": db.get(AvatarORM, user.id) is not None},  # l'image elle-même : GET /api/me/avatar
         "essais": [
             {"epreuve_id": t.epreuve_id, "epreuve": epreuves.get(t.epreuve_id), "note": t.note, "duree_s": t.duree_s, "date": t.created_at}
@@ -322,6 +327,7 @@ def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) 
     db.query(PaymentORM).filter(PaymentORM.user_id == u_id).delete()
     db.query(SubscriptionORM).filter(SubscriptionORM.user_id == u_id).delete()
     db.query(SignalementORM).filter(SignalementORM.user_id == u_id).delete()
+    db.query(GabaritSignalementORM).filter(GabaritSignalementORM.user_id == u_id).delete()
     db.query(NotificationReadORM).filter(NotificationReadORM.user_id == u_id).delete()
     db.delete(user)
     db.commit()

@@ -34,8 +34,11 @@ from .core.logging_config import log_json_actif, get_logger, setup_logging
 from .db import Base, SessionLocal, engine
 from .routers import (
     admin_assistant,
+    admin_gabarits,
+    admin_generation,
     calendrier,
     cron,
+    entrainement,
     essais,
     admin_epreuves,
     admin_import,
@@ -430,6 +433,9 @@ app.include_router(admin_plans.router)
 app.include_router(calendrier.public)
 app.include_router(calendrier.admin)
 app.include_router(essais.router)
+app.include_router(entrainement.router)
+app.include_router(admin_gabarits.router)
+app.include_router(admin_generation.router)
 app.include_router(avatar.router)
 app.include_router(cron.router)
 app.include_router(admin_notifications.router)

@@ -51,12 +51,36 @@ MAX_IMAGES_PAR_QUESTION = 3
 # l'autre fournisseur puis le mode démonstration.
 
 
+def _csv_env(nom_env: str) -> list[str]:
+    """Valeurs d'une variable d'environnement au format CSV (vides ignorées)."""
+    return [m.strip() for m in os.getenv(nom_env, "").split(",") if m.strip()]
+
+
 def _provider_models(env: str, default: str) -> list[str]:
     """Modèles (fallback ordonné) d'un fournisseur : GEMINI_MODELS /
     GROQ_MODELS (CSV, ordre = ordre d'essai), repli sur le défaut du
     module si la variable est vide."""
-    models = [m.strip() for m in os.getenv(env, "").split(",") if m.strip()]
-    return models or [default]
+    return _csv_env(env) or [default]
+
+
+def cle_ia_configuree() -> bool:
+    """Vrai si au moins une clé d'IA est présente (Gemini ou Groq).
+
+    `refonte` n'a pas la cascade Cloudflare/OpenRouter d'`evolution` :
+    seuls ces deux fournisseurs existent."""
+    return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY"))
+
+
+def _nouvelle_mesure() -> dict:
+    """Amorce de mesure (no-op). `refonte` ne tient pas de journal de jetons ;
+    l'atelier d'exercices appelle cette fonction pour rester aligné sur
+    `evolution` sans écrire en base."""
+    return {}
+
+
+def _enregistrer_mesure(user_id: Optional[str]) -> None:
+    """Clôture de mesure (no-op) — voir `_nouvelle_mesure`."""
+    return None
 
 
 # --- Modèles Groq Vision (images) ---------------------------------------
@@ -528,15 +552,31 @@ def _groq_content(model: str, prompt: str, image_paths: list[Path]):
     return _groq_prompt_with_image_note(prompt, len(image_paths))
 
 
-async def _call_groq(prompt: str, image_paths: list[Path]) -> Optional[str]:
+async def _call_groq(
+    prompt: str, image_paths: list[Path], models: list[str] | None = None,
+) -> Optional[str]:
     """Appel Groq non-streaming (conservé pour `/ask` historique et comme
     filet de secours du streaming) — voir `_call_provider`. Avec images,
     les modèles Vision Groq les reçoivent en data URI (qwen/qwen3.8-27b
-    confirmé) ; les modèles texte seul reçoivent une note."""
+    confirmé) ; les modèles texte seul reçoivent une note.
+
+    `models` impose une liste (atelier d'exercices : modèle plus fort que
+    celui du tuteur, quota Groq distinct). Sans argument, ordre habituel."""
     return await _call_provider(
         "Groq", (prompt, image_paths), "GROQ_API_KEY",
-        models=_groq_models_ordonnes(image_paths),
+        models=models if models is not None else _groq_models_ordonnes(image_paths),
     )
+
+
+async def call_cascade(prompt: str, image_paths: list[Path]) -> Optional[str]:
+    """Adaptateur B1 de la cascade d'`evolution` : ici, Groq seulement.
+
+    L'atelier d'exercices impose ses modèles (`GENERATION_GROQ_MODELS`,
+    défaut gpt-oss-120b puis gpt-oss-20b) pour ne pas consommer le quota
+    du tuteur. None si Groq ne répond pas — le mode démonstration relève
+    de l'appelant, jamais de cette fonction."""
+    modeles = _csv_env("GENERATION_GROQ_MODELS") or ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    return await _call_groq(prompt, image_paths, models=modeles)
 
 
 async def _stream_groq(prompt: str, image_paths: list[Path]) -> AsyncIterator[str]:

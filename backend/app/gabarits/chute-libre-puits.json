@@ -1,0 +1,52 @@
+{
+  "id": "chute-libre-puits",
+  "titre": "Chute libre d'une pierre dans un puits",
+  "matiere": "Physique-Chimie",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Chute libre",
+  "difficulte": 1,
+  "variables": {
+    "t": {
+      "decimal": [
+        1,
+        4,
+        0.25
+      ]
+    },
+    "nom": {
+      "entier": [
+        0,
+        4
+      ]
+    }
+  },
+  "calculs": {
+    "v": "10*t",
+    "h": "5*t*t",
+    "vk": "v*18/5"
+  },
+  "enonce": "{{texte(nom, \"Mballa\", \"Fotso\", \"Ngono\", \"Tchoumi\", \"Atangana\")}} laisse tomber une pierre, sans vitesse initiale, dans un puits. Elle touche l'eau après $t = {{decimal(t)}}\\ \\mathrm{s}$ de chute. On néglige les frottements et on prend $g = 10\\ \\mathrm{m/s^2}$.",
+  "questions": [
+    {
+      "enonce": "Calculer la vitesse de la pierre quand elle touche l'eau.",
+      "reponse": "$v = {{decimal(v)}}\\ \\mathrm{m/s}$",
+      "etapes": "$v = g\\,t = 10 \\times {{decimal(t)}} = {{decimal(v)}}\\ \\mathrm{m/s}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer la profondeur du puits jusqu'à la surface de l'eau.",
+      "reponse": "$h = {{decimal(h)}}\\ \\mathrm{m}$",
+      "etapes": "$h = \\dfrac{1}{2}\\,g\\,t^{2} = \\dfrac{1}{2} \\times 10 \\times {{decimal(t)}}^{2} = {{decimal(h)}}\\ \\mathrm{m}$.",
+      "points": 2
+    },
+    {
+      "enonce": "Exprimer la vitesse d'arrivée en km/h.",
+      "reponse": "$v = {{decimal(vk)}}\\ \\mathrm{km/h}$",
+      "etapes": "$1\\ \\mathrm{m/s} = 3{,}6\\ \\mathrm{km/h}$, donc $v = {{decimal(v)}} \\times 3{,}6 = {{decimal(vk)}}\\ \\mathrm{km/h}$.",
+      "points": 1
+    }
+  ]
+}

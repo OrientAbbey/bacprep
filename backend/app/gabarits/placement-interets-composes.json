@@ -1,0 +1,67 @@
+{
+  "id": "placement-interets-composes",
+  "titre": "Un placement à intérêts composés",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Suites numériques",
+  "difficulte": 2,
+  "variables": {
+    "c0": {
+      "choix": [
+        100000,
+        200000,
+        500000,
+        1000000
+      ]
+    },
+    "t": {
+      "choix": [
+        2,
+        4,
+        5,
+        10
+      ]
+    },
+    "n": {
+      "entier": [
+        2,
+        5
+      ]
+    },
+    "nom": {
+      "entier": [
+        0,
+        4
+      ]
+    }
+  },
+  "calculs": {
+    "q": "1 + t/100",
+    "cn": "c0*q**n",
+    "cn_arr": "arrondi(cn, 0)"
+  },
+  "enonce": "{{texte(nom, \"Mballa\", \"Fotso\", \"Ngono\", \"Tchoumi\", \"Atangana\")}} place {{milliers(c0)}} FCFA à intérêts composés, au taux annuel de {{t}} %. Chaque année, les intérêts sont ajoutés au capital. On note $C_n$ le capital, en FCFA, après $n$ années.",
+  "questions": [
+    {
+      "enonce": "Montrer que $(C_n)$ est une suite géométrique et donner sa raison.",
+      "reponse": "$(C_n)$ est géométrique de raison $q = {{decimal(q)}}$ et de premier terme $C_0 = {{milliers_tex(c0)}}$.",
+      "etapes": "Chaque année, le capital est multiplié par $1 + \\dfrac{ {{t}} }{100} = {{decimal(q)}}$ : $C_{n+1} = {{decimal(q)}} \\times C_n$.",
+      "points": 1.5
+    },
+    {
+      "enonce": "Exprimer $C_n$ en fonction de $n$.",
+      "reponse": "$C_n = {{milliers_tex(c0)}} \\times {{decimal(q)}}^{n}$",
+      "etapes": "Pour une suite géométrique, $C_n = C_0 \\times q^{n}$.",
+      "points": 1.5
+    },
+    {
+      "enonce": "Calculer le capital après ${{n}}$ années (arrondir au franc).",
+      "reponse": "$C_{ {{n}} } \\approx {{milliers_tex(cn_arr)}}$ FCFA.",
+      "etapes": "$C_{ {{n}} } = {{milliers_tex(c0)}} \\times {{decimal(q)}}^{ {{n}} } = {{decimal(cn)}}$, soit environ ${{milliers_tex(cn_arr)}}$ FCFA au franc près.",
+      "points": 2
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "id": "derivee-polynome-degre-3",
+  "titre": "Dériver un polynôme de degré 3 et trouver une tangente",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Dérivabilité et étude de fonctions",
+  "difficulte": 1,
+  "variables": {
+    "a": {
+      "entier": [
+        1,
+        4
+      ]
+    },
+    "b": {
+      "entier": [
+        -6,
+        6
+      ]
+    },
+    "c": {
+      "entier": [
+        -9,
+        9
+      ]
+    },
+    "d": {
+      "entier": [
+        -9,
+        9
+      ]
+    },
+    "x0": {
+      "entier": [
+        -3,
+        3
+      ],
+      "non_nul": true
+    }
+  },
+  "calculs": {
+    "d3": "3*a",
+    "d2": "2*b",
+    "fp0": "3*a*x0**2 + 2*b*x0 + c",
+    "f0": "a*x0**3 + b*x0**2 + c*x0 + d",
+    "p": "f0 - fp0*x0"
+  },
+  "enonce": "Soit $f$ la fonction définie sur $\\mathbb{R}$ par $f(x) = {{poly(a, b, c, d)}}$.",
+  "questions": [
+    {
+      "enonce": "Déterminer l'expression de $f'(x)$.",
+      "reponse": "$f'(x) = {{poly(d3, d2, c)}}$",
+      "etapes": "On dérive terme à terme avec $(x^{n})' = n\\,x^{n-1}$ et $(k)' = 0$ pour une constante $k$. On obtient $f'(x) = {{poly(d3, d2, c)}}$.",
+      "points": 1.5
+    },
+    {
+      "enonce": "Calculer $f'({{x0}})$.",
+      "reponse": "$f'({{x0}}) = {{fp0}}$",
+      "etapes": "On remplace $x$ par ${{par(x0)}}$ dans $f'(x)$ : $f'({{x0}}) = {{d3}} \\times {{par(x0)}}^{2} + {{par(d2)}} \\times {{par(x0)}} + {{par(c)}} = {{fp0}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Déterminer l'équation réduite de la tangente à la courbe de $f$ au point d'abscisse ${{x0}}$.",
+      "reponse": "$y = {{poly(fp0, p)}}$",
+      "etapes": "On a $f({{x0}}) = {{f0}}$ et $f'({{x0}}) = {{fp0}}$. La tangente a pour équation $y = f'({{x0}})(x - {{par(x0)}}) + f({{x0}})$, c'est-à-dire $y = {{poly(fp0, p)}}$.",
+      "points": 2.5
+    }
+  ]
+}

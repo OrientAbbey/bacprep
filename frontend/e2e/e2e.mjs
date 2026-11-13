@@ -16,8 +16,8 @@ async function test(nom, fn) {
     resultats.push([true, nom]);
     console.log("  ✓", nom);
   } catch (e) {
-    resultats.push([false, nom, e.message.split("\n")[0]]);
-    console.log("  ✗", nom, "\n     →", e.message.split("\n")[0]);
+    resultats.push([false, nom, e.message.slice(0, 3000)]);
+    console.log("  ✗", nom, "\n     →", e.message.slice(0, 3000));
   }
 }
 const ok = (cond, msg) => {
@@ -344,6 +344,78 @@ console.log("\nLecteur et assistant élève");
     ok(r.ok(), "statut " + r.status());
     const corps = await r.text();
     ok(/"type": ?"chunk"/.test(corps) && /"type": ?"done"/.test(corps), "flux SSE incomplet : " + corps.slice(0, 120));
+  });
+  await ctx.close();
+}
+
+console.log("\nEntraînement et gabarits");
+{
+  const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
+  await connecterAdmin(ctx);
+  const page = await ctx.newPage();
+  const gid = "suite-arithmetique";
+  const urlGabarit = `/api/admin/gabarits/${gid}`;
+  // Le titre vient du fichier de gabarit : on le lit au lieu de le recopier.
+  const listeGabarits = await (await ctx.request.get("/api/admin/gabarits")).json();
+  const titre = listeGabarits.gabarits.find((g) => g.id === gid).titre;
+
+  await test("entraînement : valider un gabarit le rend visible côté élève", async () => {
+    await ctx.request.delete(`${urlGabarit}/validation`);
+    await page.goto("/admin");
+    await page.getByRole("tab", { name: "Exercices types" }).waitFor({ timeout: 15000 });
+    await page.getByRole("tab", { name: "Exercices types" }).click();
+    const carte = page.locator("li").filter({ has: page.getByRole("heading", { name: titre, exact: true }) });
+    await carte.getByRole("button", { name: `Valider : ${titre}`, exact: true }).click();
+    await carte.getByText("Validé", { exact: true }).waitFor({ timeout: 30000 });
+    await page.goto("/entrainement");
+    await page.getByRole("link", { name: `Faire cet exercice : ${titre}`, exact: true }).waitFor({ timeout: 15000 });
+    await page.screenshot({ path: `${SHOTS}/entrainement-liste.png` });
+  });
+
+  await test("entraînement : retirer la validation le fait disparaître", async () => {
+    const ret = await ctx.request.delete(`${urlGabarit}/validation`);
+    ok(ret.ok(), "retrait de la validation : " + ret.status());
+    await page.goto("/entrainement");
+    await page.getByRole("heading", { name: "Entraînement", exact: true }).waitFor();
+    ok((await page.getByRole("link", { name: `Faire cet exercice : ${titre}`, exact: true }).count()) === 0, "le gabarit retiré est encore proposé");
+    const r = await ctx.request.get(`/api/entrainement/gabarits/${gid}?graine=20261113`);
+    ok(r.status() === 404, "une variante retirée reste accessible : " + r.status());
+    const remise = await ctx.request.post(`${urlGabarit}/validation`);
+    ok(remise.ok(), "remise de la validation : " + remise.status());
+  });
+
+  await test("entraînement : une graine partagée redonne exactement la même variante", async () => {
+    const graine = 20261113;
+    const url = `/entrainement?g=${gid}&graine=${graine}`;
+    await page.goto(url);
+    await page.getByText(`Variante n° ${graine}`, { exact: false }).waitFor({ timeout: 15000 });
+    const enonce = await page.locator("article").innerText();
+    await page.getByRole("button", { name: "Voir la correction", exact: true }).click();
+    await page.getByRole("heading", { name: "Méthode", exact: true }).first().waitFor();
+    await page.reload();
+    await page.getByText(`Variante n° ${graine}`, { exact: false }).waitFor({ timeout: 15000 });
+    ok((await page.locator("article").innerText()).includes(enonce.split("Voir la correction")[0]), "la variante a changé au rechargement");
+    await page.screenshot({ path: `${SHOTS}/entrainement-variante.png` });
+  });
+
+  await test("entraînement : un signalement élève remonte dans l'admin", async () => {
+    const message = `Signalement E2E ${RUN}`;
+    const graine = Date.now() % 2147483647; // graine dans la plage acceptée par l'URL
+    await page.goto(`/entrainement?g=${gid}&graine=${graine}`);
+    await page.getByRole("heading", { name: titre, exact: true }).waitFor();
+    await page.getByText(`Variante n° ${graine}`, { exact: false }).waitFor();
+    await page.getByRole("button", { name: "Signaler une erreur", exact: true }).click();
+    await page.getByLabel("Décris le problème (facultatif)").fill(message);
+    await page.getByRole("button", { name: "Envoyer le signalement", exact: true }).click();
+    await page.getByText("Merci, ton signalement a été transmis. On vérifie cette variante.").waitFor({ timeout: 15000 });
+    await page.goto("/admin");
+    await page.getByRole("tab", { name: "Exercices types" }).click();
+    const signalement = page.locator("li").filter({ hasText: message });
+    await signalement.waitFor({ timeout: 15000 });
+    ok((await signalement.innerText()).includes(`variante n° ${graine}`), "la graine du signalement est absente");
+    await page.screenshot({ path: `${SHOTS}/admin-entrainement.png` });
+    await signalement.getByRole("button", { name: `Marquer comme résolu : ${titre}`, exact: true }).click();
+    await signalement.waitFor({ state: "detached", timeout: 15000 });
   });
   await ctx.close();
 }
@@ -1889,11 +1961,11 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
   await ctx.request.post(`/api/admin/notifications/${ids[0]}/toggle`);
   await page.goto("/admin");
 
-  await test("navigation : panneau latéral groupé (3 familles, 10 sections), flèches ↑↓, repli en liste déroulante sur mobile", async () => {
+  await test("navigation : panneau latéral groupé (3 familles, 11 sections), flèches ↑↓, repli en liste déroulante sur mobile", async () => {
     const liste = page.getByRole("tablist", { name: "Sections du back-office" });
     await liste.waitFor({ timeout: 15000 });
     ok((await liste.getAttribute("aria-orientation")) === "vertical", "pas vertical");
-    ok((await liste.getByRole("tab").count()) === 10, "il doit y avoir 10 sections");
+    ok((await liste.getByRole("tab").count()) === 11, "il doit y avoir 11 sections");
     for (const g of ["Contenu", "Communauté", "Système"]) await liste.getByText(g, { exact: true }).waitFor();
     const x0 = (await liste.boundingBox()).x, larg = (await liste.boundingBox()).width;
     ok(larg < 260 && x0 < 100, `panneau latéral attendu (x=${x0}, largeur=${larg})`);

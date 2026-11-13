@@ -1,0 +1,66 @@
+{
+  "id": "tontine-cotisation-croissante",
+  "titre": "Une tontine à cotisation croissante",
+  "matiere": "Mathématiques",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Suites numériques",
+  "difficulte": 1,
+  "variables": {
+    "u1": {
+      "choix": [
+        5000,
+        10000,
+        15000,
+        20000
+      ]
+    },
+    "r": {
+      "choix": [
+        500,
+        1000,
+        2000
+      ]
+    },
+    "n": {
+      "entier": [
+        6,
+        12
+      ]
+    },
+    "nom": {
+      "entier": [
+        0,
+        4
+      ]
+    }
+  },
+  "calculs": {
+    "un": "u1 + (n - 1)*r",
+    "n1": "n - 1",
+    "total": "n*(u1 + un)/2"
+  },
+  "enonce": "{{texte(nom, \"Mballa\", \"Fotso\", \"Ngono\", \"Tchoumi\", \"Atangana\")}} participe à une tontine. Le premier mois, la cotisation est de {{milliers(u1)}} FCFA ; chaque mois suivant, elle augmente de {{milliers(r)}} FCFA. On note $u_n$ la cotisation du $n$-ième mois, en FCFA.",
+  "questions": [
+    {
+      "enonce": "Montrer que la suite $(u_n)$ est arithmétique et donner sa raison.",
+      "reponse": "$(u_n)$ est arithmétique de raison $r = {{milliers_tex(r)}}$ FCFA, de premier terme $u_1 = {{milliers_tex(u1)}}$ FCFA.",
+      "etapes": "Chaque mois, la cotisation augmente de la même somme : $u_{n+1} = u_n + {{milliers_tex(r)}}$. La suite est donc arithmétique de raison $r = {{milliers_tex(r)}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Exprimer $u_n$ en fonction de $n$, puis calculer la cotisation du mois ${{n}}$.",
+      "reponse": "$u_n = {{milliers_tex(u1)}} + (n - 1) \\times {{milliers_tex(r)}}$ et $u_{ {{n}} } = {{milliers_tex(un)}}$ FCFA.",
+      "etapes": "Pour une suite arithmétique, $u_n = u_1 + (n - 1)\\,r$. Pour $n = {{n}}$ : $u_{ {{n}} } = {{milliers_tex(u1)}} + {{n1}} \\times {{milliers_tex(r)}} = {{milliers_tex(un)}}$ FCFA.",
+      "points": 2
+    },
+    {
+      "enonce": "Calculer la somme totale versée pendant les ${{n}}$ premiers mois.",
+      "reponse": "Total versé : ${{milliers_tex(total)}}$ FCFA.",
+      "etapes": "$S = n \\times \\dfrac{u_1 + u_n}{2} = {{n}} \\times \\dfrac{ {{milliers_tex(u1)}} + {{milliers_tex(un)}} }{2} = {{milliers_tex(total)}}$ FCFA.",
+      "points": 2
+    }
+  ]
+}

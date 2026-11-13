@@ -1,0 +1,91 @@
+{
+  "id": "droite-deux-points",
+  "titre": "Droite passant par deux points",
+  "matiere": "Mathématiques",
+  "classes": [
+    "2nde",
+    "1ere"
+  ],
+  "chapitre": "Géométrie analytique",
+  "difficulte": 1,
+  "variables": {
+    "xa": {
+      "entier": [
+        -4,
+        4
+      ]
+    },
+    "dx": {
+      "choix": [
+        1,
+        2,
+        3,
+        -1,
+        -2
+      ]
+    },
+    "m": {
+      "entier": [
+        -4,
+        4
+      ],
+      "non_nul": true
+    },
+    "ya": {
+      "entier": [
+        -5,
+        5
+      ]
+    },
+    "xc": {
+      "entier": [
+        -4,
+        4
+      ]
+    },
+    "sur": {
+      "choix": [
+        0,
+        1
+      ]
+    },
+    "dy": {
+      "choix": [
+        1,
+        2,
+        -1,
+        -2
+      ]
+    }
+  },
+  "calculs": {
+    "xb": "xa + dx",
+    "yb": "ya + m*dx",
+    "p": "ya - m*xa",
+    "ycr": "m*xc + p",
+    "yc": "ycr + (1 - sur)*dy",
+    "dxb": "xb - xa",
+    "dyb": "yb - ya"
+  },
+  "enonce": "Dans un repère, on considère les points $A({{xa}} ; {{ya}})$ et $B({{xb}} ; {{yb}})$.",
+  "questions": [
+    {
+      "enonce": "Calculer le coefficient directeur de la droite $(AB)$.",
+      "reponse": "$m = {{m}}$",
+      "etapes": "$m = \\dfrac{y_B - y_A}{x_B - x_A} = \\dfrac{ {{yb}} - {{par(ya)}} }{ {{xb}} - {{par(xa)}} } = \\dfrac{ {{dyb}} }{ {{dxb}} } = {{m}}$.",
+      "points": 1
+    },
+    {
+      "enonce": "Déterminer l'équation réduite de la droite $(AB)$.",
+      "reponse": "$y = {{poly(m, p)}}$",
+      "etapes": "On cherche $y = mx + p$ avec $m = {{m}}$. Comme $A$ appartient à la droite : ${{ya}} = {{par(m)}} \\times {{par(xa)}} + p$, donc $p = {{p}}$ et $y = {{poly(m, p)}}$.",
+      "points": 2
+    },
+    {
+      "enonce": "Le point $C({{xc}} ; {{yc}})$ appartient-il à la droite $(AB)$ ? Justifier.",
+      "reponse": "{{si(sur == 1, 'Oui', 'Non')}}, $C$ {{si(sur == 1, 'appartient', 'n’appartient pas')}} à la droite $(AB)$.",
+      "etapes": "Pour $x = {{xc}}$, l'équation donne $y = {{par(m)}} \\times {{par(xc)}} + {{par(p)}} = {{ycr}}$. Or $y_C = {{yc}}$, et ${{yc}} {{si(sur == 1, '=', '≠')}} {{ycr}}$.",
+      "points": 2
+    }
+  ]
+}

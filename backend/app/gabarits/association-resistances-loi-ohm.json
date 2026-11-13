@@ -1,0 +1,67 @@
+{
+  "id": "association-resistances-loi-ohm",
+  "titre": "Association de deux résistances et loi d'Ohm",
+  "matiere": "Physique-Chimie",
+  "classes": [
+    "1ere",
+    "terminale"
+  ],
+  "chapitre": "Électricité",
+  "difficulte": 1,
+  "variables": {
+    "r1": {
+      "choix": [
+        10,
+        20,
+        30,
+        40,
+        60
+      ]
+    },
+    "r2": {
+      "choix": [
+        10,
+        20,
+        30,
+        60
+      ]
+    },
+    "u": {
+      "choix": [
+        6,
+        12,
+        24
+      ]
+    }
+  },
+  "calculs": {
+    "rs": "r1 + r2",
+    "rp": "r1*r2/(r1 + r2)",
+    "i": "u/rs",
+    "pr12": "r1*r2"
+  },
+  "contraintes": [
+    "r1 != r2"
+  ],
+  "enonce": "Deux conducteurs ohmiques de résistances $R_1 = {{r1}}\\ \\Omega$ et $R_2 = {{r2}}\\ \\Omega$ sont associés, puis soumis à une tension $U = {{u}}\\ \\mathrm{V}$.",
+  "questions": [
+    {
+      "enonce": "Calculer la résistance équivalente $R_s$ de l'association en série.",
+      "reponse": "$R_s = {{rs}}\\ \\Omega$",
+      "etapes": "En série, les résistances s'ajoutent : $R_s = R_1 + R_2 = {{r1}} + {{r2}} = {{rs}}\\ \\Omega$.",
+      "points": 1
+    },
+    {
+      "enonce": "Calculer la résistance équivalente $R_p$ de l'association en dérivation (arrondir au centième).",
+      "reponse": "$R_p = {{dec(rp, 2)}}\\ \\Omega$",
+      "etapes": "En dérivation : $R_p = \\dfrac{R_1 R_2}{R_1 + R_2} = \\dfrac{ {{r1}} \\times {{r2}} }{ {{r1}} + {{r2}} } = \\dfrac{ {{pr12}} }{ {{rs}} } \\approx {{dec(rp, 2)}}\\ \\Omega$.",
+      "points": 2
+    },
+    {
+      "enonce": "L'association en série est soumise à la tension $U$. Calculer l'intensité $I$ du courant (arrondir au centième).",
+      "reponse": "$I = {{dec(i, 2)}}\\ \\mathrm{A}$",
+      "etapes": "D'après la loi d'Ohm : $I = \\dfrac{U}{R_s} = \\dfrac{ {{u}} }{ {{rs}} } \\approx {{dec(i, 2)}}\\ \\mathrm{A}$.",
+      "points": 2
+    }
+  ]
+}
