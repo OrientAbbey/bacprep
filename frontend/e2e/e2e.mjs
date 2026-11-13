@@ -651,7 +651,7 @@ console.log("\nTraduction FR/EN");
     const noms = [...new Set(liste.map((e) => e.matiere))].map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     matieres = new RegExp(noms.join("|"), "gi");
     const residus = [];
-    for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", "/aide", "/a-propos", `/epreuve/${gratuit}`]) {
+    for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", "/aide", "/a-propos", "/confidentialite", "/conditions", `/epreuve/${gratuit}`]) {
       await page.goto(url);
       await balayer(page, url, residus);
     }
@@ -1626,6 +1626,60 @@ console.log("\nInvitation, À propos et Aide");
     await c.close();
   });
 
+  await test("pied de page : « Confidentialité » et « Conditions » mènent aux pages légales, qui se renvoient l'une à l'autre", async () => {
+    const { c, pg } = await session("liens-legaux");
+    await pg.goto("/");
+    await pg.locator("footer").getByRole("link", { name: "Confidentialité" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Politique de confidentialité" }).waitFor({ timeout: 10000 });
+    ok(pg.url().endsWith("/confidentialite"), `URL inattendue : ${pg.url()}`);
+    await pg.getByRole("link", { name: "Lire les conditions d'utilisation" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Conditions d'utilisation" }).waitFor({ timeout: 10000 });
+    await pg.getByRole("link", { name: "Lire la politique de confidentialité" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Politique de confidentialité" }).waitFor({ timeout: 10000 });
+    await c.close();
+  });
+
+  await test("pages légales : sommaire cliquable, sections atteintes, renvoi vers l'aide", async () => {
+    const { c, pg } = await session("legaux-sommaire");
+    await pg.goto("/confidentialite");
+    await pg.getByRole("heading", { level: 1, name: "Politique de confidentialité" }).waitFor({ timeout: 10000 });
+    await pg.getByRole("navigation", { name: "Sommaire" }).getByRole("link", { name: "Tes droits" }).click();
+    await pg.waitForFunction(() => location.hash === "#droits");
+    const boite = await pg.locator("#droits").boundingBox();
+    ok(boite.y >= 0 && boite.y < 400, `la section n'est pas amenée à l'écran : y = ${boite.y}`);
+    // Les faits vérifiés doivent rester visibles : export, effacement, fournisseurs, durée de session.
+    for (const texte of ["Exporter mes données", "Supprimer mon compte", "Groq", "14 jours"]) {
+      ok((await pg.getByText(texte, { exact: false }).count()) > 0, `mention absente : ${texte}`);
+    }
+    await pg.getByRole("link", { name: "Ouvrir l'aide" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 10000 });
+    await pg.goto("/conditions");
+    await pg.getByRole("heading", { level: 1, name: "Conditions d'utilisation" }).waitFor({ timeout: 10000 });
+    ok((await pg.locator("main section h2").count()) >= 8, "sections des conditions incomplètes");
+    await c.close();
+  });
+
+  await test("profil › Confidentialité : « Exporter mes données » télécharge un JSON, la suppression de compte est proposée", async () => {
+    const { c, pg } = await session("profil-droits");
+    await pg.goto("/profil");
+    await pg.getByRole("tab", { name: "Confidentialité" }).click();
+    await pg.getByRole("button", { name: "Exporter mes données" }).waitFor({ timeout: 10000 });
+    const [telechargement] = await Promise.all([
+      pg.waitForEvent("download", { timeout: 15000 }),
+      pg.getByRole("button", { name: "Exporter mes données" }).click(),
+    ]);
+    ok(telechargement.suggestedFilename().endsWith(".json"), `nom de fichier inattendu : ${telechargement.suggestedFilename()}`);
+    const chemin = await telechargement.path();
+    const contenu = JSON.parse(fs.readFileSync(chemin, "utf8"));
+    ok(contenu.profil && typeof contenu.profil.email === "string", "l'export ne contient pas le profil");
+    await pg.getByRole("button", { name: "Supprimer mon compte" }).click();
+    const confirmation = pg.getByRole("dialog", { name: "Supprimer définitivement ton compte ?" });
+    await confirmation.waitFor({ timeout: 5000 });
+    // On annule : la suite du scénario réutilise ce compte.
+    await confirmation.getByRole("button", { name: "Annuler" }).click();
+    await c.close();
+  });
+
   await test("À propos : présente l'application, renvoie vers l'aide, n'invente aucune adresse de contact", async () => {
     const { c, pg } = await session("apropos");
     await pg.goto("/a-propos");
@@ -1673,7 +1727,7 @@ console.log("\nInvitation, À propos et Aide");
 
   await test("aide : le sommaire et les rubriques restent lisibles sur mobile (sans débordement)", async () => {
     const { c, pg } = await session("aide-mobile", { viewport: { width: 390, height: 800 } });
-    for (const url of ["/aide", "/a-propos"]) {
+    for (const url of ["/aide", "/a-propos", "/confidentialite", "/conditions"]) {
       await pg.goto(url);
       await pg.getByRole("heading", { level: 1 }).waitFor({ timeout: 10000 });
       ok(await pg.evaluate(() => { const d = document.documentElement; return innerWidth === d.clientWidth && d.scrollWidth <= d.clientWidth; }), `${url} déborde sur mobile`);
@@ -2124,7 +2178,7 @@ console.log("\nBoutons flottants et débordement horizontal (bureau et mobile)")
 
     await test(`${vue} › aucune page ne déborde horizontalement (sinon la fenêtre s'élargit et les boutons fixes sortent de l'écran)`, async () => {
       const fautives = [];
-      for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/aide", "/a-propos", `/epreuve/${cree.id}`]) {
+      for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/aide", "/a-propos", "/confidentialite", "/conditions", `/epreuve/${cree.id}`]) {
         await page.goto(url);
         await attendreChargement(page);
         if (await deborde(page)) fautives.push(url);

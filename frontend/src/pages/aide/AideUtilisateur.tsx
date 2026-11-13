@@ -86,7 +86,7 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
     points: [
       t("Dans ton profil, ajoute une photo (PNG, JPEG, WebP ou GIF, 2 Mo au maximum) : elle apparaît dans l'en-tête."),
       t("L'onglet « Confidentialité » te permet d'accepter ou de refuser, à tout moment, l'enregistrement de tes conversations avec le Tuteur IA et de tes notes."),
-      t("Pour supprimer ton compte et tes données, écris à l'équipe depuis l'adresse e-mail de ton compte."),
+      t("Dans l'onglet « Confidentialité » de ton profil, « Exporter mes données » télécharge une copie de tout ce qui est conservé sur toi, et « Supprimer mon compte » efface définitivement ton compte et tes données."),
       t("Un seul appareil peut être connecté à la fois : si tu te connectes ailleurs, la première session est fermée."),
     ],
   },

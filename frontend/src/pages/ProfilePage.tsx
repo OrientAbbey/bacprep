@@ -12,6 +12,7 @@ import {
   LogIn,
   Pencil,
   Plus,
+  ShieldCheck,
   StickyNote,
   Trash2,
 } from "lucide-react";
@@ -803,9 +804,90 @@ function PanneauDonnees({
           </button>
         )}
       </div>
-      <p className="px-1 text-xs text-slate">
-        {t("Ta demande de suppression de compte et de données peut être adressée à l'équipe depuis l'adresse {email}.", { email: user.email })}
+      <MesDroits />
+    </div>
+  );
+}
+
+/** Droits d'accès/portabilité (export JSON) et d'effacement (suppression du
+ *  compte) en libre-service : les routes `/api/me/export` et
+ *  `/api/me/compte` existent côté serveur, l'élève n'a donc pas à écrire à
+ *  l'équipe. La suppression est irréversible : confirmation explicite, puis
+ *  rechargement complet (la session n'existe plus). */
+function MesDroits() {
+  const { showToast } = useToast();
+  const [confirmer, setConfirmer] = useState(false);
+  const [exportEnCours, setExportEnCours] = useState(false);
+
+  async function exporter() {
+    setExportEnCours(true);
+    try {
+      const donnees = await api.get<unknown>("/api/me/export");
+      const blob = new Blob([JSON.stringify(donnees, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement("a");
+      lien.href = url;
+      lien.download = "mes-donnees-copies-corriges.json";
+      lien.click();
+      URL.revokeObjectURL(url);
+      showToast(t("Ton export est prêt à être téléchargé."), "success");
+    } catch {
+      showToast(t("L'export a échoué — réessaie dans un instant."), "error");
+    } finally {
+      setExportEnCours(false);
+    }
+  }
+
+  async function supprimerCompte() {
+    try {
+      await api.del("/api/me/compte");
+      window.location.assign("/");
+    } catch {
+      showToast(t("La suppression a échoué — réessaie dans un instant."), "error");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+      <p className="flex items-center gap-2 font-serif-brand text-base">
+        <ShieldCheck size={16} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
+        {t("Mes droits sur mes données")}
       </p>
+      <p className="mt-1 text-xs text-ink-soft">
+        {t("Télécharge une copie de tout ce qui est conservé sur toi, ou supprime ton compte et ce qui s'y rattache.")}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void exporter()}
+          disabled={exportEnCours}
+          className="min-h-[44px] rounded-full border border-ink-soft/25 px-4 text-xs font-medium hover:bg-highlight-soft disabled:opacity-50"
+        >
+          {exportEnCours ? t("Préparation…") : t("Exporter mes données")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmer(true)}
+          className="min-h-[44px] rounded-full border border-correction/40 px-4 text-xs font-medium text-correction hover:bg-correction/10"
+        >
+          {t("Supprimer mon compte")}
+        </button>
+      </div>
+      <p className="mt-3 text-xs text-slate">
+        <Link to="/confidentialite" className="underline hover:text-ink">
+          {t("Politique de confidentialité")}
+        </Link>
+      </p>
+      {confirmer && (
+        <ConfirmDialog
+          tone="danger"
+          title={t("Supprimer définitivement ton compte ?")}
+          message={t("Tes notes, conversations, abonnements et paiements seront effacés. Cette action est irréversible.")}
+          confirmLabel={t("Supprimer mon compte")}
+          onConfirm={supprimerCompte}
+          onClose={() => setConfirmer(false)}
+        />
+      )}
     </div>
   );
 }

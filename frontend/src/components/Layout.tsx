@@ -260,6 +260,12 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
       <BottomNav />
       <footer data-chrome className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
         <nav aria-label={t("Informations")} className="mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+          <Link to="/confidentialite" className="min-h-[44px] leading-[44px] hover:text-ink">
+            {t("Confidentialité")}
+          </Link>
+          <Link to="/conditions" className="min-h-[44px] leading-[44px] hover:text-ink">
+            {t("Conditions")}
+          </Link>
           <Link to="/a-propos" className="min-h-[44px] leading-[44px] hover:text-ink">
             {t("À propos")}
           </Link>

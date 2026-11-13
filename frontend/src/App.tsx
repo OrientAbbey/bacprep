@@ -24,6 +24,7 @@ const ProfilePage = React.lazy(() => import("./pages/ProfilePage").then((m) => (
 const AdminPage = React.lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
 const AidePage = React.lazy(() => import("./pages/AidePage").then((m) => ({ default: m.AidePage })));
 const AProposPage = React.lazy(() => import("./pages/AProposPage").then((m) => ({ default: m.AProposPage })));
+const LegalPage = React.lazy(() => import("./pages/LegalPage").then((m) => ({ default: m.LegalPage })));
 const EntrainementPage = React.lazy(() => import("./pages/EntrainementPage").then((m) => ({ default: m.EntrainementPage })));
 
 function KickoutBanner() {
@@ -97,6 +98,22 @@ export default function App() {
                   element={
                     <Suspense fallback={<Skeleton className="h-64" />}>
                       <AProposPage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/confidentialite"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <LegalPage kind="privacy" />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/conditions"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <LegalPage kind="terms" />
                     </Suspense>
                   }
                 />
