@@ -265,9 +265,11 @@ console.log("\nLecteur et assistant élève");
   const ctx = await nouveauContexte();
   await connecterEleve(ctx);
   const page = await ctx.newPage();
-  const liste = await (await ctx.request.get("/api/epreuves?q=mathematiques&limit=50")).json();
-  // Une épreuve GRATUITE avec notre contenu de test (les payantes exigent un abonnement).
-  const epreuveId = liste.find((e) => e.acces === "gratuit" && /Exercice sur les fonctions/.test(e.extrait ?? "") ) ?.id ?? liste.find((e) => e.acces === "gratuit").id;
+  // Épreuve dédiée AVEC formule : les exécutions précédentes créent des épreuves d'années 2036-2039 qui finissent
+  // par évincer l'épreuve historique de la recherche du catalogue ; ce scénario ne doit pas dépendre de leur nombre.
+  // Le texte commence par de la prose (sans # ni $) : le test de contexte de l'assistant compare les 30 premiers
+  // caractères du passage au contenu stocké, symboles Markdown compris.
+  const epreuveId = await creerEpreuveRiche("Mathématiques", "1996", "Étudier les variations de la fonction f définie sur R par f(x) = x² + 2x − 3.\n\n## Question 2\n\nRésoudre $f(x) = 0$.");
 
   await test("lecteur : chargement différé (skeleton) puis contenu et formule KaTeX, sans avertissement KaTeX", async () => {
     const avertissements = [];
@@ -327,6 +329,143 @@ console.log("\nLecteur et assistant élève");
     // Retour au défilement continu pour ne pas influencer les scénarios suivants.
     await page.getByRole("button", { name: "Lecture paginée" }).click();
     await page.locator("div[style*='zoom']").first().waitFor({ timeout: 10000 });
+  });
+
+  // Épreuve paginée dédiée aux scénarios qui suivent (année PASSÉE : une année future passerait devant les épreuves à
+  // formules dans les recherches triées par année). Indépendante du contenu des autres scénarios.
+  const pagine = await creerEpreuveRiche("Mathématiques", "1997");
+  const ZONE_LECTURE = "Contenu de l'épreuve";
+  const statutPage = async () => {
+    const texte = (await page.locator("[data-testid=page-status]").textContent())?.trim() ?? "";
+    const m = texte.match(/^Page (\d+) \/ (\d+)$/);
+    ok(m, `statut de page inattendu : « ${texte} »`);
+    return { page: Number(m[1]), total: Number(m[2]) };
+  };
+  const surPage = async (attendu, quoi) => {
+    const s = await statutPage();
+    ok(s.page === attendu, `${quoi} : page ${s.page} au lieu de ${attendu} / ${s.total}`);
+  };
+  const ouvrirPagine = async (id) => {
+    await page.goto(`/epreuve/${id}`);
+    await page.locator(".prose-exam").first().waitFor({ timeout: 15000 });
+    const bascule = page.getByRole("button", { name: "Lecture paginée" });
+    if ((await bascule.getAttribute("aria-pressed")) !== "true") await bascule.click();
+    await page.locator("[data-testid=feuille]").first().waitFor({ timeout: 15000 });
+    await page.locator("[data-testid=page-status]").waitFor({ timeout: 15000 });
+  };
+
+  await test("lecture paginée : clavier complet (→, Page suivante, Début, Fin), Maj+← laissé à la sélection", async () => {
+    await ouvrirPagine(pagine);
+    const depart = await statutPage();
+    ok(depart.total >= 3, `l'épreuve devrait compter au moins 3 pages : ${depart.total}`);
+    const zone = page.getByRole("group", { name: ZONE_LECTURE });
+    await zone.focus();
+    await zone.press("End");
+    await page.waitForTimeout(300);
+    await surPage(depart.total, "Fin");
+    await zone.press("Home");
+    await page.waitForTimeout(300);
+    await surPage(1, "Début");
+    await zone.press("PageDown");
+    await page.waitForTimeout(300);
+    await surPage(2, "Page suivante");
+    await zone.press("ArrowRight");
+    await page.waitForTimeout(300);
+    await surPage(3, "→");
+    await zone.press("PageUp");
+    await page.waitForTimeout(300);
+    await surPage(2, "Page précédente");
+    // Maj+flèche = sélection au clavier : la page ne doit pas tourner.
+    await zone.press("Shift+ArrowLeft");
+    await page.waitForTimeout(300);
+    await surPage(2, "Maj+← (sélection, pas navigation)");
+  });
+
+  await test("lecture paginée : A+ repagine en gardant le passage lu (ancre, pas numéro de page)", async () => {
+    await ouvrirPagine(pagine);
+    const avant = await statutPage();
+    ok(avant.total >= 3, `l'épreuve devrait compter au moins 3 pages : ${avant.total}`);
+    await page.getByRole("button", { name: "Suivant" }).click();
+    await page.getByRole("button", { name: "Suivant" }).click();
+    await page.waitForTimeout(300);
+    await surPage(3, "navigation vers la page 3");
+    // Premier bloc (dans l'ordre du texte) qui commence sur la page affichée : c'est le passage que l'élève a sous les yeux.
+    const premierVisible = () =>
+      page.evaluate((label) => {
+        const h = document.querySelector(`[role=group][aria-label="${label}"]`);
+        const r = h.getBoundingClientRect();
+        const vus = [...h.querySelectorAll("[data-src-start]")].filter((b) => {
+          const x = b.getBoundingClientRect();
+          return x.width > 0 && x.left >= r.left - 2 && x.left < r.right - 2;
+        });
+        return { start: Number(vus[0]?.dataset.srcStart ?? -1), texte: (vus[0]?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40) };
+      }, ZONE_LECTURE);
+    const lu = await premierVisible();
+    ok(lu.start >= 0 && lu.texte.length > 5, `aucun bloc visible mesuré : « ${lu.texte} »`);
+    // Le même bloc doit rester SUR LA PAGE AFFICHÉE après repagination, quel que soit le numéro de page.
+    const encoreVisible = () =>
+      page.evaluate(({ label, start }) => {
+        const h = document.querySelector(`[role=group][aria-label="${label}"]`);
+        const r = h.getBoundingClientRect();
+        const el = h.querySelector(`[data-src-start="${start}"]`);
+        if (!el) return false;
+        const x = el.getBoundingClientRect();
+        return x.width > 0 && x.left >= r.left - 2 && x.left < r.right - 2;
+      }, { label: ZONE_LECTURE, start: lu.start });
+    await page.getByRole("button", { name: "Agrandir le texte" }).click();
+    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: "Agrandir le texte" }).click();
+    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: "Agrandir le texte" }).click();
+    await page.waitForTimeout(700);
+    const apres = await statutPage();
+    ok(apres.total > avant.total, `A+ n'a pas ajouté de pages : ${avant.total} → ${apres.total}`);
+    ok(await encoreVisible(), `le passage lu (« ${lu.texte} ») n'est plus sur la page affichée après A+ (page ${apres.page} / ${apres.total})`);
+    // Retour à 100 % : la pagination d'origine revient et la lecture ne repart pas du début. Le numéro exact peut
+    // différer : l'ancre suit le passage lu, pas le numéro de page.
+    await page.getByRole("button", { name: /Taille du texte/ }).click();
+    await page.waitForTimeout(700);
+    const retour = await statutPage();
+    ok(retour.total === avant.total, `retour à 100 % : ${retour.total} pages au lieu de ${avant.total}`);
+    ok(retour.page >= 2, `retour à 100 % : page ${retour.page}, la lecture est repartie du début`);
+    // Défilement continu pour les scénarios suivants.
+    await page.getByRole("button", { name: "Lecture paginée" }).click();
+    await page.locator("div[style*='zoom']").first().waitFor({ timeout: 10000 });
+  });
+
+  await test("lecture paginée : balayage tactile (gauche = page suivante, droite = page précédente)", async () => {
+    const m = await nouveauContexte({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true });
+    await connecterEleve(m, `balayage-${RUN}@test.cm`);
+    const pm = await m.newPage();
+    await pm.goto(`/epreuve/${pagine}`);
+    await pm.locator(".prose-exam").first().waitFor({ timeout: 15000 });
+    await pm.getByRole("button", { name: "Lecture paginée" }).click();
+    const feuille = pm.locator("[data-testid=feuille]").first();
+    await feuille.waitFor({ timeout: 15000 });
+    await feuille.scrollIntoViewIfNeeded();
+    const numero = async () => Number(((await pm.locator("[data-testid=page-status]").textContent()) ?? "").match(/^Page (\d+) \//)?.[1] ?? 0);
+    ok((await numero()) === 1, "la lecture paginée doit démarrer page 1");
+    const cdp = await m.newCDPSession(pm);
+    const b = await feuille.boundingBox();
+    // Doigt au centre de la feuille, jamais sur les outils ni hors écran.
+    const x = Math.round(b.x + b.width / 2);
+    const y = Math.round(Math.max(80, Math.min(b.y + b.height / 2, 620)));
+    const balayer = async (dx, dy = 0) => {
+      const points = (f) => [{ x: Math.round(x + dx * f), y: Math.round(y + dy * f), id: 0 }];
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(-1) });
+      for (let i = 1; i <= 6; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(-1 + (2 * i) / 6) });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await pm.waitForTimeout(400);
+    };
+    await balayer(-120); // doigt vers la gauche : page suivante
+    ok((await numero()) === 2, `balayage vers la gauche : page ${await numero()}`);
+    await balayer(120); // doigt vers la droite : page précédente
+    ok((await numero()) === 1, `balayage vers la droite : page ${await numero()}`);
+    // Un geste vertical ne tourne pas la page.
+    await balayer(0, -140);
+    ok((await numero()) === 1, `balayage vertical : page ${await numero()}`);
+    await pm.screenshot({ path: `${SHOTS}/lecture-paginee-mobile.png` });
+    await m.close();
   });
 
   await test("assistant : le texte étranger à l'épreuve est écarté côté serveur", async () => {
@@ -426,6 +565,38 @@ console.log("\nEntraînement et gabarits");
     await page.screenshot({ path: `${SHOTS}/admin-entrainement.png` });
     await signalement.getByRole("button", { name: `Marquer comme résolu : ${titre}`, exact: true }).click();
     await signalement.waitFor({ state: "detached", timeout: 15000 });
+  });
+
+  await test("entraînement : variante par graine → signalement → résolution (traitée, conservée)", async () => {
+    const graine = (Date.now() + 17) % 2147483647;
+    const message = `Chaîne variante ${RUN}`;
+    // 1. La variante est déterministe : deux appels avec la même graine donnent le même énoncé.
+    const v1 = await (await ctx.request.get(`/api/entrainement/gabarits/${gid}?graine=${graine}`)).json();
+    const v2 = await (await ctx.request.get(`/api/entrainement/gabarits/${gid}?graine=${graine}`)).json();
+    ok(v1.graine === graine && v1.enonce === v2.enonce, "la variante n'est pas déterministe pour une même graine");
+    // 2. Un seul signalement OUVERT par élève et par variante : le second est refusé. Élève DÉDIÉ : le plafond de
+    // signalements (10 par heure et par compte) ne doit pas dépendre des exécutions précédentes.
+    const eleve = await nouveauContexte();
+    await connecterEleve(eleve, `signal-${RUN}@test.cm`);
+    const premier = await eleve.request.post(`/api/entrainement/gabarits/${gid}/signalements`, { data: { graine, message } });
+    ok(premier.ok(), "signalement : " + premier.status());
+    const doublon = await eleve.request.post(`/api/entrainement/gabarits/${gid}/signalements`, { data: { graine, message } });
+    ok(doublon.status() === 409, "signalement en double accepté : " + doublon.status());
+    await eleve.close();
+    // 3. L'admin le voit avec sa graine et le traite.
+    await page.goto("/admin");
+    await page.getByRole("tab", { name: "Exercices types" }).click();
+    const ligne = page.locator("li").filter({ hasText: message });
+    await ligne.waitFor({ timeout: 15000 });
+    ok((await ligne.innerText()).includes(`variante n° ${graine}`), "la graine du signalement est absente");
+    await ligne.getByRole("button", { name: `Marquer comme résolu : ${titre}`, exact: true }).click();
+    await ligne.waitFor({ state: "detached", timeout: 15000 });
+    // 4. Traité ≠ supprimé : il sort des signalements ouverts mais reste consultable en « résolu ».
+    const ouverts = await (await ctx.request.get("/api/admin/gabarits/signalements?statut=ouvert")).json();
+    ok(!ouverts.some((s) => s.message === message), "le signalement résolu est encore ouvert");
+    const tous = await (await ctx.request.get("/api/admin/gabarits/signalements?statut=tous")).json();
+    const garde = tous.find((s) => s.message === message);
+    ok(garde && garde.statut === "resolu", "le signalement résolu n'est pas conservé");
   });
   await ctx.close();
 }
@@ -658,19 +829,21 @@ console.log("\nTraduction FR/EN");
     await ctx.addInitScript(() => localStorage.setItem("bacprep-lang", "en"));
     liste = await (await ctx.request.get("/api/epreuves?limit=50")).json();
     gratuit = liste.find((e) => e.acces === "gratuit").id;
-    // Noms de matières à masquer : on parcourt TOUTES les pages du catalogue.
-    // La base E2E accumule les épreuves créées par les exécutions précédentes :
-    // se limiter à la première page laissait passer des matières réelles
-    // (« Français », « Éducation Civique ») prises pour des résidus français.
-    // Les pages font 100 éléments au maximum : un pas de 100 sur une première
-    // page de 50 sautait les éléments 50 à 99.
-    const toutesMatieres = new Set();
-    for (let offset = 0; offset <= 1000; offset += 100) {
-      const page = await (await ctx.request.get(`/api/epreuves?limit=100&offset=${offset}`)).json();
-      for (const e of page) toutesMatieres.add(e.matiere);
-      if (page.length < 100) break;
-    }
-    const noms = [...toutesMatieres].map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    // Noms de matières à masquer : la liste DÉDIÉE du catalogue (une entrée par
+    // matière, toutes classes confondues). Parcourir `/api/epreuves` page par page
+    // ne suffisait pas : le tri (`annee.desc(), matiere.asc()`) n'a pas de clé
+    // unique, donc des lignes identiques peuvent manquer d'une page à l'autre —
+    // et la base E2E accumule les matières créées par les exécutions précédentes
+    // (« Mathématiques appliquées <run> »).
+    // Les noms les PLUS LONGS d'abord : dans une alternative, « Mathématiques »
+    // masquerait « Mathématiques appliquées <run> » et laisserait « appliquées
+    // <run> », pris pour un résidu français.
+    const toutesMatieres = new Set(
+      (await (await ctx.request.get("/api/epreuves/matieres")).json()).map((m) => m.matiere),
+    );
+    const noms = [...toutesMatieres]
+      .sort((a, b) => b.length - a.length)
+      .map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     matieres = new RegExp(noms.join("|"), "gi");
     const residus = [];
     for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", "/aide", "/a-propos", "/confidentialite", "/conditions", `/epreuve/${gratuit}`]) {
@@ -881,6 +1054,32 @@ console.log("\nPWA et lecture hors-ligne");
     await page.screenshot({ path: `${SHOTS}/hors-ligne.png` });
   });
 
+  await test("SANS RÉSEAU · lecture paginée : feuille, compteur et export PDF restent disponibles", async () => {
+    // Toujours hors réseau : le test suivant le rétablit.
+    await page.getByRole("button", { name: "Lecture paginée" }).click();
+    await page.locator("[data-testid=feuille]").first().waitFor({ timeout: 15000 });
+    await page.getByText("TEXTE-HORS-LIGNE-ABC").waitFor({ timeout: 10000 });
+    const statut = (await page.locator("[data-testid=page-status]").textContent())?.trim() ?? "";
+    ok(/^Page \d+ \/ \d+$/.test(statut), `compteur de page absent hors-ligne : « ${statut} »`);
+    ok(await page.locator("[data-testid=feuille] img[alt='Schéma du dosage']").isVisible(), "l'image n'est pas visible dans la feuille paginée");
+    // Export PDF : la zone d'impression ne dépend pas de l'affichage paginé.
+    await page.evaluate(() => { window.print = () => { window.__imprime = true; }; });
+    await page.getByRole("button", { name: "PDF" }).click();
+    await page.getByRole("menuitem", { name: "Sujet", exact: true }).click();
+    await page.waitForFunction(() => window.__imprime === true, null, { timeout: 5000 });
+    await page.emulateMedia({ media: "print" });
+    ok(await page.locator(".print-zone").isVisible(), "zone d'impression absente en lecture paginée");
+    ok((await page.locator(".print-zone").innerText()).includes("TEXTE-HORS-LIGNE-ABC"), "texte absent de l'export PDF");
+    const pdf = await page.pdf({ format: "A4" });
+    ok(pdf.length > 5000 && pdf.subarray(0, 4).toString() === "%PDF", "PDF invalide en lecture paginée");
+    fs.writeFileSync(`${SHOTS}/pagine-hors-ligne.pdf`, pdf);
+    await page.emulateMedia({ media: "screen" });
+    await page.screenshot({ path: `${SHOTS}/pagine-hors-ligne.png` });
+    // Retour au défilement continu pour les tests suivants.
+    await page.getByRole("button", { name: "Lecture paginée" }).click();
+    await page.locator("div[style*='zoom']").first().waitFor({ timeout: 10000 });
+  });
+
   await test("SANS RÉSEAU : une épreuve jamais téléchargée n'apparaît pas, l'accueil liste les copies", async () => {
     await page.goto("/");
     await page.getByRole("heading", { name: "DISPONIBLES HORS-LIGNE" }).waitFor({ timeout: 15000 });
@@ -1058,9 +1257,9 @@ console.log("\nPanneaux de discussion (élève et admin d'épreuve)");
   const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
   await connecterEleve(ctx, `chat-${RUN}@test.cm`);
   const page = await ctx.newPage();
-  const liste = await (await ctx.request.get("/api/epreuves?q=mathematiques&limit=50")).json();
-  // L'épreuve du jeu de test (formules KaTeX) : la première gratuite peut être une épreuve sans contenu.
-  const id = (liste.find((e) => e.acces === "gratuit" && /Exercice sur les fonctions/.test(e.extrait ?? "")) ?? liste.find((e) => e.acces === "gratuit")).id;
+  // Épreuve dédiée avec formule (voir la section « Lecteur » : les épreuves accumulées par les exécutions
+  // précédentes évinceraient l'épreuve historique de la recherche du catalogue).
+  const id = await creerEpreuveRiche("Mathématiques", "1995", "# Suites\n\nSoit $u_n = 2n + 1$. Calculer $u_{10}$.\n\n## Question 2\n\nLa suite est-elle arithmétique ?");
   const boite = () => page; // le panneau élève est un volet latéral (pas un role=dialog) : champs et boutons ont des noms uniques sur la page
   const poser = async (q) => {
     await boite().getByLabel("Question à Tuteur IA Prep").fill(q);
@@ -1630,7 +1829,7 @@ console.log("\nAlarme sonore du chronomètre et de l'examen blanc");
   await test("examen blanc : à la fin du temps l'alarme sonne jusqu'à l'arrêt manuel", async () => {
     const { c, pg } = await nouvelleSession("examen");
     await pg.clock.install();
-    await pg.goto(`/epreuve/${idEpreuve}`);
+    await ouvrirLecteur(pg); // goto + attente du lecteur, avec une seconde tentative si le bundle est froid
     await pg.getByRole("button", { name: "Examen blanc" }).click();
     await pg.getByRole("timer", { name: "Examen blanc en cours" }).waitFor({ timeout: 10000 });
     await pg.clock.runFor(61_000); // durée officielle : 1 minute
@@ -2252,7 +2451,9 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
 
 console.log("\nBoutons flottants et débordement horizontal (bureau et mobile)");
 {
-  const cree = { id: await creerEpreuveRiche(`Mathématiques appliquées ${RUN}`, "2036") };
+  // Année PASSÉE : une épreuve créée à chaque exécution avec une année future finirait par évincer les épreuves
+  // historiques des recherches triées par année (autres scénarios). Ici seule compte une page assez longue.
+  const cree = { id: await creerEpreuveRiche(`Mathématiques appliquées ${RUN}`, "1993") };
 
   // Position du bloc `fixed` (l'élément lui-même ou son conteneur fixe), dans la zone VISIBLE de la fenêtre.
   const position = (loc) => loc.evaluate((e) => {
