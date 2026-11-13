@@ -34,7 +34,7 @@ Légende : ⬜ à faire · 🟨 en cours · ✅ terminé (tests verts) · ⏸️
 | **C** · Catalogue et recherche groupés | ✅ terminé | `953f309` | E2E catalogue vert |
 | **B** · Entraînement et gabarits | ✅ terminé | `e7d58e4` | E2E 109/109, `vitest` 238/238, `pytest` 684 + 2 ignorés |
 | **D** · Pages légales + pied de page | ✅ terminé | `ff91749` + `0dffd8e` + `7111c48` | contenu juridique à valider |
-| **E** · Aide admin dédiée | ✅ terminé | à committer | `/aide/admin`, couverture des 11 onglets, E2E 113/113 |
+| **E** · Aide admin dédiée | ✅ terminé | `7cab935` | `/aide/admin`, couverture des 11 onglets, E2E 113/113 |
 | **F** · Finitions console | ✅ terminé | `1ac3e75` | E2E 105/105, `vitest` 221/221, `pytest` 363 + 1 ignoré |
 | **G** · SEO et aperçus | ⬜ à faire | — | `seo.py`, `spa_catch_all`, tests |
 | **J** · Extension E2E | ⬜ à faire | — | scénarios des lots A–G |
