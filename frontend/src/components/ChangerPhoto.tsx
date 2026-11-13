@@ -94,6 +94,11 @@ export function ChangerPhoto({ avecPhoto, onChange }: { avecPhoto: boolean; onCh
           )}
         </div>
       )}
+      {!apercu && (
+        <p className="mt-2 text-xs text-slate">
+          {t("PNG, JPEG, WebP ou GIF, 2 Mo maximum. Elle est recadrée en carré et ses métadonnées (lieu, appareil…) sont supprimées.")}
+        </p>
+      )}
       {erreur && (
         <p role="alert" className="mt-2 text-xs text-correction">
           {erreur}

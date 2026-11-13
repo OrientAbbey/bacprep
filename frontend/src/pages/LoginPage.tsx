@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
+import { IndicateurConnexion } from "../components/IndicateurConnexion";
 import { Logo } from "../components/Logo";
 import { useAuth } from "../auth/AuthProvider";
 import { Spinner } from "../components/Spinner";
+import { LangSwitch } from "../i18nProvider";
 import { t } from "../i18n";
 import { messageErreurConnexion } from "../lib/messageConnexion";
 
@@ -57,7 +59,13 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-paper text-ink">
+    <div className="relative flex min-h-screen flex-col bg-paper text-ink">
+      {/* En-tête épuré : la page de connexion n'a pas la navigation du site ;
+          seuls la langue et l'état du réseau restent accessibles, en coin. */}
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-1">
+        <IndicateurConnexion />
+        <LangSwitch />
+      </div>
       <div className="flex h-[3px] w-full" aria-hidden="true">
         <div className="flex-1 bg-valide" />
         <div className="flex-1 bg-highlight" />

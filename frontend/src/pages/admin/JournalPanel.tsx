@@ -1,5 +1,6 @@
 import { ScrollText } from "lucide-react";
 import { AdminEvent } from "../../api/types";
+import { t } from "../../i18n";
 import { formatRelativeTime } from "../../lib/time";
 import { ListeAdmin } from "./ListeAdmin";
 
@@ -21,6 +22,19 @@ export function JournalPanel({
       libelle="Journal d'audit"
       recherche="Filtrer par action ou par e-mail…"
       taille={50}
+      compteur
+      filtres={[
+        {
+          cle: "jours",
+          libelle: t("Période"),
+          options: [
+            ["", t("Toutes les périodes")],
+            ["1", t("24 heures")],
+            ["7", t("7 jours")],
+            ["30", t("30 jours")],
+          ],
+        },
+      ]}
       vide="Aucun évènement ne correspond."
       entete={
         <div className="flex items-center gap-2">

@@ -1930,7 +1930,7 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
     await page.waitForFunction(() => { const li = document.querySelectorAll("ul[data-liste-admin] > li"); return li.length === 1 && /ZZE2E-.*-00/.test(li[0].textContent); }, null, { timeout: 8000 });
   });
 
-  await test("Signalements et Journal : filtres présents, signalements ouverts par défaut, journal filtrable", async () => {
+  await test("Signalements et Journal : filtres présents, journal filtrable par action et par période", async () => {
     await page.getByRole("tab", { name: /Signalements/ }).click();
     await page.getByLabel("Statut").waitFor({ timeout: 8000 });
     ok((await page.getByLabel("Statut").inputValue()) === "ouvert", "statut par défaut ≠ ouvert");
@@ -1938,10 +1938,40 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
     await page.getByRole("tab", { name: "Journal" }).click();
     const champ = page.getByLabel("Filtrer par action ou par e-mail…");
     await champ.waitFor({ timeout: 8000 });
+    const periode = page.getByLabel("Période");
+    await periode.waitFor({ timeout: 8000 });
+    ok((await periode.inputValue()) === "", "période par défaut non vide");
+    await page.locator('span[aria-live="polite"]', { hasText: "affichés" }).first().waitFor({ timeout: 8000 });
     await champ.fill("notification_created");
-    await page.waitForFunction(() => { const li = [...document.querySelectorAll("ul[data-liste-admin] > li")]; return li.length > 0 && li.every((l) => /notification/i.test(l.textContent)); }, null, { timeout: 8000 });
+    // Les entrées de la liste portent data-liste-item : le bouton « Charger plus » est aussi un <li>.
+    await page.waitForFunction(() => { const li = [...document.querySelectorAll("ul[data-liste-admin] li[data-liste-item]")]; return li.length > 0 && li.every((l) => /notification/i.test(l.textContent)); }, null, { timeout: 8000 });
+    await periode.selectOption("30");
+    await page.waitForFunction(() => document.querySelectorAll("ul[data-liste-admin] li[data-liste-item]").length > 0, null, { timeout: 8000 });
+    await periode.selectOption("");
     await champ.fill("action-qui-nexiste-pas");
     await page.getByText("Aucun évènement ne correspond.").waitFor({ timeout: 8000 });
+  });
+
+  await test("admin : plein écran masque le site, Échap en sort, et Aide mène à l'aide de la console", async () => {
+    await page.goto("/admin");
+    const aide = page.locator("main").getByRole("link", { name: "Aide", exact: true });
+    await aide.waitFor({ timeout: 15000 });
+    ok((await aide.getAttribute("href")) === "/aide", "le bouton Aide ne pointe pas vers /aide");
+    const entete = page.locator("header");
+    ok(await entete.isVisible(), "l'en-tête du site est déjà masqué hors plein écran");
+    await page.getByRole("button", { name: "Plein écran" }).click();
+    await page.waitForFunction(() => document.documentElement.hasAttribute("data-immersion"), null, { timeout: 5000 });
+    ok(!(await entete.isVisible()), "l'en-tête du site reste visible en plein écran");
+    ok(!(await aide.isVisible()), "le bouton Aide devrait disparaître en plein écran");
+    const sortie = page.getByRole("button", { name: "Quitter le plein écran" });
+    await sortie.waitFor({ timeout: 5000 });
+    await page.screenshot({ path: `${SHOTS}/admin-plein-ecran.png` });
+    // Échap sort du plein écran ; on retire d'abord le focus d'un éventuel champ de saisie.
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.documentElement.hasAttribute("data-immersion"), null, { timeout: 5000 });
+    await entete.waitFor({ state: "visible", timeout: 5000 });
+    ok((await sortie.count()) === 0, "la barre de sortie du plein écran est encore là après Échap");
   });
 
   await test("Paramètres : cartes de hauteur FIXE et identique, liste défilante à l'intérieur", async () => {

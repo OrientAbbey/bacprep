@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import { Skeleton } from "../../components/Skeleton";
+import { t } from "../../i18n";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 export interface FiltreListe {
@@ -29,6 +30,7 @@ export function ListeAdmin<T extends { id: string }>({
   taille = 30,
   libelle,
   entete,
+  compteur = false,
 }: {
   path: string;
   token: string;
@@ -40,6 +42,8 @@ export function ListeAdmin<T extends { id: string }>({
   taille?: number;
   libelle: string;
   entete?: ReactNode;
+  /** Affiche le nombre d'éléments chargés à côté des filtres (journal, listes longues). */
+  compteur?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [qEnvoye, setQEnvoye] = useState("");
@@ -114,6 +118,11 @@ export function ListeAdmin<T extends { id: string }>({
             ))}
           </select>
         ))}
+        {compteur && items && (
+          <span className="font-mono-tag text-[10px] text-slate" aria-live="polite">
+            {t("{n} affichés", { n: items.length })}
+          </span>
+        )}
       </div>
 
       {erreur && (
@@ -138,7 +147,9 @@ export function ListeAdmin<T extends { id: string }>({
         // Hauteur BORNÉE : la liste défile à l'intérieur, la page garde une longueur fixe.
         <ul aria-label={libelle} data-liste-admin className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           {items.map((it) => (
-            <li key={it.id}>{rendu(it)}</li>
+            <li key={it.id} data-liste-item>
+              {rendu(it)}
+            </li>
           ))}
           {encore && (
             <li className="pt-1 text-center">

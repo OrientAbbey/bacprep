@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  HelpCircle,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
@@ -73,6 +84,30 @@ export function AdminPage() {
   // Menu latéral des sections (grand écran) et statistiques : repliables pour laisser toute la place à l'édition.
   const [menuOuvert, basculerMenu] = useOuvert("bacprep-menu-admin");
   const [statsOuvertes, basculerStats] = useOuvert("bacprep-stats-admin");
+  // Plein écran de la console : masque l'en-tête et le pied de page du site
+  // (attribut posé sur <html>, même règle CSS que l'immersion du lecteur).
+  // Quitter la page ou appuyer sur Échap en sort.
+  const [immersif, setImmersif] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-immersion", immersif);
+    return () => document.documentElement.removeAttribute("data-immersion");
+  }, [immersif]);
+
+  useEffect(() => {
+    if (!immersif) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const cible = e.target as HTMLElement | null;
+      // Échap ne doit pas sortir du plein écran pendant une saisie ou dans une boîte de dialogue.
+      if (cible?.isContentEditable) return;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes((cible?.tagName ?? "").toUpperCase())) return;
+      if (cible?.closest?.("[role=dialog], [role=alertdialog], [role=toolbar]")) return;
+      setImmersif(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [immersif]);
 
   // Onglet initial lisible depuis l'URL (/admin?tab=utilisateurs) : lien
   // profond depuis le journal d'audit ou un signet — les onglets restent
@@ -371,20 +406,53 @@ export function AdminPage() {
     return n ? `${base[id]} (${n})` : base[id];
   };
 
+  const menuVisible = menuOuvert && !immersif;
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
+    <div className={immersif ? "space-y-3" : "space-y-8"}>
+      {/* Plein écran : tout le « chrome » du back-office disparaît ; il ne reste qu'une barre fine pour en sortir. */}
+      {immersif && (
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate font-mono-tag text-xs text-slate">Back-office — {libelleOnglet(tab)}</p>
+          <button
+            type="button"
+            onClick={() => setImmersif(false)}
+            className="flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm hover:bg-highlight-soft"
+          >
+            <Minimize2 size={14} strokeWidth={1.75} aria-hidden="true" />
+            Quitter le plein écran
+          </button>
+        </div>
+      )}
+      <div data-chrome className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-serif-brand text-2xl">Back-office</h1>
-        <button
-          onClick={logoutAdmin}
-          className="min-h-[40px] rounded-full border border-correction/40 px-4 text-sm text-correction"
-        >
-          Déconnexion admin
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/aide"
+            className="flex min-h-[40px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm hover:bg-highlight-soft"
+          >
+            <HelpCircle size={14} strokeWidth={1.75} aria-hidden="true" />
+            Aide
+          </Link>
+          <button
+            type="button"
+            onClick={() => setImmersif(true)}
+            title="Masque l'en-tête et le pied de page du site (Échap pour en sortir)"
+            className="flex min-h-[40px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm hover:bg-highlight-soft"
+          >
+            <Maximize2 size={14} strokeWidth={1.75} aria-hidden="true" />
+            Plein écran
+          </button>
+          <button
+            onClick={logoutAdmin}
+            className="min-h-[40px] rounded-full border border-correction/40 px-4 text-sm text-correction"
+          >
+            Déconnexion admin
+          </button>
+        </div>
       </div>
 
       {stats && (
-        <div>
+        <div data-chrome>
           <button
             type="button"
             onClick={basculerStats}
@@ -398,9 +466,9 @@ export function AdminPage() {
         </div>
       )}
 
-      <div className={`lg:grid lg:items-start lg:gap-6 ${menuOuvert ? "lg:grid-cols-[13rem_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)]"}`}>
+      <div className={`lg:grid lg:items-start lg:gap-6 ${menuVisible ? "lg:grid-cols-[13rem_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)]"}`}>
         {/* Mobile, ou menu replié sur grand écran : une liste déroulante groupée (dix onglets ne tiennent pas sur une ligne). */}
-        <div className={`mb-4 flex items-center gap-2 ${menuOuvert ? "lg:hidden" : ""}`}>
+        <div className={`mb-4 flex items-center gap-2 ${menuVisible ? "lg:hidden" : ""}`}>
           <select
             aria-label="Section du back-office"
             value={tab}
@@ -429,7 +497,7 @@ export function AdminPage() {
         </div>
 
         {/* Bureau : navigation latérale groupée, qui reste visible pendant le défilement. */}
-        {menuOuvert && (
+        {menuVisible && (
           <div className="hidden lg:sticky lg:top-4 lg:block">
             <button
               type="button"
@@ -474,7 +542,7 @@ export function AdminPage() {
           </div>
         )}
 
-      <div role="tabpanel" id="admin-panel" {...(menuOuvert ? { "aria-labelledby": `admin-tab-${tab}` } : { "aria-label": libelleOnglet(tab) })}>
+      <div role="tabpanel" id="admin-panel" {...(menuVisible ? { "aria-labelledby": `admin-tab-${tab}` } : { "aria-label": libelleOnglet(tab) })}>
         {/* EpreuvesPanel reste MONTÉ et simplement masqué quand on quitte
             l'onglet : son état (formulaire en cours, brouillon, assistant
             admin ouvert) survit à la navigation. La version précédente le

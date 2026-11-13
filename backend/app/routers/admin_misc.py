@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
@@ -280,6 +281,7 @@ def admin_events(
     limit: int = 100,
     offset: int = 0,
     q: Optional[str] = None,
+    jours: Optional[int] = None,
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> list[dict]:
@@ -292,6 +294,8 @@ def admin_events(
     query = db.query(AdminEventORM)
     if q and q.strip():  # filtre sur l'action ou l'e-mail de l'acteur
         query = query.filter(contient(AdminEventORM.action, q.strip()) | contient(AdminEventORM.email, q.strip()))
+    if jours:  # fenêtre glissante : 1 = dernières 24 h, 7 = 7 derniers jours…
+        query = query.filter(AdminEventORM.created_at >= utc_now() - timedelta(days=jours))
     rows = (
         query.order_by(AdminEventORM.created_at.desc())
         .offset(max(0, offset))
