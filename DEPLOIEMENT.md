@@ -226,6 +226,11 @@ Voir `backend/.env.example` pour la liste complète commentée. Au minimum :
 - `DOCS_PATH` : chemin secret où servir `/docs`/`/redoc`/`/openapi.json` en
   production (ex. `api-docs-9f2k`) ; laissé vide, la documentation API est
   **désactivée** (publique en dev, non exposée par défaut en prod)
+- `PUBLIC_BASE_URL` : adresse publique du site (ex.
+  `https://copies-et-corriges.cm`), reprise dans les aperçus de partage,
+  `robots.txt` et `sitemap.xml`. Laissée vide, l'URL de la requête est
+  utilisée — ce qui donne une adresse interne derrière un proxy
+  (l'`og:image` d'un aperçu WhatsApp ne serait alors pas résolvable)
 
 **Génération des secrets** (`ADMIN_TOKEN`, `FILE_URL_SECRET`) — ne jamais
 réutiliser la valeur d'exemple `admin123` en production (le serveur la

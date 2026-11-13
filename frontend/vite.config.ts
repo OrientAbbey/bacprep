@@ -10,7 +10,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: {
-        name: "Copies & Corrigés — BacPrep Cameroun",
+        name: "Copies & Corrigés — annales du secondaire camerounais",
         short_name: "Corrigés",
         description: "Épreuves et corrigés du secondaire camerounais, disponibles hors-ligne.",
         lang: "fr",

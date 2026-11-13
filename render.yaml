@@ -43,6 +43,11 @@ services:
       # chemin secret unique ; vide ou absent = docs désactivées.
       - key: DOCS_PATH
         sync: false
+      # Adresse publique du site (https://…), utilisée dans les aperçus de
+      # partage, robots.txt et sitemap.xml. Recommandée sur Render : le proxy
+      # ne transmet pas toujours l'hôte d'origine. Vide = URL de la requête.
+      - key: PUBLIC_BASE_URL
+        sync: false
       - key: STORAGE_BACKEND
         value: s3
       # Stockage objet S3-compatible — voir DEPLOIEMENT.md pour chaque

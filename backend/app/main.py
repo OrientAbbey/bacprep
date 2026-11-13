@@ -20,18 +20,20 @@ from dotenv import load_dotenv
 _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=_ENV_FILE)
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .core import store
+from sqlalchemy.orm import Session
+
+from .core import seo, store
 from .core.catalogue import seed_database_if_empty
 from .core.config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
 from .core.logging_config import log_json_actif, get_logger, setup_logging
-from .db import Base, SessionLocal, engine
+from .db import Base, SessionLocal, engine, get_db
 from .routers import (
     admin_assistant,
     admin_gabarits,
@@ -483,13 +485,39 @@ def config() -> dict:
     }
 
 
+# SEO : déclarés HORS du bloc `if FRONTEND_DIST.exists()` (ils ne dépendent
+# que de la base et de la requête) pour rester servis même si le build
+# frontend est absent — et pour rester testables sans lancer `npm run build`.
+# Le résultat change au rythme des publications, pas à chaque seconde : une
+# heure de cache navigateur/proxy suffit et évite de reconstruire le plan de
+# crawl à chaque passage d'un robot.
+_ENTETES_SEO = {"Cache-Control": "public, max-age=3600"}
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt(request: Request) -> Response:
+    return Response(seo.robots_txt(request), media_type="text/plain", headers=_ENTETES_SEO)
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml(request: Request, db: Session = Depends(get_db)) -> Response:
+    return Response(seo.sitemap_xml(db, request), media_type="application/xml", headers=_ENTETES_SEO)
+
+
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
     _FRONTEND_DIST_RESOLVED = FRONTEND_DIST.resolve()
 
+    # index.html est lu UNE fois : la page est réécrite en mémoire à chaque
+    # requête de navigation (titre/description des épreuves, og:image
+    # absolue), relire le fichier à chaque fois serait du disque inutile.
+    # Lu APRÈS le build : le service worker précache donc bien le même
+    # fichier que celui qui sert de gabarit.
+    _INDEX_TEMPLATE = (FRONTEND_DIST / "index.html").read_text(encoding="utf-8")
+
     @app.get("/{full_path:path}")
-    async def spa_catch_all(full_path: str):
+    async def spa_catch_all(full_path: str, request: Request):
         """Sert `frontend/dist` (service unifié, voir DEPLOIEMENT.md) :
         toute route qui n'est ni une API ni un fichier statique existant
         renvoie `index.html`, laissant React Router gérer la navigation
@@ -503,17 +531,29 @@ if FRONTEND_DIST.exists():
         répondent 404 JSON (contrat d'API) plutôt qu'index.html."""
         if full_path.startswith("api/") or full_path == "api":
             return JSONResponse(status_code=404, content={"detail": "Ressource API introuvable"})
-        # HTML servi sur N'IMPORTE QUELLE route client (/admin, /epreuve/x…) :
-        # il doit toujours être revalidé. Sinon le navigateur garde un index
-        # périmé qui référence des noms de fichiers hachés supprimés au
-        # déploiement suivant → 404 sur les chunks (page blanche / erreur de
-        # chargement dynamique). Les fichiers /assets/ restent immuables.
-        entetes_html = {"Cache-Control": "no-cache"}
         if full_path:
             candidate = (FRONTEND_DIST / full_path).resolve()
             if candidate.is_file() and candidate.is_relative_to(_FRONTEND_DIST_RESOLVED):
-                return FileResponse(candidate, headers=entetes_html if candidate.suffix == ".html" else None)
-        return FileResponse(FRONTEND_DIST / "index.html", headers=entetes_html)
+                # HTML servi sur N'IMPORTE QUELLE route client (/admin,
+                # /epreuve/x…) : il doit toujours être revalidé. Sinon le
+                # navigateur garde un index périmé qui référence des noms de
+                # fichiers hachés supprimés au déploiement suivant → 404 sur
+                # les chunks (page blanche / erreur de chargement dynamique).
+                # Les fichiers /assets/ restent immuables.
+                return FileResponse(candidate, headers={"Cache-Control": "no-cache"} if candidate.suffix == ".html" else None)
+        # Titre, description et image de partage injectés côté serveur : un
+        # aperçu WhatsApp/Facebook n'exécute pas le JavaScript, il ne verrait
+        # que le titre générique du gabarit.
+        epreuve = None
+        if full_path.startswith("epreuve/") and full_path.count("/") == 1:
+            epreuve_id = full_path.split("/", 1)[1]
+            # Session ouverte à la main (et non `Depends`) : cette route est
+            # un attrape-tout, la dépendance serait instanciée pour TOUTES les
+            # navigations, y compris celles qui n'interrogent pas la base.
+            with SessionLocal() as db:
+                epreuve = seo.published_epreuve(db, epreuve_id)
+        page = seo.render_index(_INDEX_TEMPLATE, request, epreuve)
+        return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     log.info("Service unifié activé: frontend/dist servi par le backend")
 else:

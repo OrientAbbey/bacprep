@@ -1,5 +1,5 @@
-Procédure de restauration d'une sauvegarde BacPrep
-=================================================
+Procédure de restauration d'une sauvegarde Copies & Corrigés
+===========================================================
 
 Cette sauvegarde contient TOUT le catalogue : épreuves, sujets, corrigés,
 images et identifiants. Elle n'est pas filtrée : il n'y a pas de « partie

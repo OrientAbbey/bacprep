@@ -902,6 +902,85 @@ console.log("\nPWA et lecture hors-ligne");
   await ctx.close();
 }
 
+console.log("\nSEO et aperçus de partage");
+{
+  // Un aperçu WhatsApp/Facebook n'exécute jamais le JavaScript : seul le HTML
+  // renvoyé par le serveur compte. Ces tests interrogent donc les URL comme le
+  // ferait un robot, sans passer par la page rendue.
+  const adm = await nouveauContexte();
+  await connecterAdmin(adm);
+  const publiee = await (await adm.request.post("/api/admin/epreuves", { data: {
+    niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Informatique", annee: "2033", gratuit: true, filieres: ["C"],
+    contenu_markdown: "# Informatique 2033\n\nTEXTE-SEO." } })).json();
+  await adm.request.post(`/api/admin/epreuves/${publiee.id}/publish`);
+  const brouillon = await (await adm.request.post("/api/admin/epreuves", { data: {
+    niveau: "SECONDAIRE", classe: "3e", evaluation: "BEPC", matiere: "SVT", annee: "2034", gratuit: true, filieres: [],
+    contenu_markdown: "# Brouillon SEO" } })).json();
+  const ctx = await nouveauContexte();
+
+  await test("robots.txt : API et console exclus, sitemap annoncé en absolu", async () => {
+    const r = await ctx.request.get("/robots.txt");
+    ok(r.ok() && /text\/plain/.test(r.headers()["content-type"]), "robots.txt : " + r.status());
+    const t = await r.text();
+    ok(/^User-agent: \*/m.test(t) && /^Disallow: \/api\/$/m.test(t) && /^Disallow: \/admin$/m.test(t), "règles d'exclusion absentes :\n" + t);
+    // L'adresse annoncée doit être ABSOLUE (un robot ne résout pas un chemin
+    // relatif) et réellement servie. On ne la compare pas à E2E_URL : le
+    // serveur peut tourner avec PUBLIC_BASE_URL (hôte public), et le run vise
+    // 127.0.0.1 — comparer les deux ferait échouer un test correct.
+    const annonce = (t.match(/^Sitemap: (.+)$/m) ?? [])[1];
+    ok(annonce && /^https?:\/\/[^/]+\/sitemap\.xml$/.test(annonce), "sitemap non annoncé en absolu :\n" + t);
+    const sm = await ctx.request.get(new URL(annonce).pathname);
+    ok(sm.ok() && /application\/xml/.test(sm.headers()["content-type"]), "sitemap annoncé mais non servi : " + sm.status());
+  });
+
+  await test("sitemap.xml : XML valide, épreuves publiées seulement, jamais la console", async () => {
+    const r = await ctx.request.get("/sitemap.xml");
+    ok(r.ok() && /application\/xml/.test(r.headers()["content-type"]), "sitemap : " + r.status() + " " + r.headers()["content-type"]);
+    const xml = await r.text();
+    ok(xml.startsWith("<?xml") && /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/.test(xml), "en-tête XML absent");
+    ok(/<url><loc>[^<]*\/<\/loc><\/url>/.test(xml), "l'accueil doit figurer dans le plan de crawl");
+    ok(xml.includes(`/epreuve/${publiee.id}</loc>`), "épreuve publiée absente du sitemap");
+    ok(!xml.includes(`/epreuve/${brouillon.id}</loc>`), "un brouillon ne doit pas être proposé aux robots");
+    ok(!/\/admin/.test(xml), "la console ne doit jamais être dans le sitemap");
+    ok((xml.match(/<loc>/g) ?? []).length === (xml.match(/<\/loc>/g) ?? []).length, "balises <loc> déséquilibrées");
+  });
+
+  await test("aperçu d'une épreuve : titre, description et image de partage absolue", async () => {
+    const html = await (await ctx.request.get(`/epreuve/${publiee.id}`)).text();
+    ok(/<title>Informatique 2033 — BAC \(Terminale\) \| Copies &amp; Corrigés<\/title>/.test(html), "titre d'aperçu absent : " + (html.match(/<title>.*?<\/title>/) ?? [""])[0]);
+    ok(/<meta name="description" content="Sujet et corrigé : Informatique 2033/.test(html), "description d'aperçu absente");
+    ok(/<meta property="og:title" content="Informatique 2033/.test(html), "og:title absent");
+    const img = (html.match(/<meta property="og:image" content="([^"]*)"/) ?? [])[1];
+    ok(img && /^https?:\/\//.test(img), "og:image doit être absolue : " + img);
+    ok((await ctx.request.get(new URL(img).pathname)).ok(), "image de partage introuvable : " + img);
+  });
+
+  await test("aperçu d'une épreuve inconnue : titre générique, aucune fuite de brouillon", async () => {
+    for (const id of ["inconnue-xyz", brouillon.id]) {
+      const r = await ctx.request.get(`/epreuve/${id}`);
+      ok(r.ok(), `page cliente ${id} : ` + r.status());
+      const html = await r.text();
+      ok(/<title>Copies &amp; Corrigés/.test(html), `titre générique absent pour ${id}`);
+      ok(!/SVT 2034|Brouillon SEO|Sujet et corrigé/.test(html), `un brouillon fuit dans l'aperçu de ${id}`);
+      ok(/<meta property="og:image" content="https?:\/\//.test(html), `og:image non absolue pour ${id}`);
+    }
+  });
+
+  await test("chemin inconnu : HTML revalidé pour le client, 404 JSON pour l'API", async () => {
+    const r = await ctx.request.get("/une-page-qui-nexiste-pas");
+    ok(r.ok() && /text\/html/.test(r.headers()["content-type"]), "route cliente : " + r.status());
+    ok(/no-cache/.test(r.headers()["cache-control"] ?? ""), "le HTML doit toujours être revalidé : " + r.headers()["cache-control"]);
+    const api = await ctx.request.get("/api/inconnu");
+    ok(api.status() === 404, "l'API inconnue doit renvoyer 404, pas la coque : " + api.status());
+    ok(/application\/json/.test(api.headers()["content-type"] ?? ""), "type de la 404 API : " + api.headers()["content-type"]);
+    ok(!!(await api.json()).detail, "pas de détail JSON dans la 404 API");
+  });
+
+  await adm.request.delete(`/api/admin/epreuves/${brouillon.id}`);
+  await adm.close();
+  await ctx.close();
+}
+
 console.log("\nAssistant IA du back-office (tous onglets)");
 {
   const ctx = await nouveauContexte({ viewport: { width: 1366, height: 900 } });

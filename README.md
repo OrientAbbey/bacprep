@@ -1,4 +1,4 @@
-# Copies & Corrigés — BacPrep Cameroun
+# Copies & Corrigés — annales du secondaire camerounais
 
 Application d'annuaire d'épreuves du **secondaire camerounais** (6e →
 Terminale : séquences, compositions, BEPC, Probatoire, BAC, examens
