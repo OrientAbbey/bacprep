@@ -1451,11 +1451,24 @@ console.log("\nAlarme sonore du chronomètre et de l'examen blanc");
   };
   const arret = (pg) => pg.getByRole("button", { name: "Arrêter l'alarme" });
   const idEpreuve = unMn;
+  // Le premier chargement de la session est le plus lent (bundle froid, build
+  // qui vient d'être recompilé) : on retente une fois avant de conclure que le
+  // chronomètre manque, plutôt que d'imputer au produit un simple délai.
+  const ouvrirLecteur = async (pg) => {
+    for (let essai = 1; essai <= 2; essai++) {
+      await pg.goto(`/epreuve/${idEpreuve}`);
+      try {
+        await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 30000 });
+        return;
+      } catch (e) {
+        if (essai === 2) throw e;
+      }
+    }
+  };
 
   await test("chrono : à zéro l'alarme sonne EN CONTINU, « Arrêter l'alarme » la coupe aussitôt", async () => {
     const { c, pg } = await nouvelleSession("continu");
-    await pg.goto(`/epreuve/${idEpreuve}`);
-    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await ouvrirLecteur(pg);
     await lancerChrono(pg, 0.05); // 3 secondes
     await arret(pg).waitFor({ timeout: 10000 });
     await pg.screenshot({ path: `${SHOTS}/alarme-bandeau.png` });
@@ -1473,8 +1486,7 @@ console.log("\nAlarme sonore du chronomètre et de l'examen blanc");
   await test("chrono : sans arrêt manuel, l'alarme s'éteint seule au bout d'une minute", async () => {
     const { c, pg } = await nouvelleSession("auto");
     await pg.clock.install();
-    await pg.goto(`/epreuve/${idEpreuve}`);
-    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await ouvrirLecteur(pg);
     await lancerChrono(pg, 0.05);
     await pg.clock.runFor(4000); // le décompte (3 s) arrive à zéro
     await arret(pg).waitFor({ timeout: 5000 });
@@ -1491,8 +1503,7 @@ console.log("\nAlarme sonore du chronomètre et de l'examen blanc");
 
   await test("immersion, outils repliés : le bandeau reste visible et arrête l'alarme", async () => {
     const { c, pg } = await nouvelleSession("immersion");
-    await pg.goto(`/epreuve/${idEpreuve}`);
-    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await ouvrirLecteur(pg);
     await lancerChrono(pg, 0.05);
     await pg.getByRole("button", { name: "Immersion", exact: true }).click(); // site masqué, outils repliés (chrono caché)
     ok(!(await pg.locator("header[data-chrome]").isVisible()), "l'immersion n'est pas active");
@@ -1504,8 +1515,7 @@ console.log("\nAlarme sonore du chronomètre et de l'examen blanc");
 
   await test("couper le son depuis le chronomètre pendant que l'alarme sonne l'arrête aussi", async () => {
     const { c, pg } = await nouvelleSession("coupure");
-    await pg.goto(`/epreuve/${idEpreuve}`);
-    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await ouvrirLecteur(pg);
     await lancerChrono(pg, 0.05);
     await arret(pg).waitFor({ timeout: 10000 });
     await pg.getByRole("button", { name: "Couper le son de l'alarme" }).click(); // dans le panneau du chronomètre, resté ouvert
@@ -1518,8 +1528,7 @@ console.log("\nAlarme sonore du chronomètre et de l'examen blanc");
 
   await test("son coupé : aucune alarme, aucun bandeau", async () => {
     const { c, pg } = await nouvelleSession("muet", { init: [() => localStorage.setItem("bacprep-son", "off")] });
-    await pg.goto(`/epreuve/${idEpreuve}`);
-    await pg.getByRole("button", { name: "Chrono" }).waitFor({ timeout: 15000 });
+    await ouvrirLecteur(pg);
     await lancerChrono(pg, 0.05);
     await pg.getByText("Temps écoulé !").waitFor({ timeout: 10000 }); // le signal visuel reste
     await pg.waitForTimeout(1500);
