@@ -648,7 +648,17 @@ console.log("\nTraduction FR/EN");
     await ctx.addInitScript(() => localStorage.setItem("bacprep-lang", "en"));
     liste = await (await ctx.request.get("/api/epreuves?limit=50")).json();
     gratuit = liste.find((e) => e.acces === "gratuit").id;
-    const noms = [...new Set(liste.map((e) => e.matiere))].map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    // Noms de matières à masquer : on parcourt TOUTES les pages du catalogue.
+    // La base E2E accumule les épreuves créées par les exécutions précédentes :
+    // se limiter à la première page laissait passer des matières réelles
+    // (« Français », « Éducation Civique ») prises pour des résidus français.
+    const toutesMatieres = new Set(liste.map((e) => e.matiere));
+    for (let offset = 100; offset <= 500; offset += 100) {
+      const page = await (await ctx.request.get(`/api/epreuves?limit=100&offset=${offset}`)).json();
+      for (const e of page) toutesMatieres.add(e.matiere);
+      if (page.length < 100) break;
+    }
+    const noms = [...toutesMatieres].map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     matieres = new RegExp(noms.join("|"), "gi");
     const residus = [];
     for (const url of ["/", "/secondaire/terminale", "/catalogue", "/abonnement", "/calendrier", "/profil", "/connexion", "/introuvable", "/aide", "/a-propos", "/confidentialite", "/conditions", `/epreuve/${gratuit}`]) {
@@ -669,7 +679,11 @@ console.log("\nTraduction FR/EN");
   });
 
   await test("anglais : profil d'un abonné — abonnements, notes, activité, confidentialité (états réellement atteints)", async () => {
-    const payante = liste.find((e) => e.acces !== "gratuit");
+    // L'épreuve payante est demandée à l'API avec son filtre : la première
+    // page du catalogue peut n'être faite que de gratuites selon ce que les
+    // exécutions précédentes ont créé.
+    const payantes = await (await ctx.request.get("/api/epreuves?acces_type=payant&limit=1")).json();
+    const payante = payantes[0];
     ok(payante, "aucune épreuve payante dans les données de test");
     const achat = await ctx.request.post("/api/subscriptions/checkout", { data: { scope: "epreuve", epreuve_id: payante.id, provider: "orange" } });
     ok(achat.ok(), "checkout : " + achat.status());
