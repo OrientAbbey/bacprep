@@ -29,31 +29,12 @@ import { SauvegardesPanel } from "./admin/SauvegardesPanel";
 import { SignalementsPanel } from "./admin/SignalementsPanel";
 import { StatsPanel } from "./admin/StatsPanel";
 import { UtilisateursPanel } from "./admin/UtilisateursPanel";
+import { ONGLETS, GROUPES, type Onglet } from "./admin/onglets";
 import { authHeaders } from "./admin/shared";
-
-type Onglet =
-  | "epreuves"
-  | "import"
-  | "sauvegardes"
-  | "utilisateurs"
-  | "parametres"
-  | "formules"
-  | "gabarits"
-  | "calendrier"
-  | "journal"
-  | "signalements"
-  | "notifications";
 
 /** Coquille du back-office : connexion admin, onglets, statistiques et
  * battement de cœur du verrou. Chaque onglet vit dans son propre panneau
  * (pages/admin/*) — ce fichier ne fait que le routage interne. */
-/** Les onglets, regroupés en trois familles (navigation latérale sur écran large). */
-const GROUPES: { titre: string; ids: Onglet[] }[] = [
-  { titre: "Contenu", ids: ["epreuves", "import", "formules", "gabarits", "calendrier"] },
-  { titre: "Communauté", ids: ["utilisateurs", "signalements", "notifications"] },
-  { titre: "Système", ids: ["parametres", "sauvegardes", "journal"] },
-];
-const ONGLETS: Onglet[] = GROUPES.flatMap((g) => g.ids);
 
 /** Section repliable de la console : ouverte par défaut, état mémorisé sur l'appareil sous `cle`. */
 function useOuvert(cle: string): [boolean, () => void] {
@@ -430,7 +411,7 @@ export function AdminPage() {
         <h1 className="font-serif-brand text-2xl">Back-office</h1>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            to="/aide"
+            to="/aide/admin"
             className="flex min-h-[40px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm hover:bg-highlight-soft"
           >
             <HelpCircle size={14} strokeWidth={1.75} aria-hidden="true" />

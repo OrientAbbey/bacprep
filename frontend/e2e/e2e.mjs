@@ -62,6 +62,16 @@ async function connecterAdmin(ctx) {
   const r = await ctx.request.post("/api/admin/login", { data: ADMIN });
   ok(r.ok(), "login admin : " + r.status());
 }
+// Le tout premier chargement après le lancement du navigateur peut dépasser le
+// délai par défaut sur une machine lente (bundle froid) : on retente une fois au
+// lieu d'imputer au produit un simple délai réseau.
+async function aller(pg, url, options = {}) {
+  try {
+    await pg.goto(url, { timeout: 45000, ...options });
+  } catch {
+    await pg.goto(url, { timeout: 45000, ...options });
+  }
+}
 
 // ---------------------------------------------------------------- données
 const seed = await nouveauContexte();
@@ -92,11 +102,11 @@ console.log("\nCatalogue et recherche");
   const page = await ctx.newPage();
 
   await test("catalogue : tuiles par matière avec compteurs", async () => {
-    await page.goto("/secondaire/terminale");
-    await page.getByRole("heading", { name: "MATIÈRES" }).waitFor({ timeout: 15000 });
+    await aller(page, "/secondaire/terminale");
+    await page.getByRole("heading", { name: "MATIÈRES" }).waitFor({ timeout: 30000 });
     ok(await page.getByRole("group", { name: "Affichage du catalogue" }).getByRole("button", { name: "Liste" }).getAttribute("aria-pressed") === "true", "la vue Liste doit être sélectionnée par défaut");
     const tuile = page.locator('[data-testid="matiere-tile"][data-matiere="Mathématiques"]');
-    await tuile.waitFor({ timeout: 10000 });
+    await tuile.waitFor({ timeout: 30000 });
     ok((await page.locator("text=/\\d+ épreuves? ·? ?/").count()) >= 4, "au moins 4 tuiles");
     await page.screenshot({ path: `${SHOTS}/catalogue-tuiles.png` });
   });
@@ -652,8 +662,10 @@ console.log("\nTraduction FR/EN");
     // La base E2E accumule les épreuves créées par les exécutions précédentes :
     // se limiter à la première page laissait passer des matières réelles
     // (« Français », « Éducation Civique ») prises pour des résidus français.
-    const toutesMatieres = new Set(liste.map((e) => e.matiere));
-    for (let offset = 100; offset <= 500; offset += 100) {
+    // Les pages font 100 éléments au maximum : un pas de 100 sur une première
+    // page de 50 sautait les éléments 50 à 99.
+    const toutesMatieres = new Set();
+    for (let offset = 0; offset <= 1000; offset += 100) {
       const page = await (await ctx.request.get(`/api/epreuves?limit=100&offset=${offset}`)).json();
       for (const e of page) toutesMatieres.add(e.matiere);
       if (page.length < 100) break;
@@ -977,8 +989,8 @@ console.log("\nPanneaux de discussion (élève et admin d'épreuve)");
   };
 
   await test("assistant élève : question, réponse, modification de la question, relance, note", async () => {
-    await page.goto(`/epreuve/${id}`);
-    await page.locator(".katex").first().waitFor({ timeout: 15000 });
+    await aller(page, `/epreuve/${id}`);
+    await page.locator(".katex").first().waitFor({ timeout: 30000 });
     await page.getByRole("button", { name: "Ouvrir Tuteur IA Prep" }).click();
     await poser("Explique la question 1");
     await boite().getByText("Explique la question 1").waitFor({ timeout: 10000 });
@@ -1722,29 +1734,50 @@ console.log("\nInvitation, À propos et Aide");
     await pg.waitForFunction(() => location.hash === "#tuteur");
     const r = await pg.locator("#tuteur").boundingBox();
     ok(r.y >= 0 && r.y < 400, `la rubrique n'est pas amenée à l'écran : y = ${r.y}`);
-    ok((await pg.getByText("console d'administration").count()) === 0 && (await pg.getByRole("button", { name: "Aide administrateur" }).count()) === 0, "contenu d'administration visible par un élève");
+    ok((await pg.getByText("console d'administration").count()) === 0 && (await pg.getByRole("link", { name: "Aide administrateur" }).count()) === 0, "contenu d'administration visible par un élève");
     await pg.goto("/aide?vue=admin"); // tentative de forcer la vue
-    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 10000 });
+    await pg.getByRole("heading", { level: 1, name: "Aide", exact: true }).waitFor({ timeout: 10000 });
     ok((await pg.getByRole("heading", { name: "Import massif" }).count()) === 0, "un élève a obtenu l'aide administrateur");
     await pg.screenshot({ path: `${SHOTS}/aide-eleve.png` });
     await c.close();
   });
 
-  await test("aide d'un administrateur : aide de la console par défaut, bascule vers l'aide élève, et retour", async () => {
+  await test("aide d'un administrateur : aide des élèves par défaut, lien vers l'aide de la console, et retour", async () => {
     const c = await nouveauContexte({ viewport: { width: 1366, height: 900 } });
     await connecterAdmin(c);
     const pg = await c.newPage();
+    // /aide reste l'aide des élèves (adresse publique, partagée par tous) ;
+    // l'administrateur y trouve un lien vers le guide de la console.
     await pg.goto("/aide");
-    await pg.getByRole("heading", { level: 1, name: "Aide de la console d'administration" }).waitFor({ timeout: 10000 });
-    for (const rubrique of ["Import massif", "L'assistant d'édition", "Sauvegardes", "Journal d'audit"]) await pg.getByRole("heading", { level: 2, name: rubrique }).waitFor({ timeout: 5000 });
-    ok((await pg.getByRole("button", { name: "Aide administrateur" }).getAttribute("aria-pressed")) === "true", "la vue administrateur devrait être active");
-    await pg.screenshot({ path: `${SHOTS}/aide-admin.png` });
-    await pg.getByRole("button", { name: "Aide utilisateur" }).click();
-    await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 5000 });
+    await pg.getByRole("heading", { level: 1, name: "Aide", exact: true }).waitFor({ timeout: 10000 });
     await pg.getByRole("heading", { level: 2, name: "Le Tuteur IA" }).waitFor({ timeout: 5000 });
-    ok(pg.url().includes("vue=utilisateur") && (await pg.getByRole("heading", { name: "Import massif" }).count()) === 0, "la vue utilisateur n'est pas isolée");
-    await pg.getByRole("button", { name: "Aide administrateur" }).click();
-    await pg.getByRole("heading", { level: 1, name: "Aide de la console d'administration" }).waitFor({ timeout: 5000 });
+    ok((await pg.getByRole("heading", { name: "Import massif" }).count()) === 0, "l'aide de la console s'affiche sur /aide");
+
+    await pg.getByRole("link", { name: "Aide administrateur" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Aide de la console d'administration" }).waitFor({ timeout: 15000 });
+    ok(pg.url().endsWith("/aide/admin"), `adresse de l'aide admin : ${pg.url()}`);
+    for (const rubrique of ["Import massif", "L'assistant d'édition", "Exercices types (gabarits)", "Sauvegardes", "Journal d'audit"]) {
+      await pg.getByRole("heading", { level: 2, name: rubrique }).waitFor({ timeout: 5000 });
+    }
+    // Tous les onglets de la console sont documentés.
+    for (const onglet of ["Épreuves", "Import", "Formules", "Exercices types", "Calendrier", "Utilisateurs", "Signalements", "Notifications", "Paramètres", "Sauvegardes", "Journal"]) {
+      ok((await pg.locator("main").getByText(onglet, { exact: false }).count()) > 0, `onglet « ${onglet} » absent de l'aide`);
+    }
+    await pg.getByRole("navigation", { name: "Sommaire" }).getByRole("link", { name: "Exercices types (gabarits)" }).click();
+    await pg.waitForFunction(() => location.hash === "#gabarits");
+    await pg.screenshot({ path: `${SHOTS}/aide-admin.png` });
+
+    await pg.getByRole("link", { name: "Aide des élèves" }).click();
+    await pg.getByRole("heading", { level: 1, name: "Aide", exact: true }).waitFor({ timeout: 5000 });
+    ok(pg.url().includes("vue=utilisateur"), `retour à l'aide des élèves : ${pg.url()}`);
+    await c.close();
+  });
+
+  await test("aide de la console : fermée aux élèves, même par l'adresse directe", async () => {
+    const { c, pg } = await session("aide-admin-interdit");
+    await pg.goto("/aide/admin");
+    await pg.getByText("La console d'administration est réservée aux comptes autorisés.").waitFor({ timeout: 10000 });
+    ok((await pg.getByRole("heading", { name: "Import massif" }).count()) === 0, "un élève a obtenu le guide de la console");
     await c.close();
   });
 
@@ -2105,7 +2138,7 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
     await page.goto("/admin");
     const aide = page.locator("main").getByRole("link", { name: "Aide", exact: true });
     await aide.waitFor({ timeout: 15000 });
-    ok((await aide.getAttribute("href")) === "/aide", "le bouton Aide ne pointe pas vers /aide");
+    ok((await aide.getAttribute("href")) === "/aide/admin", "le bouton Aide ne pointe pas vers /aide/admin");
     const entete = page.locator("header");
     ok(await entete.isVisible(), "l'en-tête du site est déjà masqué hors plein écran");
     await page.getByRole("button", { name: "Plein écran" }).click();

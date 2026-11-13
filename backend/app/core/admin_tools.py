@@ -225,7 +225,7 @@ def catalogue_outils() -> str:
 def prompt_onglet(onglet: str, resume: str, question: str, historique: list[dict]) -> str:
     """Invite complète pour un onglet autre que l'édition d'épreuve."""
     lignes = [
-        "Tu es l'assistant du back-office de BacPrep (Copies & Corrigés), au service d'un "
+        "Tu es l'assistant du back-office de Copies & Corrigés, au service d'un "
         "administrateur. Réponds en français, de façon brève et factuelle.",
         "Réponds en Markdown. Pour les formules mathématiques, utilise $...$ dans une phrase "
         "et $$...$$ pour une formule isolée, sur sa propre ligne ; n'utilise pas \\( \\) ni "

@@ -1,7 +1,15 @@
+import type { Onglet } from "../admin/onglets";
 import type { SectionAide } from "./SectionsAide";
 
-/** Aide de la console d'administration : en français comme la console elle-même. */
-export const sectionsAideAdmin: SectionAide[] = [
+/** Rubrique de l'aide de la console. `onglet` désigne l'onglet documenté :
+ * le test `aide.test.ts` vérifie que chacun des onglets en a une. */
+export interface SectionAideAdmin extends SectionAide {
+  onglet?: Onglet;
+}
+
+/** Aide de la console d'administration : en français comme la console elle-même.
+ * Aucun appel à `t()` ici, volontairement : la console n'est pas traduite. */
+export const sectionsAideAdmin: SectionAideAdmin[] = [
   {
     id: "acces",
     titre: "Accéder à la console",
@@ -14,6 +22,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "epreuves",
+    onglet: "epreuves",
     titre: "Épreuves : créer et modifier",
     intro: "L'onglet Épreuves est le cœur de la console.",
     points: [
@@ -27,6 +36,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "assistant-epreuve",
+    onglet: "epreuves",
     titre: "L'assistant d'édition",
     intro: "Le bouton « Assistant » (en bas à droite de l'onglet Épreuves) ouvre un tiroir de discussion.",
     points: [
@@ -39,6 +49,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "import",
+    onglet: "import",
     titre: "Import massif",
     intro: "Pour créer beaucoup d'épreuves d'un coup à partir d'un dossier compressé.",
     points: [
@@ -50,6 +61,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "formules",
+    onglet: "formules",
     titre: "Formules d'abonnement",
     points: [
       "Les formules actives sont proposées sur la page Abonnement.",
@@ -57,12 +69,39 @@ export const sectionsAideAdmin: SectionAide[] = [
     ],
   },
   {
+    id: "gabarits",
+    onglet: "gabarits",
+    titre: "Exercices types (gabarits)",
+    intro: "Un gabarit fabrique des exercices dont les valeurs changent à chaque tirage.",
+    points: [
+      "Chaque ligne affiche la matière, le chapitre, les classes, la difficulté, le total de points et le résultat du contrôle automatique (nombre de variantes tirées, d'énoncés distincts, défauts éventuels).",
+      "« Voir une variante » affiche un énoncé complet avec sa correction et sa méthode ; « Autre variante » en tire une nouvelle. C'est le geste à faire avant de valider.",
+      "« Valider » rend l'exercice visible sur la page Entraînement ; « Retirer » l'en retire. Un gabarit modifié depuis sa validation repasse en « À valider » et demande une revalidation.",
+      "Un contrôle automatique en échec bloque la validation. « Peu de variété » signale un gabarit qui produit trop peu d'énoncés différents.",
+      "La section « Signalements d'exercices » liste les variantes signalées par les élèves, avec leur numéro de graine ; « Voir la variante signalée » la retrouve exactement, puis « Marquer comme résolu ».",
+    ],
+    astuce: "Un fichier de gabarit illisible est ignoré et listé en haut du panneau : corrige-le sur le serveur plutôt que de valider à l'aveugle.",
+  },
+  {
+    id: "entrainement",
+    onglet: "gabarits",
+    titre: "Ce que voient les élèves : Entraînement",
+    intro: "La page Entraînement ne montre que les gabarits validés, regroupés par matière.",
+    points: [
+      "L'élève choisit un exercice, le refait autant de fois qu'il veut (« Autre exercice » change les valeurs) puis affiche la correction détaillée (réponse et méthode).",
+      "« Copier le lien » garde la variante exacte (numéro de graine) : c'est ce lien qu'un élève peut signaler, et que tu retrouves dans le panneau Exercices types.",
+      "Sans validation de ta part, un gabarit n'apparaît jamais ici : c'est le seul verrou entre l'atelier et les élèves.",
+    ],
+  },
+  {
     id: "calendrier",
+    onglet: "calendrier",
     titre: "Calendrier",
     points: ["Saisis les dates officielles des examens : elles alimentent la page Calendrier et le compte à rebours de l'accueil."],
   },
   {
     id: "utilisateurs",
+    onglet: "utilisateurs",
     titre: "Utilisateurs",
     points: [
       "Le tableau montre, pour chaque compte, le profil, les consentements, le nombre de notes, de discussions IA et de consultations, les abonnements actifs, le montant dépensé (FCFA) et la dernière connexion.",
@@ -72,6 +111,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "signalements",
+    onglet: "signalements",
     titre: "Signalements",
     points: [
       "Liste des problèmes signalés par les élèves (énoncé, corrigé, image, lisibilité), avec un lien « ouvrir l'épreuve ».",
@@ -80,6 +120,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "notifications",
+    onglet: "notifications",
     titre: "Notifications",
     points: [
       "Crée une notification avec un titre (obligatoire), un détail facultatif et un type.",
@@ -88,6 +129,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "parametres",
+    onglet: "parametres",
     titre: "Paramètres : référentiels",
     points: [
       "Les listes de valeurs (niveaux, classes, évaluations, matières, séries) alimentent les formulaires et les filtres.",
@@ -96,6 +138,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "sauvegardes",
+    onglet: "sauvegardes",
     titre: "Sauvegardes",
     points: [
       "Une sauvegarde contient le catalogue entier : épreuves, sujets, corrigés, images et identifiants.",
@@ -105,6 +148,7 @@ export const sectionsAideAdmin: SectionAide[] = [
   },
   {
     id: "journal",
+    onglet: "journal",
     titre: "Journal d'audit",
     points: ["Historique des actions de la console (créations, modifications, suppressions…) avec leur détail : qui, quoi, sur quelle épreuve."],
   },

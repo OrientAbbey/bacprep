@@ -77,7 +77,7 @@ def build_admin_prompt(
     contenu = _contenu_epreuve(meta, max_context_chars)
 
     lignes = [
-        "Tu es l'assistant du back-office de BacPrep (Copies & Corrigés), un expert des "
+        "Tu es l'assistant du back-office de Copies & Corrigés, un expert des "
         "épreuves du secondaire camerounais (6e → Terminale, Baccalauréat général et "
         "technique) : rédaction, relecture et conversion en Markdown.",
         "Tu aides un administrateur à rédiger, corriger ou améliorer le sujet et le corrigé "

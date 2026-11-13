@@ -23,6 +23,7 @@ const ViewerPage = React.lazy(() => import("./pages/ViewerPage").then((m) => ({ 
 const ProfilePage = React.lazy(() => import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage })));
 const AdminPage = React.lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
 const AidePage = React.lazy(() => import("./pages/AidePage").then((m) => ({ default: m.AidePage })));
+const AdminHelpPage = React.lazy(() => import("./pages/aide/AdminHelpPage").then((m) => ({ default: m.AdminHelpPage })));
 const AProposPage = React.lazy(() => import("./pages/AProposPage").then((m) => ({ default: m.AProposPage })));
 const LegalPage = React.lazy(() => import("./pages/LegalPage").then((m) => ({ default: m.LegalPage })));
 const EntrainementPage = React.lazy(() => import("./pages/EntrainementPage").then((m) => ({ default: m.EntrainementPage })));
@@ -143,6 +144,21 @@ export default function App() {
                     <Layout>
                       <Suspense fallback={<p className="text-sm text-slate">{t("Chargement…")}</p>}>
                         <AdminPage />
+                      </Suspense>
+                    </Layout>
+                  </RequireAdmin>
+                }
+              />
+
+              {/* Aide de la console : même garde que /admin, chargée à la demande
+                  (un élève ne télécharge pas ce guide). */}
+              <Route
+                path="/aide/admin"
+                element={
+                  <RequireAdmin>
+                    <Layout>
+                      <Suspense fallback={<Skeleton className="h-64" />}>
+                        <AdminHelpPage />
                       </Suspense>
                     </Layout>
                   </RequireAdmin>
