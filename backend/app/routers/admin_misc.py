@@ -27,6 +27,7 @@ from ..db import get_db, utc_now
 from ..db_models import (
     AdminEventORM,
     AIConversationORM,
+    BanqueGenerationORM,
     AKMouvementORM,
     ConsultationORM,
     AvatarORM,
@@ -623,6 +624,8 @@ def admin_supprimer_utilisateur(
     # db.delete(u), sinon « FOREIGN KEY constraint failed ». Même ordre que
     # dans me.supprimer_compte : les deux voies doivent rester alignées.
     db.query(AKMouvementORM).filter(AKMouvementORM.user_id == u.id).delete()
+    db.query(BanqueGenerationORM).filter(BanqueGenerationORM.user_id == u.id).delete()
+    # Le journal technique n'est pas une donnée de compte et survit à son effacement.
     db.delete(u)
     db.commit()
     log_admin_event(db, None, "utilisateur_supprime", email=lock.email, details=details)

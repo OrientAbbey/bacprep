@@ -633,3 +633,128 @@ class EssaiORM(Base):
     note = Column(Float, nullable=True)  # sur 20
     duree_s = Column(Integer, nullable=True)
     created_at = Column(UTCDateTime, default=utc_now, index=True)
+
+
+# ---------------------------------------------------------------------------
+# Générateur d'épreuves (cahier V4.10) — parties, métadonnées de classe et
+# banque d'exercices. Les MATIÈRES, CLASSES et SPÉCIALITÉS ne sont PAS
+# dupliquées ici : elles vivent dans `referentiel_options` (scopes matiere,
+# classe, serie). Seules les notions absentes du référentiel ont une table.
+# ---------------------------------------------------------------------------
+
+
+class BanquePartieORM(Base):
+    """Une partie d'une matière (« Partie A — Acides ») : deux exercices d'une
+    même épreuve ne peuvent pas venir de la même partie (règle 4.a), sauf
+    exceptions (partie unique, P < N, P > N).
+
+    `matiere` est le CODE du scope `matiere` du référentiel, sans clé
+    étrangère : le renommage d'une matière est propagé explicitement par
+    l'endpoint admin, qui réécrit aussi `banque_exercices.matieres_json`
+    (aucune FK ne pointe vers `referentiel_options` ailleurs dans le projet)."""
+
+    __tablename__ = "banque_parties"
+    __table_args__ = (UniqueConstraint("matiere", "nom", name="uq_banque_partie_nom"),)
+
+    id = Column(String, primary_key=True, default=_uid)
+    matiere = Column(String, nullable=False, index=True)
+    nom = Column(String, nullable=False)
+    ordre = Column(Integer, nullable=False, default=0)
+    created_at = Column(UTCDateTime, default=utc_now)
+
+
+class BanqueClasseMetaORM(Base):
+    """Paramètres propres à une classe du référentiel (cahier 3.2.c) :
+    présence d'un examen et obligation de spécialité. La CHAÎNE DE RANG n'est
+    pas stockée — elle se déduit de l'ordre de `referentiel_options`, seule
+    source de vérité : un cycle est donc structurellement impossible.
+
+    Une ligne absente vaut « sans examen, spécialité facultative » : la table
+    ne contient que les exceptions configurées par l'admin."""
+
+    __tablename__ = "banque_classes_meta"
+
+    classe = Column(String, primary_key=True)  # code du scope classe
+    a_examen = Column(Boolean, nullable=False, default=False, server_default="0")
+    specialite_obligatoire = Column(Boolean, nullable=False, default=False, server_default="0")
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
+
+
+class BanqueExerciceORM(Base):
+    """Un exercice de la banque : sujet + corrigé INDISSOCIABLES, classé par
+    matière (multi), classe (multi), spécialité (multi), partie et session.
+
+    Contenu Markdown en base : c'est une EXCEPTION ASSUMÉE à la règle posée
+    pour `EpreuveORM` (qui garde ses documents dans le stockage objet). Un
+    exercice fait quelques lignes, il est filtré et trié en base par milliers ;
+    passer par le stockage objet imposerait N lectures réseau par génération
+    d'épreuve. Les images, elles, restent des fichiers (non gérées ici).
+
+    Multi-valeurs en JSON plutôt qu'en tables de jointure : ces listes sont
+    courtes et toujours lues en bloc avec l'exercice.
+    - `matieres_json` : codes du scope matiere ;
+    - `classes_json`  : codes du scope classe ;
+    - `series_json`   : codes du scope serie, ou la constante « SPECIAL:Aucune »
+      (universel, cf. règle 4.d).
+
+    `session` : 1-based dans la liste des séquences du référentiel, ou NULL
+    pour un exercice hors séquence (éligible aux examens seulement)."""
+
+    __tablename__ = "banque_exercices"
+
+    id = Column(String, primary_key=True, default=_uid)
+    sujet = Column(Text, nullable=False)
+    corrige = Column(Text, nullable=False, default="")
+    partie_id = Column(String, ForeignKey("banque_parties.id"), nullable=False, index=True)
+    session = Column(Integer, nullable=True)
+    niveau_intrinseque = Column(String(8), nullable=False, default="Moyen")
+    tag_examen = Column(Boolean, nullable=False, default=False, server_default="0")
+    actif = Column(Boolean, nullable=False, default=True, server_default="1")
+    matieres_json = Column(Text, nullable=False, default="[]")
+    classes_json = Column(Text, nullable=False, default="[]")
+    series_json = Column(Text, nullable=False, default="[]")
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
+
+
+class BanqueGenerationORM(Base):
+    """Une épreuve composée pour un élève : les exercices retenus, dans
+    l'ordre de l'épreuve, et les paramètres demandés.
+
+    `exercices_json` : liste d'identifiants d'exercices (l'ordre EST la
+    numérotation de l'épreuve et du corrigé, 4.j). La combinaison canonique
+    (multiensemble trié) sert à la garantie d'unicité par utilisateur (4.i) —
+    elle est recalculée à la lecture plutôt que stockée en double.
+
+    Pas de FK vers `users` : l'historique doit survivre à la suppression d'un
+    compte (audit technique), d'où un `user_id` en texte."""
+
+    __tablename__ = "banque_generations"
+    __table_args__ = (Index("ix_banque_generations_user_created", "user_id", "created_at"),)
+
+    id = Column(String, primary_key=True, default=_uid)
+    user_id = Column(String, nullable=False, index=True)
+    params_json = Column(Text, nullable=False, default="{}")
+    exercices_json = Column(Text, nullable=False, default="[]")
+    created_at = Column(UTCDateTime, default=utc_now, index=True)
+
+
+class BanqueJournalORM(Base):
+    """Journal TECHNIQUE du générateur (cahier 7.1) : générations,
+    relâchements de la règle des 50 %, épreuves incomplètes, saturations
+    d'unicité et purges d'historique. Consultable par l'administration
+    seulement — jamais affiché à l'élève (le cahier impose le silence total).
+
+    Pas de FK vers `users` : le journal est un historique d'exploitation, il
+    doit rester lisible après la suppression d'un compte."""
+
+    __tablename__ = "banque_journal"
+    __table_args__ = (Index("ix_banque_journal_type_created", "type", "created_at"),)
+
+    id = Column(String, primary_key=True, default=_uid)
+    user_id = Column(String, nullable=False, index=True)
+    generation_id = Column(String, nullable=False, index=True)
+    type = Column(String(32), nullable=False, index=True)
+    params_json = Column(Text, nullable=False, default="{}")
+    details_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(UTCDateTime, default=utc_now, index=True)

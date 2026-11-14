@@ -11,6 +11,7 @@ export type Onglet =
   | "parametres"
   | "formules"
   | "gabarits"
+  | "banque"
   | "calendrier"
   | "journal"
   | "signalements"
@@ -18,7 +19,7 @@ export type Onglet =
 
 /** Les onglets, regroupés en trois familles (navigation latérale sur écran large). */
 export const GROUPES: { titre: string; ids: Onglet[] }[] = [
-  { titre: "Contenu", ids: ["epreuves", "import", "formules", "gabarits", "calendrier"] },
+  { titre: "Contenu", ids: ["epreuves", "import", "formules", "gabarits", "banque", "calendrier"] },
   { titre: "Communauté", ids: ["utilisateurs", "signalements", "notifications"] },
   { titre: "Système", ids: ["parametres", "sauvegardes", "journal"] },
 ];

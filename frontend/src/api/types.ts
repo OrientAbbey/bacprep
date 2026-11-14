@@ -285,6 +285,90 @@ export interface AdminStats {
   signalements_ouverts: number;
 }
 
+// ---------- Banque d'exercices V4.10 ----------
+
+export interface BanquePartie {
+  id: string;
+  matiere: string;
+  nom: string;
+  ordre: number;
+}
+
+export interface BanqueExercice {
+  id: string;
+  sujet: string;
+  corrige: string;
+  partie_id: string;
+  session: number | null;
+  niveau_intrinseque: "Facile" | "Moyen" | "Difficile";
+  tag_examen: boolean;
+  actif: boolean;
+  matieres: string[];
+  classes: string[];
+  series: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BanqueClasseMeta {
+  a_examen: boolean;
+  specialite_obligatoire: boolean;
+}
+
+export interface BanqueAdminData {
+  parties: BanquePartie[];
+  exercices: BanqueExercice[];
+  classes_meta: Record<string, BanqueClasseMeta>;
+  referentiel: {
+    matiere: string[];
+    classe: string[];
+    serie: string[];
+    sequences: number[];
+  };
+}
+
+export interface BanqueJournalEntry {
+  id: string;
+  user_id: string;
+  generation_id: string;
+  type: string;
+  params: Record<string, unknown>;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export type BanqueMode = "sequence" | "examen" | "examen_blanc" | "vide";
+export type BanqueDifficulte = "Facile" | "Moyen" | "Difficile";
+
+export interface BanqueGenerationInput {
+  matiere: string;
+  classe: string;
+  serie?: string;
+  sequence?: number;
+  mode: BanqueMode;
+  difficulte: BanqueDifficulte;
+}
+
+export interface BanqueGenerationExercice {
+  numero: number;
+  sujet?: string;
+  contenu?: string;
+}
+
+export interface BanqueGenerationOutput {
+  generation_id: string;
+  exercices: BanqueGenerationExercice[];
+  parametres: {
+    matiere: string;
+    classe: string;
+    serie: string | null;
+    sequence: number | null;
+    mode: BanqueMode;
+    difficulte: BanqueDifficulte;
+    nb_exercices: number;
+  };
+}
+
 // ---------- Notifications ----------
 
 // Le `type` est une CHAÎNE LIBRE depuis la revue 2026-09-18 : l'admin peut

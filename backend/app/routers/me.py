@@ -12,6 +12,7 @@ from ..db import get_db, utc_now
 from ..db_models import (
     AIConversationORM,
     AKMouvementORM,
+    BanqueGenerationORM,
     ConsultationORM,
     EpreuveORM,
     AvatarORM,
@@ -342,6 +343,18 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
             .order_by(AKMouvementORM.created_at.asc())
             .all()
         ],
+        "epreuves_generees": [
+            {
+                "generation_id": row.id,
+                "parametres": json.loads(row.params_json),
+                "exercices": json.loads(row.exercices_json),
+                "date": row.created_at,
+            }
+            for row in db.query(BanqueGenerationORM)
+            .filter(BanqueGenerationORM.user_id == user.id)
+            .order_by(BanqueGenerationORM.created_at.asc())
+            .all()
+        ],
     }
 
 
@@ -376,6 +389,9 @@ def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) 
     # purger AVANT db.delete(user), sinon la suppression échoue en
     # « FOREIGN KEY constraint failed ». Idem dans la voie admin.
     db.query(AKMouvementORM).filter(AKMouvementORM.user_id == u_id).delete()
+    db.query(BanqueGenerationORM).filter(BanqueGenerationORM.user_id == u_id).delete()
+    # BanqueJournalORM n'est pas une donnée de compte : le journal technique
+    # est volontairement conservé après effacement (audit d'exploitation).
     db.delete(user)
     db.commit()
     log.info("Compte supprimé (effacement strict) — user %s", u_id)

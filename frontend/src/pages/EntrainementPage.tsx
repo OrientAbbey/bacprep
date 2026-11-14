@@ -1,7 +1,9 @@
-import { ArrowLeft, Check, Link2, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Check, Link2, Printer, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
+import type { BanqueDifficulte, BanqueGenerationInput, BanqueGenerationOutput, BanqueMode } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { Combobox } from "../components/Combobox";
 import { MarkdownContent } from "../components/MarkdownContent";
@@ -43,6 +45,7 @@ function Liste() {
   const [essai, setEssai] = useState(0);
   const [matiere, setMatiere] = useState("");
   const [difficulte, setDifficulte] = useState("");
+  const [composer, setComposer] = useState(false);
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -72,6 +75,17 @@ function Liste() {
           {t("Des exercices à refaire autant de fois que tu veux : à chaque fois, les valeurs changent. Cherche d'abord sur ta feuille, puis affiche la correction détaillée.")}
         </p>
       </header>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+        <div>
+          <h2 className="font-serif-brand text-lg">{t("Composer une épreuve")}</h2>
+          <p className="mt-1 text-sm text-ink-soft">{t("Prépare une épreuve personnalisée à partir des exercices disponibles.")}</p>
+        </div>
+        <button type="button" onClick={() => setComposer((value) => !value)} aria-expanded={composer} className="min-h-[44px] rounded-full bg-ink px-5 text-sm font-medium text-paper">
+          {t(composer ? "Masquer le formulaire" : "Composer une épreuve")}
+        </button>
+      </div>
+      {composer && <ComposerBanque />}
 
       {erreur && (
         <div role="alert" className="rounded-lg border border-correction/30 bg-correction-soft p-5 text-sm text-correction">
@@ -153,6 +167,165 @@ function Liste() {
             ))}
           </section>
         ))}
+    </section>
+  );
+}
+
+interface OptionsBanque {
+  matieres: string[];
+  classes: string[];
+  series: string[];
+  sequences: number[];
+}
+
+function ComposerBanque() {
+  const { user } = useAuth();
+  const [options, setOptions] = useState<OptionsBanque | null>(null);
+  const [chargementOptions, setChargementOptions] = useState(true);
+  const [classe, setClasse] = useState("terminale");
+  const [matiere, setMatiere] = useState("");
+  const [serie, setSerie] = useState("");
+  const [mode, setMode] = useState<BanqueMode>("sequence");
+  const [sequence, setSequence] = useState(1);
+  const [difficulte, setDifficulte] = useState<BanqueDifficulte>("Moyen");
+  const [generation, setGeneration] = useState<BanqueGenerationOutput | null>(null);
+  const [corrige, setCorrige] = useState<BanqueGenerationOutput | null>(null);
+  const [corrigeAffiche, setCorrigeAffiche] = useState(false);
+  const [enCours, setEnCours] = useState(false);
+  const [chargementCorrige, setChargementCorrige] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [erreurOptions, setErreurOptions] = useState<string | null>(null);
+
+  const chargerOptions = useCallback(async (signal?: AbortSignal) => {
+    setChargementOptions(true);
+    try {
+      const values = await api.get<OptionsBanque>("/api/banque/options", undefined, signal);
+      setOptions(values);
+      setMatiere((current) => values.matieres.includes(current) ? current : values.matieres[0] || "");
+      setClasse((current) => values.classes.includes(current) ? current : values.classes[0] || "");
+      setSerie((current) => current && values.series.includes(current) ? current : "");
+      setErreurOptions(null);
+    } catch {
+      if (!signal?.aborted) setErreurOptions(t("Impossible de charger les options de génération."));
+    } finally {
+      if (!signal?.aborted) setChargementOptions(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setOptions(null);
+      setChargementOptions(false);
+      return;
+    }
+    const ctl = new AbortController();
+    void chargerOptions(ctl.signal);
+    return () => ctl.abort();
+  }, [chargerOptions, user?.id]);
+
+  const exercices = generation?.exercices ?? [];
+  const sujetMarkdown = exercices.map((ex) => `## ${t("Exercice {n}", { n: ex.numero })}\n\n${ex.contenu ?? ""}`).join("\n\n---\n\n");
+  const corrigeMarkdown = corrige?.exercices.map((ex) => `## ${t("Exercice {n}", { n: ex.numero })}\n\n${ex.contenu ?? ""}`).join("\n\n---\n\n") ?? "";
+  const parametres = useMemo<BanqueGenerationInput | null>(() => {
+    if (!matiere || !classe) return null;
+    return { matiere, classe, serie: serie || undefined, mode, difficulte, ...(mode === "sequence" ? { sequence } : {}) };
+  }, [matiere, classe, serie, mode, difficulte, sequence]);
+
+  async function genererEpreuve() {
+    if (!parametres || !user) return;
+    setEnCours(true);
+    setErreur(null);
+    setCorrige(null);
+    setCorrigeAffiche(false);
+    try {
+      const created = await api.post<BanqueGenerationOutput>("/api/banque/generer", parametres);
+      const saved = await api.get<BanqueGenerationOutput>(`/api/banque/generations/${encodeURIComponent(created.generation_id)}`);
+      setGeneration(saved);
+    } catch (err) {
+      setErreur(err instanceof ApiError && err.status === 403
+        ? t("Cette matière n'est pas couverte par ton abonnement actif.")
+        : t("L'épreuve n'a pas pu être préparée. Vérifie tes choix puis réessaie."));
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  async function afficherCorrige() {
+    if (corrigeAffiche) {
+      setCorrigeAffiche(false);
+      return;
+    }
+    if (!generation) return;
+    if (corrige) {
+      setCorrigeAffiche(true);
+      return;
+    }
+    setChargementCorrige(true);
+    setErreur(null);
+    try {
+      const result = await api.get<BanqueGenerationOutput>(`/api/banque/generations/${encodeURIComponent(generation.generation_id)}/corrige`);
+      setCorrige(result);
+      setCorrigeAffiche(true);
+    } catch {
+      setErreur(t("Le corrigé n'a pas pu être chargé. Réessaie."));
+    } finally {
+      setChargementCorrige(false);
+    }
+  }
+
+  const champ = "min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm";
+  const bouton = "inline-flex min-h-[44px] items-center gap-2 rounded-full border border-ink-soft/25 px-4 text-sm font-medium hover:bg-highlight-soft disabled:opacity-60";
+
+  return (
+    <section aria-labelledby="composer-banque-titre" className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+      <header>
+        <h2 id="composer-banque-titre" className="font-serif-brand text-xl">{t("Composer une épreuve")}</h2>
+        <p className="mt-1 text-sm text-ink-soft">{t("Choisis ta classe, ta matière et le format de l'épreuve.")}</p>
+      </header>
+      {!user ? (
+        <p className="rounded border border-ink-soft/15 p-3 text-sm">{t("Connecte-toi pour composer une épreuve.")} <Link to="/connexion" className="underline">{t("Se connecter")}</Link></p>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="text-xs">{t("Classe")}<select value={classe} onChange={(e) => setClasse(e.target.value)} disabled={chargementOptions || !options?.classes.length} className={`${champ} mt-1`}>{(options?.classes ?? []).map((code) => <option key={code} value={code}>{classeLabel(code)}</option>)}</select></label>
+            <label className="text-xs">{t("Matière")}<select value={matiere} onChange={(e) => setMatiere(e.target.value)} disabled={chargementOptions || !options?.matieres.length} className={`${champ} mt-1`}>{(options?.matieres ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label className="text-xs">{t("Série / spécialité")}<select value={serie} onChange={(e) => setSerie(e.target.value)} disabled={chargementOptions || !options?.series.length} className={`${champ} mt-1`}><option value="">{t("Toutes / aucune")}</option>{(options?.series ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label className="text-xs">{t("Format de l'épreuve")}<select value={mode} onChange={(e) => setMode(e.target.value as BanqueMode)} className={`${champ} mt-1`}>
+              <option value="sequence">{t("Séquence")}</option><option value="examen">{t("Examen")}</option><option value="examen_blanc">{t("Examen blanc")}</option><option value="vide">{t("Sans séquence")}</option>
+            </select></label>
+            {mode === "sequence" && <label className="text-xs">{t("Séquence")}<select value={sequence} onChange={(e) => setSequence(Number(e.target.value))} className={`${champ} mt-1`}>{(options?.sequences ?? []).map((n) => <option key={n} value={n}>{t("Séquence {n}", { n })}</option>)}</select></label>}
+            <label className="text-xs">{t("Difficulté")}<select value={difficulte} onChange={(e) => setDifficulte(e.target.value as BanqueDifficulte)} className={`${champ} mt-1`}><option value="Facile">{t("Facile")}</option><option value="Moyen">{t("Moyenne")}</option><option value="Difficile">{t("Difficile")}</option></select></label>
+          </div>
+          {user && chargementOptions && <p role="status" className="text-sm text-ink-soft"><Spinner /> {t("Chargement des options de génération.")}</p>}
+          {user && !chargementOptions && options && options.matieres.length === 0 && <p className="text-sm text-ink-soft">{t("Aucune matière n'est disponible pour le moment.")}</p>}
+          {user && erreurOptions && !chargementOptions && <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-correction"><span>{erreurOptions}</span><button type="button" onClick={() => void chargerOptions()} className="min-h-[44px] underline">{t("Réessayer")}</button></div>}
+          <button type="button" onClick={() => void genererEpreuve()} disabled={!parametres || !options?.matieres.length || enCours || chargementOptions} className={`${bouton} bg-ink text-paper hover:bg-ink`}>
+            {enCours ? <Spinner /> : <RefreshCw size={16} aria-hidden="true" />}{t(generation ? "Composer une autre épreuve" : "Générer l'épreuve")}
+          </button>
+          {erreur && !erreurOptions && <p role="alert" className="text-sm text-correction">{erreur}</p>}
+        </>
+      )}
+      {generation && (
+        <article className="space-y-4 border-t border-ink-soft/15 pt-4">
+          <header><h3 className="font-serif-brand text-lg">{t("Épreuve personnalisée")}</h3><p className="text-xs text-ink-soft">{generation.parametres.matiere} · {classeLabel(generation.parametres.classe)} · {t(generation.parametres.difficulte === "Moyen" ? "Moyenne" : generation.parametres.difficulte)} · {t("{n} exercices", { n: exercices.length })}</p></header>
+          {exercices.length === 0 ? <p className="rounded border border-ink-soft/15 p-3 text-sm">{t("Aucun exercice n'a pu être préparé pour ces choix. Essaie un autre format.")}</p> : (
+            <ol className="space-y-3">{exercices.map((ex) => <li key={ex.numero} className="rounded border border-ink-soft/15 p-3"><h4 className="font-mono-tag text-xs text-slate">{t("Exercice {n}", { n: ex.numero })}</h4><div className="prose-exam mt-2"><MarkdownContent content={ex.contenu ?? ""} variant="epreuve" /></div>{corrigeAffiche && corrige?.exercices[ex.numero - 1] && <div className="mt-4 border-t border-ink-soft/10 pt-3"><h5 className="font-mono-tag text-xs text-valide">{t("Corrigé")}</h5><div className="prose-exam mt-2"><MarkdownContent content={corrige.exercices[ex.numero - 1].contenu ?? ""} variant="epreuve" /></div></div>}</li>)}</ol>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => void afficherCorrige()} disabled={chargementCorrige || exercices.length === 0} aria-pressed={corrigeAffiche} className={`${bouton} bg-ink text-paper hover:bg-ink`}>{chargementCorrige ? <Spinner /> : <Check size={16} aria-hidden="true" />}{t(corrigeAffiche ? "Masquer la correction" : "Voir le corrigé")}</button>
+            <button type="button" onClick={() => void genererEpreuve()} disabled={enCours} className={bouton}><RefreshCw size={16} aria-hidden="true" />{t("Régénérer une épreuve")}</button>
+            <button type="button" onClick={() => window.print()} className={bouton}><Printer size={16} aria-hidden="true" />{t("Imprimer")}</button>
+          </div>
+          {createPortal(
+            <div className="print-zone">
+              <h1>{t("Épreuve personnalisée")}: {generation.parametres.matiere} — {classeLabel(generation.parametres.classe)}</h1>
+              <MarkdownContent content={sujetMarkdown} variant="epreuve" />
+              {corrigeAffiche && corrigeMarkdown && <><h2>{t("Corrigé")}</h2><MarkdownContent content={corrigeMarkdown} variant="epreuve" /></>}
+            </div>,
+            document.body,
+          )}
+        </article>
+      )}
     </section>
   );
 }

@@ -94,6 +94,18 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     ],
   },
   {
+    id: "banque",
+    onglet: "banque",
+    titre: "Banque d'exercices",
+    intro: "L'onglet Banque sert à composer des épreuves personnalisées à partir d'exercices réutilisables.",
+    points: [
+      "Crée des parties par matière, puis ajoute les exercices avec leur sujet, leur corrigé, leur difficulté, leurs classes, leurs spécialités et leurs critères de séquence ou d'examen.",
+      "Les métadonnées de classe indiquent les classes d'examen et celles où une spécialité est obligatoire ; vérifie-les avant de proposer la composition aux élèves.",
+      "Le journal conserve les générations récentes. L'export télécharge la banque et son référentiel ; l'import permet de fusionner les données ou de remplacer la banque après confirmation.",
+    ],
+    astuce: "Un exercice doit être actif et correspondre aux critères choisis par l'élève pour être retenu dans son épreuve.",
+  },
+  {
     id: "calendrier",
     onglet: "calendrier",
     titre: "Calendrier",

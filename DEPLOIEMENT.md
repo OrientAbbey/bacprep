@@ -209,6 +209,19 @@ SQLite/PostgreSQL) :
 python -m scripts_dev.migrate_2026_09
 ```
 
+Pour déployer le générateur V4.10 sur une base existante, exécuter également
+la migration idempotente qui crée les tables de la banque et initialise les
+classes d'examen. Depuis `backend/`, lancer cette commande après la mise à jour
+du code et avant d'ouvrir le générateur aux élèves :
+
+```bash
+python -m scripts_dev.migrate_2026_12
+```
+
+La migration ne crée aucun exercice : la banque doit être alimentée et vérifiée
+par l'administration avant que le générateur soit proposé. Elle peut être
+relancée sans écraser les métadonnées de classe existantes.
+
 ## Variables d'environnement (backend)
 
 Voir `backend/.env.example` pour la liste complète commentée. Au minimum :

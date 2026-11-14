@@ -19,6 +19,7 @@ import { messageErreurConnexion } from "../lib/messageConnexion";
 import { AdminAssistantGlobal } from "./admin/AdminAssistantGlobal";
 import { CalendrierPanel } from "./admin/CalendrierPanel";
 import { GabaritsPanel } from "./admin/GabaritsPanel";
+import { BanquePanel } from "./admin/BanquePanel";
 import { EpreuvesPanel } from "./admin/EpreuvesPanel";
 import { ImportPanel } from "./admin/ImportPanel";
 import { JournalPanel } from "./admin/JournalPanel";
@@ -378,6 +379,7 @@ export function AdminPage() {
       import: "Import massif",
       formules: "Formules",
       gabarits: "Exercices types",
+      banque: "Banque",
       calendrier: "Calendrier",
       utilisateurs: "Utilisateurs",
       signalements: "Signalements",
@@ -556,6 +558,8 @@ export function AdminPage() {
           <PlansPanel token={token} />
         ) : tab === "gabarits" ? (
           <GabaritsPanel token={token} />
+        ) : tab === "banque" ? (
+          <BanquePanel token={token} />
         ) : tab === "calendrier" ? (
           <CalendrierPanel token={token} />
         ) : tab === "notifications" ? (
