@@ -24,6 +24,10 @@ describe("libelleActivite", () => {
     setLang("en");
     expect(libelleActivite(item({ cle: "Abonnement {statut} — {portee}", params: { statut: "annulee", portee: "Série complète" } }))).toBe("Subscription cancelled — Full stream");
     expect(libelleActivite(item({ cle: "Discussion « {libelle} »", params: { libelle: "Discussion générale 2" } }))).toBe("Conversation “General conversation 2”");
+    // Le statut de la base ("annulee", "active") n'est jamais affiché tel quel en français.
+    setLang("fr");
+    expect(libelleActivite(item({ cle: "Abonnement {statut} — {portee}", params: { statut: "annulee", portee: "Série complète" } }))).toBe("Abonnement annulé — Série complète");
+    expect(libelleActivite(item({ cle: "Abonnement {statut} — {portee}", params: { statut: "active", portee: "Matière" } }))).toBe("Abonnement actif — Matière");
   });
   it("retombe sur le libellé du serveur pour une entrée sans gabarit (ancien serveur)", () => {
     setLang("en");
