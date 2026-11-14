@@ -9,7 +9,7 @@ import { MetaBadge } from "../components/MetaBadge";
 import { CatalogueSkeleton } from "../components/Skeleton";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
-import { t } from "../i18n";
+import { t, tDynamique } from "../i18n";
 
 type CorrigeFiltre = "tous" | "avec" | "sans";
 type AccesFiltre = "tous" | "gratuit" | "ouvert" | "payant";
@@ -343,7 +343,7 @@ export function CataloguePage() {
               aria-pressed={corrige === v}
               className={`min-h-[44px] rounded-full px-3 py-1.5 ${corrige === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
-              {t(label)}
+              {tDynamique(label)}
             </button>
           ))}
         </div>
@@ -356,7 +356,7 @@ export function CataloguePage() {
               aria-pressed={acces === v}
               className={`min-h-[44px] rounded-full px-3 py-1.5 ${acces === v ? "bg-ink text-paper" : "text-ink-soft"}`}
             >
-              {t(label)}
+              {tDynamique(label)}
             </button>
           ))}
         </div>

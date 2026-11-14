@@ -4,6 +4,9 @@ import en from "./locales/en.json";
  * valeur de repli (une clé absente de `en.json` s'affiche donc en français,
  * jamais en blanc). `t("Il y a {n} jours", { n: 3 })` interpole `{n}`. */
 export type Lang = "fr" | "en";
+/** Clés de traduction : chaque phrase française de `en.json`. Le typage fait
+ * échouer la compilation sur une faute de frappe dans un appel `t("…")`. */
+export type Cle = keyof typeof en;
 const CLE = "bacprep-lang";
 
 function initiale(): Lang {
@@ -32,8 +35,16 @@ export function setLang(l: Lang): void {
   if (typeof document !== "undefined") document.documentElement.lang = l;
 }
 
-export function t(fr: string, vars?: Record<string, string | number>): string {
-  let s = courante === "en" ? ((en as Record<string, string>)[fr] ?? fr) : fr;
+export function t<K extends Cle>(fr: K, vars?: Record<string, string | number>): string {
+  let s = courante === "en" ? (en[fr] ?? fr) : fr;
   if (vars) s = s.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
   return s;
+}
+
+/** Traduction d'une phrase FOURNIE PAR LE SERVEUR (gabarit d'activité, message
+ * d'erreur, libellé de portée, statut…). Le compilateur ne peut pas vérifier
+ * ces clés : `couverture.test.ts` tient la liste de celles que le serveur
+ * envoie. À réserver à ce cas — une clé écrite dans le code passe par `t()`. */
+export function tDynamique(cle: string, vars?: Record<string, string | number>): string {
+  return t(cle as Cle, vars);
 }

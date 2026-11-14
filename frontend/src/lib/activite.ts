@@ -1,5 +1,5 @@
 import type { ActiviteItem } from "../api/types";
-import { t } from "../i18n";
+import { tDynamique } from "../i18n";
 import { libelleDiscussion } from "./libelleDiscussion";
 
 /** Statuts stockés par le serveur (valeurs de la base, sans accent) : traduits
@@ -23,9 +23,9 @@ export function libelleActivite(a: ActiviteItem): string {
       k === "libelle"
         ? libelleDiscussion(String(v))
         : typeof v === "string"
-          ? t(k === "statut" ? (STATUTS[v] ?? v) : v)
+          ? tDynamique(k === "statut" ? (STATUTS[v] ?? v) : v)
           : v,
     ]),
   );
-  return t(a.cle, params);
+  return tDynamique(a.cle, params);
 }

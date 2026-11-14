@@ -1,4 +1,4 @@
-import { t } from "../i18n";
+import { tDynamique } from "../i18n";
 
 /** Message explicite d'un HTTPException FastAPI (corps `{"detail": "..."}`), traduit dans la langue choisie. Il peut
  * venir de `ApiError.detail` (client.ts : le corps JSON complet) ou de l'erreur enrichie par `streamEventSource`
@@ -6,5 +6,5 @@ import { t } from "../i18n";
 export function detailServeur(err: unknown): string | null {
   const brut = (err as { detail?: unknown })?.detail;
   const detail = typeof brut === "string" ? brut : brut && typeof brut === "object" ? (brut as { detail?: unknown }).detail : undefined;
-  return typeof detail === "string" && detail.trim() ? t(detail) : null;
+  return typeof detail === "string" && detail.trim() ? tDynamique(detail) : null;
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import en from "./locales/en.json";
-import { getLang, setLang, t } from "./i18n";
+import { getLang, setLang, t, tDynamique } from "./i18n";
 
 describe("i18n", () => {
   beforeEach(() => setLang("fr"));
@@ -13,7 +13,7 @@ describe("i18n", () => {
     setLang("en");
     expect(t("Fermer")).toBe("Close");
     expect(t("Membre depuis le {d}", { d: "1 Jan" })).toBe("Member since 1 Jan");
-    expect(t("Phrase jamais traduite")).toBe("Phrase jamais traduite");
+    expect(tDynamique("Phrase jamais traduite")).toBe("Phrase jamais traduite");
   });
   it("garde les mêmes variables {x} dans chaque traduction que dans sa clé", () => {
     const vars = (s: string) => (s.match(/\{\w+\}/g) ?? []).sort().join();

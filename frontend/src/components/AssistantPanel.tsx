@@ -8,7 +8,7 @@ import { delaiReconnexion, streamAssistantAsk, type AssistantAskPayload } from "
 import { ActionTexte, ASSISTANT_SIGNATURE, ASSISTANT_TITRE, Avatar, ChatBubble, INPUT_MAX_HEIGHT_PX, MessageComposer, type Message } from "./ChatParts";
 import { MarkdownContent } from "./MarkdownContent";
 import { useToast } from "./Toast";
-import { t } from "../i18n";
+import { t, tDynamique } from "../i18n";
 
 /** Nom du produit assistant (en-tête du panneau, bouton lanceur) et
  * signature affichée sur chacune de ses réponses. */
@@ -595,7 +595,7 @@ export function AssistantPanel({
             }
           } else if (event.type === "error") {
             gotErrorEvent = true;
-            erreurFinale = t(event.message);
+            erreurFinale = tDynamique(event.message);
           }
         }, signal);
       } catch (err) {

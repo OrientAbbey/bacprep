@@ -31,7 +31,7 @@ import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
 import { CLASSES_SECONDAIRE, NIVEAUX, classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
-import { locale, t } from "../i18n";
+import { locale, t, tDynamique } from "../i18n";
 
 interface Profil {
   email: string;
@@ -562,7 +562,7 @@ function PanneauAbonnements({
             <div className="flex flex-wrap items-center justify-between gap-2 bg-highlight-soft/60 px-4 py-3">
               <div className="min-w-0">
                 <p className="font-mono-tag text-[10px] text-ink-soft">{t("ABONNEMENT ACTIF")}</p>
-                <p className="truncate font-serif-brand text-lg leading-tight">{t(s.scope_label)}</p>
+                <p className="truncate font-serif-brand text-lg leading-tight">{tDynamique(s.scope_label)}</p>
               </div>
               <span className="flex shrink-0 items-center gap-1 rounded-full bg-valide px-2.5 py-1 font-mono-tag text-[10px] text-paper">
                 <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />

@@ -9,7 +9,7 @@ import { listeHorsLigne } from "../lib/horsLigne";
 import { classeLabel } from "../lib/referentiel";
 import { formatRelativeTime } from "../lib/time";
 import { Logo } from "../components/Logo";
-import { t } from "../i18n";
+import { t, tDynamique } from "../i18n";
 
 /**
  * Accueil public, organisé en DECK séquentiel (pas tout en même temps) :
@@ -215,7 +215,7 @@ export function HomePage() {
               </button>
               <ChevronRight size={12} strokeWidth={2} aria-hidden="true" className="shrink-0 text-slate" />
               <span aria-current="page" className="truncate text-ink-soft">
-                {t("NIVEAU {niveau} — CHOISIS TA CLASSE", { niveau: t(niveauActif.label).toUpperCase() })}
+                {t("NIVEAU {niveau} — CHOISIS TA CLASSE", { niveau: tDynamique(niveauActif.label).toUpperCase() })}
               </span>
             </nav>
           ) : (
@@ -292,13 +292,13 @@ function NiveauGrid({ niveaux, onChoose }: { niveaux: NiveauNav[]; onChoose: (n:
             key={n.code}
             type="button"
             onClick={() => onChoose(n)}
-            aria-label={t("Consulter le niveau {n}", { n: t(n.label) })}
+            aria-label={t("Consulter le niveau {n}", { n: tDynamique(n.label) })}
             className="flex min-h-[140px] w-full flex-col justify-between rounded-lg border border-ink-soft/20 bg-paper-raised p-5 text-left transition-colors hover:border-highlight/60 hover:bg-highlight-soft/40 focus-visible:border-highlight/60"
           >
             <span className="flex items-center gap-3">
               <GraduationCap size={24} strokeWidth={1.5} aria-hidden="true" className="text-highlight-text" />
               <span className="block">
-                <span className="block font-serif-brand text-lg">{t(n.label)}</span>
+                <span className="block font-serif-brand text-lg">{tDynamique(n.label)}</span>
                 <span className="block text-xs text-slate">{description ?? `${n.classes.length} classes`}</span>
               </span>
             </span>

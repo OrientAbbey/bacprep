@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import type { Cle } from "../i18n";
 import en from "./en.json";
 
 // Interface élève uniquement : la console admin reste volontairement en français.
@@ -113,7 +114,9 @@ it('chaque t("…") de l\'interface élève a sa traduction anglaise', () => {
 // littéraux. Sources : core/subscriptions.py (SCOPE_LABELS), routers/me.py
 // (gabarits d'activité), routers/assistant.py et core/assistant.py (messages
 // d'erreur), lib/activite.ts (statuts de la base), lib/libelleDiscussion.ts.
-const CLES_SERVEUR = [
+// `Cle[]` fait échouer la compilation si une de ces phrases disparaît de
+// en.json ; le test ci-dessous le dit aussi à l'exécution.
+const CLES_SERVEUR: Cle[] = [
   // Portées d'abonnement
   "Épreuve précise",
   "Matière, année précise",
