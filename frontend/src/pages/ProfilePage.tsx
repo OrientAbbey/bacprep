@@ -4,6 +4,8 @@ import {
   BookOpen,
   Calendar,
   CheckCircle2,
+  Coins,
+  Copy,
   CreditCard,
   Database,
   Edit3,
@@ -27,6 +29,8 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NoteEditor } from "../components/NoteEditor";
 import { PhotoProfil } from "../components/PhotoProfil";
 import { libelleActivite } from "../lib/activite";
+import { gainProchaineConnexion, libelleMouvementAK, type MouvementAK } from "../lib/ak";
+import { copierTexte } from "../lib/pressePapiers";
 import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
 import { CLASSES_SECONDAIRE, NIVEAUX, classeLabel } from "../lib/referentiel";
@@ -36,12 +40,21 @@ import { locale, t, tDynamique } from "../i18n";
 interface Profil {
   email: string;
   nom: string;
+  /** Identifiant public dictable (« CC-26-A7K3M9 »), `null` sur les comptes
+   * antérieurs à la migration de novembre 2026 non encore rétrofillés. */
+  matricule: string | null;
   niveau: string | null;
   classe: string | null;
   etablissement: string | null;
   membre_depuis: string;
   abonnements: SubscriptionOut[];
   total_depense_fcfa: number;
+  /** Monnaie interne : solde (cache d'affichage), série de connexions et
+   * derniers mouvements (le journal fait foi côté serveur). */
+  solde_ak: number;
+  ak_serie_jours: number;
+  ak_dernier_jour: string | null;
+  ak_mouvements: MouvementAK[];
 }
 
 const ICONE_ACTIVITE: Record<string, typeof Activity> = {
@@ -275,6 +288,24 @@ export function ProfilePage() {
           </div>
         </div>
         <ChangerPhoto avecPhoto={!!user?.avatar_version} onChange={refreshUser} />
+        {profil.matricule ? (
+          <p className="mt-3 flex items-center gap-2 text-sm text-slate">
+            <span className="font-mono-tag text-[10px] uppercase text-ink-soft">{t("Matricule")}</span>
+            <span className="font-mono-tag text-sm text-ink">{profil.matricule}</span>
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await copierTexte(profil.matricule ?? "");
+                showToast(ok ? t("Copié ✓") : t("Échec de la copie"), ok ? "success" : "error");
+              }}
+              aria-label={t("Copier le matricule")}
+              title={t("Copier le matricule")}
+              className="relative p-1 text-ink-soft hover:text-ink after:absolute after:-inset-[9px] after:rounded-full after:content-['']"
+            >
+              <Copy size={13} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </p>
+        ) : null}
         {profil.abonnements.length > 0 ? (
           <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-valide px-3 py-1 font-mono-tag text-[10px] text-paper">
             <CheckCircle2 size={11} strokeWidth={2} aria-hidden="true" />
@@ -390,6 +421,16 @@ export function ProfilePage() {
           {t("Se déconnecter")}
         </button>
       </div>
+
+      {/* Carte « Solde AK » : monnaie interne gagnée en revenant chaque jour,
+          dépensée sur les formules. Le journal (10 derniers mouvements) est
+          la contrepartie visible de la source de vérité côté serveur. */}
+      <CarteSoldeAK
+        solde={profil.solde_ak}
+        serie={profil.ak_serie_jours}
+        dernierJour={profil.ak_dernier_jour}
+        mouvements={profil.ak_mouvements}
+      />
       </aside>
 
       {/* Colonne principale : onglets abonnements / notes / activité /
@@ -518,6 +559,55 @@ function ErreurChargement({ onReessayer }: { onReessayer: () => void }) {
       >
         {t("Réessayer")}
       </button>
+    </div>
+  );
+}
+
+/** Carte « Solde AK » du profil : solde, série de connexions en cours, gain
+ * annoncé pour la prochaine visite et les 10 derniers mouvements. Le journal
+ * est la source de vérité comptable côté serveur (`ak_mouvements`) : le solde
+ * affiché n'est qu'un cache, on montre donc d'où il vient. */
+function CarteSoldeAK({
+  solde,
+  serie,
+  dernierJour,
+  mouvements,
+}: {
+  solde: number;
+  serie: number;
+  dernierJour: string | null;
+  mouvements: MouvementAK[];
+}) {
+  const prochainGain = gainProchaineConnexion(serie, dernierJour);
+  return (
+    <div className="mt-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-6">
+      <div className="flex items-center gap-2">
+        <Coins size={14} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
+        <h2 className="font-mono-tag text-[10px] uppercase text-ink-soft">{t("Solde AK")}</h2>
+      </div>
+      <p className="mt-2 font-serif-brand text-3xl text-ink">
+        {t("{n} AK", { n: solde })}
+      </p>
+      <p className="mt-1 text-sm text-slate">
+        {serie > 1 ? t("Série de connexion : {n} jours", { n: serie }) : t("Série de connexion : {n} jour", { n: serie })}
+      </p>
+      <p className="text-xs text-ink-soft">{t("Prochaine connexion : +{n} AK", { n: prochainGain })}</p>
+
+      <h3 className="mt-4 font-mono-tag text-[10px] uppercase text-ink-soft">{t("Derniers mouvements AK")}</h3>
+      {mouvements.length === 0 ? (
+        <p className="mt-2 text-sm text-slate">{t("Aucun mouvement pour l'instant")}</p>
+      ) : (
+        <ul className="mt-2 space-y-1.5">
+          {mouvements.slice(0, 10).map((m) => (
+            <li key={m.id} className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="min-w-0 truncate text-ink-soft">{libelleMouvementAK(m.motif)}</span>
+              <span className="shrink-0 font-mono-tag text-ink">
+                {m.montant > 0 ? `+${m.montant}` : m.montant} AK
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..core import referentiel, store
+from ..core import ak, referentiel, store
 from ..core.logging_config import get_logger
 from ..core.subscriptions import SCOPE_LABELS, scope_of, subs_to_out
 from ..db import get_db, utc_now
 from ..db_models import (
     AIConversationORM,
+    AKMouvementORM,
     ConsultationORM,
     EpreuveORM,
     AvatarORM,
@@ -44,17 +47,39 @@ def profil(db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
     )
     total_depense = sum(
         p.montant
-        for p in db.query(PaymentORM).filter(PaymentORM.user_id == user.id, PaymentORM.statut == "confirmed").all()
+        for p in db.query(PaymentORM)
+        .filter(
+            PaymentORM.user_id == user.id,
+            PaymentORM.statut == "confirmed",
+            # Les achats réglés en AK ne sont PAS des dépenses en FCFA
+            # (monnaie = "AK") : les compter gonflerait le total affiché.
+            PaymentORM.monnaie == "XAF",
+        )
+        .all()
     )
     return {
         "email": user.email,
         "nom": user.nom,
+        "matricule": user.matricule,
         "niveau": user.niveau,
         "classe": user.classe,
         "etablissement": user.etablissement,
         "membre_depuis": user.created_at,
         "abonnements": [o.model_dump() for o in subs_to_out(db, subs)],
         "total_depense_fcfa": total_depense,
+        "solde_ak": int(user.solde_ak or 0),
+        "ak_serie_jours": int(user.ak_serie_jours or 0),
+        "ak_dernier_jour": user.ak_dernier_jour,
+        "ak_mouvements": [
+            {
+                "id": m.id,
+                "montant": m.montant,
+                "motif": m.motif,
+                "details": json.loads(m.details_json or "{}"),
+                "date": m.created_at,
+            }
+            for m in ak.mouvements_recents(db, user.id, limite=20)
+        ],
     }
 
 
@@ -256,6 +281,7 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
         "profil": {
             "email": user.email,
             "nom": user.nom,
+            "matricule": user.matricule,
             "niveau": user.niveau,
             "classe": user.classe,
             "etablissement": user.etablissement,
@@ -263,6 +289,8 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
             "consent_ia": user.consent_ia,
             "consent_notes": user.consent_notes,
             "banni": user.banni,
+            "solde_ak": int(user.solde_ak or 0),
+            "ak_serie_jours": int(user.ak_serie_jours or 0),
         },
         "notes": [
             _note_to_out(n, None) | {"epreuve": epreuves.get(n.epreuve_id)}
@@ -293,11 +321,26 @@ def export_donnees(db: Session = Depends(get_db), user=Depends(require_user)) ->
             {
                 "provider": p.provider,
                 "montant": p.montant,
+                "monnaie": p.monnaie,
                 "reference": p.reference_agregateur,
                 "statut": p.statut,
                 "confirmed_at": p.confirmed_at,
             }
             for p in db.query(PaymentORM).filter(PaymentORM.user_id == user.id).all()
+        ],
+        # Journal AK : donnée personnelle DÉRIVÉE (comportement de connexion et
+        # achats) — donc incluse dans l'export de portabilité (Art. 20).
+        "ak_mouvements": [
+            {
+                "montant": m.montant,
+                "motif": m.motif,
+                "details": json.loads(m.details_json or "{}"),
+                "date": m.created_at,
+            }
+            for m in db.query(AKMouvementORM)
+            .filter(AKMouvementORM.user_id == user.id)
+            .order_by(AKMouvementORM.created_at.asc())
+            .all()
         ],
     }
 
@@ -329,6 +372,10 @@ def supprimer_compte(db: Session = Depends(get_db), user=Depends(require_user)) 
     db.query(SignalementORM).filter(SignalementORM.user_id == u_id).delete()
     db.query(GabaritSignalementORM).filter(GabaritSignalementORM.user_id == u_id).delete()
     db.query(NotificationReadORM).filter(NotificationReadORM.user_id == u_id).delete()
+    # Journal AK : FK vers users.id (PRAGMA foreign_keys=ON, cf. db.py) — à
+    # purger AVANT db.delete(user), sinon la suppression échoue en
+    # « FOREIGN KEY constraint failed ». Idem dans la voie admin.
+    db.query(AKMouvementORM).filter(AKMouvementORM.user_id == u_id).delete()
     db.delete(user)
     db.commit()
     log.info("Compte supprimé (effacement strict) — user %s", u_id)

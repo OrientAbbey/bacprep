@@ -140,6 +140,14 @@ const CLES_SERVEUR: Cle[] = [
   // Libellés de discussion par défaut
   "Discussion générale",
   "Passage : {texte}",
+  // Motifs du journal AK (core/ak.py : `connexion_j1` … `connexion_j7plus`,
+  // `achat:<plan_id>`, `ajustement_admin`) traduits par lib/ak.ts
+  "Récompense de connexion — jour {n}",
+  "Achat d'un abonnement",
+  "Ajustement de l'équipe",
+  // Messages du serveur affichés après un achat en AK
+  "Solde AK insuffisant",
+  "Cette formule n'est pas payable en AK",
   // Messages d'erreur du serveur
   "Votre session a été fermée.",
   "Une erreur est survenue côté serveur.",

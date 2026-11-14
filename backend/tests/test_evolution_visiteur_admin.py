@@ -426,7 +426,14 @@ def test_export_et_suppression_compte(client, epreuve_payante):
             "avatar",
             "abonnements",
             "paiements",
+            # Journal de la monnaie interne : donnée personnelle dérivée
+            # (série de connexion, achats) — incluse au titre de la
+            # portabilité (Art. 20), comme les notes et les paiements.
+            "ak_mouvements",
         }
+        assert body["profil"]["matricule"]
+        assert body["profil"]["solde_ak"] == 3
+        assert [m["montant"] for m in body["ak_mouvements"]] == [3]
 
         # Suppression du compte → sessions révoquées (401 ensuite).
         assert u.delete("/api/me/compte").status_code == 200

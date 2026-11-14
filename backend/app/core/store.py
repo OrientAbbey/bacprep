@@ -48,6 +48,24 @@ ACTIVE_WEBSOCKETS: dict[str, list[WebSocket]] = {}
 
 # ---------- Utilisateurs & sessions ----------
 
+def _matricule_unique(db: Session) -> str:
+    """Tire un matricule et vérifie qu'il est libre. La boucle est bornée :
+    avec 32^6 combinaisons, 20 collisions consécutives signifieraient un
+    problème de génération, pas de la malchance."""
+    from .matricule import generer_matricule
+
+    for _ in range(20):
+        candidat = generer_matricule()
+        existe = (
+            db.query(UserORM.id)
+            .filter(UserORM.matricule == candidat)
+            .first()
+        )
+        if not existe:
+            return candidat
+    raise RuntimeError("Impossible de générer un matricule unique (20 collisions)")
+
+
 def get_or_create_user(db: Session, email: str, nom: str) -> UserORM:
     """Retrouve l'utilisateur par email, ou le crée au premier login (nom
     mis à jour si fourni et différent). Le consentement n'est PAS posé à la
@@ -57,7 +75,12 @@ def get_or_create_user(db: Session, email: str, nom: str) -> UserORM:
 
     Deux logins simultanés sur un nouvel email : le second INSERT se heurte
     à la PK (IntegrityError) — l'utilisateur est relu au lieu de renvoyer
-    un 500 (revue 2026-09, REVUE_BACKEND.md §4)."""
+    un 500 (revue 2026-09, REVUE_BACKEND.md §4).
+
+    Un matricule public est attribué à la création. Une collision (deux
+    comptes créés simultanément avec le même tirage) est rattrapée comme la
+    collision d'email : l'INSERT échoue, on retire le candidat et on en
+    tire un nouveau."""
     user = db.query(UserORM).filter(UserORM.email == email).one_or_none()
     if user:
         if nom and user.nom != nom:
@@ -66,18 +89,27 @@ def get_or_create_user(db: Session, email: str, nom: str) -> UserORM:
         return user
     from sqlalchemy.exc import IntegrityError
 
-    user = UserORM(email=email, nom=nom)
+    matricule = _matricule_unique(db)
+    user = UserORM(email=email, nom=nom, matricule=matricule)
     db.add(user)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        log.info("Course de login sur %s — utilisateur relu", email)
-        user = db.query(UserORM).filter(UserORM.email == email).one_or_none()
-        if user is None:
-            raise
+        # Distinguer une collision d'email (course de login, cas fréquent) et
+        # une collision de matricule (rarissime) : dans les deux cas
+        # l'utilisateur peut exister déjà.
+        existant = db.query(UserORM).filter(UserORM.email == email).one_or_none()
+        if existant is not None:
+            log.info("Course de login sur %s — utilisateur relu", email)
+            return existant
+        log.warning("Collision de matricule %s — nouveau tirage", matricule)
+        matricule = _matricule_unique(db)
+        user = UserORM(email=email, nom=nom, matricule=matricule)
+        db.add(user)
+        db.commit()
     db.refresh(user)
-    log.info("Nouvel utilisateur créé: %s", email)
+    log.info("Nouvel utilisateur créé: %s (matricule %s)", email, user.matricule)
     return user
 
 

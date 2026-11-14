@@ -32,6 +32,12 @@ class UserOut(BaseModel):
     consent_notes: Optional[bool] = None
     # Horodatage de la photo de profil (None = pas de photo) : sert de paramètre ?v= de l'URL.
     avatar_version: Optional[str] = None
+    # Identifiant public dictable attribué à la création (ex. « CC-26-A7K3M9 »).
+    # None uniquement pour les comptes antérieurs à la migration 2026-11.
+    matricule: Optional[str] = None
+    # Monnaie interne : solde et série de connexions en cours.
+    solde_ak: int = 0
+    ak_serie_jours: int = 0
 
 
 class ConsentementIn(BaseModel):
@@ -172,6 +178,23 @@ class CheckoutIn(BaseModel):
         if v not in ("orange", "mtn"):
             raise ValueError("provider doit valoir 'orange' ou 'mtn'")
         return v
+
+
+class AchatAKIn(BaseModel):
+    """Achat d'une formule réglée en AK (monnaie interne).
+
+    Schéma **distinct** de ``CheckoutIn`` à dessein : le paiement AK ne passe
+    par aucun agrégateur Mobile Money, donc il n'a pas de ``provider`` (dont
+    la liste fermée ``("orange", "mtn")`` est validée par ``CheckoutIn``) et
+    il est confirmé immédiatement, sans webhook."""
+
+    scope: str  # epreuve|matiere_annee|matiere|annee|filiere
+    filiere: Optional[str] = None
+    matiere: Optional[str] = None
+    annee: Optional[str] = None
+    classe: Optional[str] = None  # requis sauf pour scope="epreuve"
+    epreuve_id: Optional[str] = None
+    plan_id: Optional[str] = Field(default=None, max_length=64)
 
 
 class SubscriptionOut(BaseModel):

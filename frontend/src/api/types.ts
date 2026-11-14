@@ -240,6 +240,12 @@ export interface AdminUtilisateur {
   id: string;
   nom: string;
   email: string;
+  /** Identifiant public dictable (« CC-26-A7K3M9 ») : le seul que l'élève
+   * communique au support. `null` sur un compte créé avant la migration
+   * 2026-11 et pas encore rétrofillé. */
+  matricule: string | null;
+  /** Solde de la monnaie interne AK (le journal `ak_mouvements` fait foi). */
+  solde_ak: number;
   niveau: string | null;
   classe: string | null;
   etablissement: string | null;

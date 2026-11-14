@@ -11,14 +11,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..core import referentiel, store
+from ..core import ak, referentiel, store
 from ..core.config import demo_allowed
 from ..core.logging_config import get_logger
 from ..core.plans import plan_pour, plans_actifs
 from ..core.subscriptions import subs_to_out
 from ..db import get_db, utc_now
 from ..db_models import EpreuveORM, PaymentORM, SubscriptionORM, to_dict
-from ..models import CheckoutIn, SubscriptionOut, WebhookIn
+from ..models import AchatAKIn, CheckoutIn, SubscriptionOut, WebhookIn
 from .auth import require_user
 
 router = APIRouter(prefix="/api", tags=["subscriptions"])
@@ -185,7 +185,7 @@ def deja_couvert(
     return {"deja_couvert": covered}
 
 
-def _resolve_scope_fields(db: Session, payload: CheckoutIn) -> dict:
+def _resolve_scope_fields(db: Session, payload: CheckoutIn | AchatAKIn) -> dict:
     """Traduit la portée choisie (scope) + les filtres fournis en champs
     concrets `{evaluation, classe, filiere, matiere, annee, epreuve_id}` à
     stocker sur la souscription, avec "ALL" comme joker pour matiere/annee
@@ -202,7 +202,7 @@ def _resolve_scope_fields(db: Session, payload: CheckoutIn) -> dict:
     return _resolve_classe_fields(payload)
 
 
-def _resolve_epreuve_fields(db: Session, payload: CheckoutIn) -> dict:
+def _resolve_epreuve_fields(db: Session, payload: CheckoutIn | AchatAKIn) -> dict:
     """Portée « épreuve précise » : filière, classe et évaluation déduites
     de l'épreuve (jamais de sélection manuelle côté acheteur)."""
     if not payload.epreuve_id:
@@ -222,7 +222,7 @@ def _resolve_epreuve_fields(db: Session, payload: CheckoutIn) -> dict:
     }
 
 
-def _resolve_classe_fields(payload: CheckoutIn) -> dict:
+def _resolve_classe_fields(payload: CheckoutIn | AchatAKIn) -> dict:
     """Portées à cadre de classe (matiere_annee, matiere, annee, filiere) :
     la classe est requise et normalisée, chaque portée impose ses filtres
     et choisit ses jokers "ALL"."""
@@ -296,6 +296,100 @@ def checkout(payload: CheckoutIn, db: Session = Depends(get_db), user=Depends(re
         "payment_id": payment.id,
         "reference_agregateur": payment.reference_agregateur,
         "montant": payment.montant,
+    }
+
+
+@router.post("/subscriptions/checkout-ak")
+def checkout_ak(payload: AchatAKIn, db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
+    """Achète une formule en la réglant avec la monnaie interne AK.
+
+    Différences assumées avec ``/subscriptions/checkout`` :
+    - aucun agrégateur : la souscription est **active immédiatement** (le
+      débit AK fait office de paiement) ;
+    - le débit est **atomique et conditionnel** (``solde_ak >= prix_ak`` dans
+      l'``UPDATE``) : deux achats simultanés ne peuvent pas rendre le solde
+      négatif ;
+    - une ligne ``PaymentORM`` est tout de même écrite, avec
+      ``monnaie="AK"``, pour la traçabilité — les agrégats financiers en
+      FCFA filtrent sur ``monnaie="XAF"`` et l'ignorent donc.
+
+    Refus : formule inconnue (400), non payable en AK (400), sélection déjà
+    couverte (409), solde insuffisant (402).
+    """
+    plan = plan_pour(db, payload.scope, payload.plan_id)
+    if plan is None:
+        raise HTTPException(400, "Formule inconnue ou indisponible")
+    if plan.prix_ak is None:
+        raise HTTPException(400, "Cette formule n'est pas payable en AK")
+    fields = _resolve_scope_fields(db, payload)
+
+    if store.scope_already_covered(
+        db,
+        user.id,
+        payload.scope,
+        filiere=fields["filiere"] if payload.scope != "epreuve" else None,
+        matiere=None if fields["matiere"] == "ALL" else fields["matiere"],
+        annee=None if fields["annee"] == "ALL" else fields["annee"],
+        classe=None if payload.scope == "epreuve" else fields["classe"],
+        epreuve_id=fields["epreuve_id"],
+    ):
+        raise HTTPException(409, "Cette sélection est déjà accessible (gratuite ou déjà abonnée)")
+
+    if int(user.solde_ak or 0) < plan.prix_ak:
+        raise HTTPException(402, "Solde AK insuffisant")
+
+    now = utc_now()
+    sub = SubscriptionORM(
+        user_id=user.id,
+        evaluation=fields["evaluation"],
+        classe=fields["classe"],
+        filiere=fields["filiere"],
+        matiere=fields["matiere"],
+        annee=fields["annee"],
+        epreuve_id=fields["epreuve_id"],
+        start_date=now,
+        end_date=now + timedelta(days=plan.duree_jours),
+        statut="active",  # débit AK = paiement immédiat, pas de webhook
+    )
+    db.add(sub)
+    db.flush()
+
+    # Le débit peut encore échouer ici si un achat concurrent a épuisé le
+    # solde entre la lecture ci-dessus et l'UPDATE (garde-fou SQL). Dans ce
+    # cas rien n'est commité : la souscription en attente est annulée.
+    if not ak.debiter_ak(
+        db,
+        user,
+        plan.prix_ak,
+        motif=f"achat:{plan.id}",
+        details={"scope": payload.scope, "subscription_id": sub.id, "plan": plan.libelle},
+    ):
+        db.rollback()
+        raise HTTPException(402, "Solde AK insuffisant")
+
+    reference = f"ak-{uuid.uuid4().hex}"
+    payment = PaymentORM(
+        user_id=user.id,
+        subscription_id=sub.id,
+        provider="ak",
+        montant=plan.prix_ak,
+        monnaie="AK",
+        reference_agregateur=reference,
+        statut="confirmed",
+        confirmed_at=now,
+    )
+    db.add(payment)
+    db.commit()
+
+    log.info(
+        "Achat AK: user=%s plan=%s prix_ak=%s sub=%s",
+        user.email, plan.id, plan.prix_ak, sub.id,
+    )
+    return {
+        "subscription_id": sub.id,
+        "payment_id": payment.id,
+        "prix_ak": plan.prix_ak,
+        "solde_ak": int(user.solde_ak or 0),
     }
 
 

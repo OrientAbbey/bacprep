@@ -17,6 +17,13 @@ export interface User {
   consent_notes: boolean | null;
   /** Horodatage de la photo de profil (paramètre `?v=` de son URL), absent si l'utilisateur n'en a pas. */
   avatar_version?: string | null;
+  /** Identifiant public dictable (« CC-26-A7K3M9 ») : communiqué au support,
+   * jamais dérivé de l'email. `null` sur les comptes antérieurs à la
+   * migration de novembre 2026 (rétrofillés ensuite). */
+  matricule?: string | null;
+  /** Monnaie interne : solde courant et série de connexions en cours. */
+  solde_ak?: number;
+  ak_serie_jours?: number;
 }
 
 interface AuthContextValue {

@@ -66,6 +66,19 @@ class UserORM(Base):
     # Dernière connexion RÉELLE (posée à chaque login, jamais effacée par une
     # déconnexion — contrairement à la table `sessions`, purgée au logout).
     derniere_connexion = Column(UTCDateTime, nullable=True)
+    # Identifiant public DICTABLE (ex. « CC-26-A7K3M9 ») : généré serveur à
+    # la création, sans aucune donnée personnelle. NULL uniquement pour les
+    # comptes créés avant la migration 2026-11 (rétrofillés par
+    # `scripts_dev/migrate_2026_11.py`) ; l'unicité est garantie par l'index.
+    matricule = Column(String(16), unique=True, nullable=True, index=True)
+    # Monnaie AK (voir core/ak.py) : le solde est DÉNORMALISÉ pour l'affichage
+    # rapide, mais la source de vérité comptable est `ak_mouvements`
+    # (invariant : solde_ak == SUM(ak_mouvements.montant)).
+    solde_ak = Column(Integer, nullable=False, default=0, server_default="0")
+    # Série de connexions récompensées : nombre de jours consécutifs et date
+    # (ISO « AAAA-MM-JJ », UTC) du dernier gain — sert à l'idempotence par jour.
+    ak_serie_jours = Column(Integer, nullable=False, default=0, server_default="0")
+    ak_dernier_jour = Column(String(10), nullable=True)
     created_at = Column(UTCDateTime, default=utc_now)
 
 
@@ -333,10 +346,36 @@ class PaymentORM(Base):
     subscription_id = Column(String, ForeignKey("subscriptions.id"), nullable=False)
     provider = Column(String, default="orange")
     montant = Column(Integer, nullable=False)
+    # Devise du montant : "XAF" (FCFA, agrégateur Mobile Money) ou "AK"
+    # (achat réglé avec la monnaie interne — montant exprimé en AK). Les
+    # agrégats financiers (revenus admin, total dépensé du profil) ne
+    # comptent QUE les lignes "XAF" : un achat de 25 AK n'est pas 25 FCFA.
+    monnaie = Column(String(3), nullable=False, default="XAF", server_default="XAF")
     reference_agregateur = Column(String, unique=True, nullable=False, index=True)
     statut = Column(String, default="pending")  # pending|confirmed|failed
     created_at = Column(UTCDateTime, default=utc_now)
     confirmed_at = Column(UTCDateTime, nullable=True)
+
+
+class AKMouvementORM(Base):
+    """Mouvement de la monnaie interne AK — JOURNAL SIGNÉ, source de vérité
+    comptable du solde (`UserORM.solde_ak` n'est qu'un cache d'affichage).
+
+    `montant` est signé : positif pour un crédit (série de connexion),
+    négatif pour un débit (achat d'une formule en AK). Chaque mouvement est
+    écrit dans la MÊME transaction que la mise à jour atomique du solde
+    (`UPDATE users SET solde_ak = solde_ak + :delta`), jamais avec un
+    `+=` Python (perte de mise à jour en cas de requêtes concurrentes)."""
+
+    __tablename__ = "ak_mouvements"
+
+    id = Column(String, primary_key=True, default=_uid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    montant = Column(Integer, nullable=False)
+    # "connexion_j1" … "connexion_j7plus" | "achat:<plan_id>" | "ajustement_admin"
+    motif = Column(String, nullable=False)
+    details_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(UTCDateTime, default=utc_now, index=True)
 
 
 class AIConversationORM(Base):
@@ -555,6 +594,11 @@ class PlanORM(Base):
     description = Column(String, nullable=False, default="")
     description_en = Column(String, nullable=False, default="")
     prix = Column(Integer, nullable=False)  # FCFA
+    # Prix équivalent en AK (monnaie interne). NULL = formule non payable en
+    # AK (l'élève doit passer par l'agrégateur Mobile Money). Saisi par
+    # l'admin, jamais calculé depuis `prix` : le ratio est une décision
+    # commerciale, pas une règle du code.
+    prix_ak = Column(Integer, nullable=True)
     duree_jours = Column(Integer, nullable=False, default=365)
     actif = Column(Boolean, nullable=False, default=True)
     ordre = Column(Integer, nullable=False, default=0)

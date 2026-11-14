@@ -14,6 +14,9 @@ interface Plan {
   description: string;
   description_en: string;
   prix: number;
+  /** Prix en AK (monnaie interne). `null` = formule non payable en AK : le
+   * champ laissé vide côté admin envoie explicitement `null`. */
+  prix_ak: number | null;
   duree_jours: number;
   actif: boolean;
   ordre: number;
@@ -101,6 +104,22 @@ export function PlansPanel({ token }: { token: string }) {
               <label className="text-xs text-slate">
                 Prix (FCFA)
                 <input type="number" min={100} className={champ} value={v.prix} onChange={(e) => modifier(p, { prix: Number(e.target.value) })} />
+              </label>
+              {/* Prix en AK : vide = null (formule non payable en AK), envoyé
+                  TEL QUEL au serveur — `Number("")` vaudrait 0 et le champ
+                  serait refusé (ge=1) sans explication. */}
+              <label className="text-xs text-slate">
+                Prix (AK)
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="—"
+                  className={champ}
+                  value={v.prix_ak ?? ""}
+                  onChange={(e) =>
+                    modifier(p, { prix_ak: e.target.value === "" ? null : Number(e.target.value) })
+                  }
+                />
               </label>
               <label className="text-xs text-slate">
                 Durée (jours)

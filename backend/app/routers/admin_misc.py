@@ -27,6 +27,7 @@ from ..db import get_db, utc_now
 from ..db_models import (
     AdminEventORM,
     AIConversationORM,
+    AKMouvementORM,
     ConsultationORM,
     AvatarORM,
     EssaiORM,
@@ -219,7 +220,14 @@ def admin_stats(db: Session = Depends(get_db), lock=Depends(require_admin)) -> d
 
 
 def _admin_paiements_confirmes(db: Session) -> list[PaymentORM]:
-    return db.query(PaymentORM).filter(PaymentORM.statut == "confirmed").all()
+    """Paiements confirmés **en FCFA uniquement** : les achats réglés en AK
+    (`monnaie="AK"`) ne sont pas des revenus monétaires — les inclure
+    afficherait « 25 FCFA de revenu » pour un achat de 25 AK."""
+    return (
+        db.query(PaymentORM)
+        .filter(PaymentORM.statut == "confirmed", PaymentORM.monnaie == "XAF")
+        .all()
+    )
 
 
 def _admin_epreuves_par_classe(db: Session) -> dict:
@@ -417,6 +425,7 @@ def admin_resoudre_signalement(
 
 @router.get("/utilisateurs")
 def admin_list_utilisateurs(
+    matricule: Optional[str] = None,
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> list[dict]:
@@ -427,10 +436,17 @@ def admin_list_utilisateurs(
     la révocation depuis cette même interface). Volontairement SANS aucune
     donnée secrète : les seuls identifiants de paiement sont des références
     d'agrégateur, jamais des codes — et il n'existe pas de mot de passe
-    local."""
+    local.
+
+    `matricule` (optionnel) filtre sur un matricule exact — c'est ce qu'un
+    élève communique au support, il doit être retrouvable sans connaître
+    son email."""
     allowed = admin_session.allowed_emails(db)
     roots = admin_session.root_emails()
-    users = db.query(UserORM).order_by(UserORM.created_at.desc()).limit(500).all()
+    requete = db.query(UserORM).order_by(UserORM.created_at.desc())
+    if matricule:
+        requete = requete.filter(UserORM.matricule == matricule.strip().upper())
+    users = requete.limit(500).all()
     ids = [u.id for u in users]
     notes = _admin_comptes_par_user(db, NoteORM, ids)
     convs = _admin_comptes_par_user(db, AIConversationORM, ids)
@@ -455,14 +471,19 @@ def _admin_comptes_par_user(db: Session, model, ids: list, extra=None) -> dict[s
 
 
 def _admin_depenses_par_user(db: Session, ids: list) -> dict[str, int]:
-    """Somme des paiements confirmés par utilisateur — même logique que
-    `ProfilePage.total_depense_fcfa` mais sur tout le tank admin."""
+    """Somme des paiements confirmés en FCFA par utilisateur — même logique
+    que `ProfilePage.total_depense_fcfa` mais sur tout le tank admin. Les
+    achats en AK sont exclus (voir `_admin_paiements_confirmes`)."""
     if not ids:
         return {}
     return {
         r[0]: r[1]
         for r in db.query(PaymentORM.user_id, func.coalesce(func.sum(PaymentORM.montant), 0))
-        .filter(PaymentORM.user_id.in_(ids), PaymentORM.statut == "confirmed")
+        .filter(
+            PaymentORM.user_id.in_(ids),
+            PaymentORM.statut == "confirmed",
+            PaymentORM.monnaie == "XAF",
+        )
         .group_by(PaymentORM.user_id)
         .all()
     }
@@ -491,6 +512,10 @@ def _admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, ses
         "id": u.id,
         "nom": u.nom,
         "email": u.email,
+        # Identifiant public dictable : c'est ce que l'élève communique au
+        # support, donc ce que le support doit pouvoir lire et rechercher.
+        "matricule": u.matricule,
+        "solde_ak": int(u.solde_ak or 0),
         "niveau": u.niveau,
         "classe": u.classe,
         "etablissement": u.etablissement,
@@ -594,6 +619,10 @@ def admin_supprimer_utilisateur(
     db.query(SignalementORM).filter(SignalementORM.user_id == u.id).delete()
     db.query(GabaritSignalementORM).filter(GabaritSignalementORM.user_id == u.id).delete()
     db.query(NotificationReadORM).filter(NotificationReadORM.user_id == u.id).delete()
+    # Journal AK : FK vers users.id (PRAGMA foreign_keys=ON) — purge AVANT
+    # db.delete(u), sinon « FOREIGN KEY constraint failed ». Même ordre que
+    # dans me.supprimer_compte : les deux voies doivent rester alignées.
+    db.query(AKMouvementORM).filter(AKMouvementORM.user_id == u.id).delete()
     db.delete(u)
     db.commit()
     log_admin_event(db, None, "utilisateur_supprime", email=lock.email, details=details)

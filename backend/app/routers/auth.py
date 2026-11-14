@@ -7,7 +7,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
-from ..core import admin_session, store
+from ..core import admin_session, ak, store
 from ..core.config import demo_allowed
 from ..core.logging_config import get_logger
 from ..core.rate_limit import SlidingWindowLimiter, client_ip
@@ -36,6 +36,9 @@ def _user_out(user, db: Session | None = None) -> UserOut:
         consent_ia=user.consent_ia,
         consent_notes=user.consent_notes,
         avatar_version=version_avatar(db, user.id) if db is not None else None,
+        matricule=user.matricule,
+        solde_ak=int(user.solde_ak or 0),
+        ak_serie_jours=int(user.ak_serie_jours or 0),
     )
 
 # Freine le brute-force / l'énumération d'emails sur les deux logins.
@@ -129,6 +132,8 @@ async def mock_login(payload: MockLoginIn, request: Request, response: Response,
     admin_session.align_root_role(db, user.email)
     db.add(user)
     db.commit()
+    # Connexion du jour récompensée en AK (idempotent : un seul gain par jour).
+    ak.recompenser_connexion(db, user)
     token = await store.create_session(db, user.id, payload.platform)
     _set_session_cookie(response, token)
     log.info("Connexion mock réussie: %s", user.email)
@@ -164,6 +169,8 @@ async def google_login(payload: GoogleLoginIn, request: Request, response: Respo
     admin_session.align_root_role(db, user.email)
     db.add(user)
     db.commit()
+    # Connexion du jour récompensée en AK (idempotent : un seul gain par jour).
+    ak.recompenser_connexion(db, user)
     token = await store.create_session(db, user.id, payload.platform)
     _set_session_cookie(response, token)
     log.info("Connexion Google réussie: %s", user.email)
@@ -180,13 +187,20 @@ def me(user=Depends(require_user), db: Session = Depends(get_db)) -> UserOut:
     Rafraîchit aussi `derniere_connexion` au passage : le champ ne doit
     pas rester figé à la connexion explicite — revenir sur le site avec
     une session qui a survécu au rechargement compte comme une nouvelle
-    connexion pour le tableau du back-office (« Dernière connexion »)."""
+    connexion pour le tableau du back-office (« Dernière connexion »).
+
+    C'est aussi le point de récompense AK : `ak.recompenser_connexion` est
+    idempotent par jour (un seul gain quotidien, quel que soit le nombre
+    d'appels), donc l'appeler ici est sans risque."""
     # Au plus une écriture par heure : /me est appelé à chaque chargement de page.
     derniere = user.derniere_connexion
     if derniere is None or (utc_now() - derniere).total_seconds() > 3600:
         user.derniere_connexion = utc_now()
         db.add(user)
         db.commit()
+        # Le gain du jour n'est calculé que sur cette même fenêtre : pas de
+        # requête d'écriture supplémentaire à chaque chargement de page.
+        ak.recompenser_connexion(db, user)
     return _user_out(user, db)
 
 

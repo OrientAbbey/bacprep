@@ -1,4 +1,4 @@
-import { BookOpen, Calendar, CheckCircle2, GraduationCap, Layers } from "lucide-react";
+import { BookOpen, Calendar, CheckCircle2, Coins, GraduationCap, Layers } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -8,6 +8,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { Combobox } from "../components/Combobox";
 import { Skeleton } from "../components/Skeleton";
 import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
+import { detailServeur } from "../lib/detailServeur";
 import { getLang, t } from "../i18n";
 
 /** Fait défiler doucement un élément nouvellement apparu dans le champ de
@@ -30,6 +31,8 @@ interface Plan {
   description: string;
   description_en: string;
   prix: number;
+  /** Prix en AK (monnaie interne) ; `null` = formule non payable en AK. */
+  prix_ak: number | null;
   duree_jours: number;
 }
 
@@ -78,7 +81,7 @@ export function SubscribePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [filtres, setFiltres] = useState<Filtres>({ filieres: [], matieres: [], annees: [], evaluations: [] });
   const [epreuves, setEpreuves] = useState<EpreuveListItem[]>([]);
@@ -273,8 +276,36 @@ export function SubscribePage() {
       });
       setReference(res.reference_agregateur);
       setStep("pending");
-    } catch {
-      setErreur(t("Cette sélection est déjà accessible, ou une erreur est survenue — réessaie."));
+    } catch (err) {
+      setErreur(detailServeur(err) ?? t("Cette sélection est déjà accessible, ou une erreur est survenue — réessaie."));
+    }
+  }
+
+  /** Achat réglé en AK : débit immédiat du solde interne, abonnement actif
+   * sans passer par un agrégateur (donc sans étape « en attente »). Le
+   * serveur re-vérifie tout (solde, couverture, prix) : on n'affiche que son
+   * verdict — 402 « Solde AK insuffisant » compris. */
+  async function acheterEnAK() {
+    setErreur(null);
+    try {
+      await api.post("/api/subscriptions/checkout-ak", {
+        scope,
+        classe: scope === "epreuve" ? undefined : classe,
+        filiere: scope === "epreuve" ? undefined : filiere,
+        matiere: ["matiere_annee", "matiere"].includes(scope) ? matiere : undefined,
+        annee: ["matiere_annee", "annee"].includes(scope) ? annee : undefined,
+        epreuve_id: scope === "epreuve" ? epreuveId : undefined,
+        plan_id: plan?.id,
+      });
+      // Le solde a changé côté serveur : on relit l'utilisateur pour que la
+      // pastille d'en-tête et le profil affichent le bon montant.
+      await refreshUser();
+      setStep("confirmed");
+    } catch (err) {
+      setErreur(
+        detailServeur(err) ??
+          t("Solde insuffisant pour payer en AK — gagne des AK en te connectant chaque jour."),
+      );
     }
   }
 
@@ -419,6 +450,11 @@ export function SubscribePage() {
                     {p.prix} {t("FCFA")}
                     <span className="text-[10px] text-slate"> {t("/ {n} j", { n: p.duree_jours })}</span>
                   </span>
+                  {p.prix_ak != null && (
+                    <span className="mt-0.5 font-mono-tag text-[10px] text-slate">
+                      {t("ou {n} AK", { n: p.prix_ak })}
+                    </span>
+                  )}
                   <span className="mt-1.5 text-xs text-slate">{(getLang() === "en" && p.description_en) || p.description}</span>
                 </button>
               );
@@ -564,6 +600,29 @@ export function SubscribePage() {
                       >
                         {t("Continuer vers le paiement")}
                       </button>
+
+                      {/* Seconde voie de règlement : la monnaie interne.
+                          Le débit est immédiat (pas d'agrégateur, pas
+                          d'étape « en attente ») — le serveur re-vérifie le
+                          solde et renvoie 402 s'il manque des AK. */}
+                      {plan?.prix_ak != null && (
+                        <div className="space-y-2 border-t border-dashed border-ink-soft/20 pt-4">
+                          <p className="text-sm text-ink-soft">
+                            {t("Ou paie avec ton solde : {n} AK", { n: plan.prix_ak })}
+                          </p>
+                          <p className="font-mono-tag text-[10px] text-slate">
+                            {t("Ton solde : {n} AK", { n: user.solde_ak ?? 0 })}
+                          </p>
+                          <button
+                            onClick={acheterEnAK}
+                            disabled={(user.solde_ak ?? 0) < plan.prix_ak}
+                            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border border-highlight/60 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Coins size={15} strokeWidth={1.75} aria-hidden="true" className="text-highlight-text" />
+                            {t("Payer avec mes AK")}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )
                 ) : count !== null && dejaCouvert ? (

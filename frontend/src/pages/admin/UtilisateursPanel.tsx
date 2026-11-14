@@ -21,14 +21,19 @@ export function UtilisateursPanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const [rows, setRows] = useState<AdminUtilisateur[] | null>(null);
   const [erreur, setErreur] = useState(false);
+  // Recherche exacte par matricule : c'est le seul identifiant qu'un élève
+  // connaît de son compte quand il écrit au support (il ne connaît pas
+  // forcément l'email avec lequel il s'est inscrit).
+  const [matricule, setMatricule] = useState("");
   // Suppression définitive d'un compte : action irréversible, confirmation
   // explicite via la boîte de dialogue accessible (remplace window.confirm).
   const [aSupprimer, setASupprimer] = useState<AdminUtilisateur | null>(null);
 
-  function load() {
+  function load(filtre: string = matricule) {
     setErreur(false);
+    const q = filtre.trim() ? `?matricule=${encodeURIComponent(filtre.trim())}` : "";
     api
-      .get<AdminUtilisateur[]>("/api/admin/utilisateurs", authHeaders(token))
+      .get<AdminUtilisateur[]>(`/api/admin/utilisateurs${q}`, authHeaders(token))
       .then(setRows)
       .catch((err) => {
         if (!purgerSessionExpiree(err)) setErreur(true);
@@ -119,7 +124,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
         className="rounded-lg border border-correction/30 bg-correction-soft p-5 text-sm text-correction"
       >
         <p>La liste des utilisateurs n'a pas pu être chargée.</p>
-        <button type="button" onClick={load} className="mt-2 underline">
+        <button type="button" onClick={() => load()} className="mt-2 underline">
           Réessayer
         </button>
       </div>
@@ -132,13 +137,6 @@ export function UtilisateursPanel({ token }: { token: string }) {
         ))}
       </div>
     );
-  if (rows.length === 0)
-    return (
-      <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5 text-sm text-slate">
-        Aucun utilisateur inscrit pour l'instant.
-      </div>
-    );
-
   return (
     <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
       <div className="mb-3 flex items-center gap-2">
@@ -148,6 +146,51 @@ export function UtilisateursPanel({ token }: { token: string }) {
           informations de compte et compteurs d'usage — aucune donnée secrète
         </span>
       </div>
+      {/* Recherche par matricule : filtre EXACT côté serveur. Sans elle, le
+          support ne peut pas retrouver l'élève qui donne son matricule
+          (« CC-26-A7K3M9 ») mais pas l'email de son compte. */}
+      <form
+        className="mb-3 flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          load();
+        }}
+      >
+        <label className="text-xs text-slate">
+          Matricule
+          <input
+            value={matricule}
+            onChange={(e) => setMatricule(e.target.value)}
+            placeholder="CC-26-A7K3M9"
+            className="mt-1 block min-h-[44px] w-52 rounded-md border border-ink-soft/25 bg-paper px-3 font-mono-tag text-sm uppercase placeholder:font-sans placeholder:normal-case placeholder:text-slate/70"
+          />
+        </label>
+        <button
+          type="submit"
+          className="min-h-[44px] rounded-full bg-ink px-4 text-sm font-medium text-paper hover:opacity-90"
+        >
+          Rechercher
+        </button>
+        {matricule.trim() ? (
+          <button
+            type="button"
+            onClick={() => {
+              setMatricule("");
+              load("");
+            }}
+            className="min-h-[44px] rounded-full border border-ink-soft/25 px-4 text-sm text-ink-soft hover:border-ink-soft/50"
+          >
+            Tout afficher
+          </button>
+        ) : null}
+      </form>
+      {rows.length === 0 ? (
+        <p className="text-sm text-slate">
+          {matricule.trim()
+            ? `Aucun compte ne porte le matricule ${matricule.trim().toUpperCase()}.`
+            : "Aucun utilisateur inscrit pour l'instant."}
+        </p>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] text-left text-sm">
           <thead>
@@ -160,6 +203,9 @@ export function UtilisateursPanel({ token }: { token: string }) {
               <th className="py-2 pr-3 text-right">Consult.</th>
               <th className="py-2 pr-3 text-right">Abo. actifs</th>
               <th className="py-2 pr-3 text-right">Dépensé (FCFA)</th>
+              <th className="py-2 pr-3 text-right" title="Monnaie interne — le journal AK fait foi">
+                Solde AK
+              </th>
               <th className="py-2 pr-3">Dernière connexion</th>
               <th className="py-2">Actions</th>
             </tr>
@@ -170,6 +216,11 @@ export function UtilisateursPanel({ token }: { token: string }) {
                 <td className="py-2 pr-3">
                   <p className="font-medium">{u.nom || "—"}</p>
                   <p className="font-mono-tag text-[10px] text-slate">{u.email}</p>
+                  {u.matricule ? (
+                    <p className="font-mono-tag text-[10px] text-ink-soft">{u.matricule}</p>
+                  ) : (
+                    <p className="font-mono-tag text-[10px] text-correction">sans matricule</p>
+                  )}
                   {u.is_admin && (
                     <span
                       className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono-tag text-[10px] ${
@@ -216,6 +267,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
                 <td className="py-2 pr-3 text-right">{u.consultations}</td>
                 <td className="py-2 pr-3 text-right">{u.abonnements_actifs}</td>
                 <td className="py-2 pr-3 text-right">{u.total_depense_fcfa.toLocaleString("fr-FR")}</td>
+                <td className="py-2 pr-3 text-right font-mono-tag text-xs">{u.solde_ak.toLocaleString("fr-FR")}</td>
                 <td className="py-2 pr-3 font-mono-tag text-[10px] text-slate">
                   {u.derniere_connexion ? formatRelativeTime(u.derniere_connexion) : "—"}
                 </td>
@@ -287,7 +339,7 @@ export function UtilisateursPanel({ token }: { token: string }) {
         <ConfirmDialog
           tone="danger"
           title="Supprimer ce compte utilisateur ?"
-          message={`Supprimer définitivement ${aSupprimer.email} et TOUTES ses données (notes, discussions, abonnements, paiements) ? Action irréversible.`}
+          message={`Supprimer définitivement ${aSupprimer.email} et TOUTES ses données (notes, discussions, abonnements, paiements, journal AK) ? Action irréversible.`}
           onConfirm={confirmerSuppression}
           onClose={() => setASupprimer(null)}
         />

@@ -24,13 +24,30 @@ _LIBELLES_EN = {
     "filiere": "Full stream",
 }
 
+# Prix en AK (monnaie interne) des formules initiales. Le ratio implicite
+# (~16 FCFA/AK pour l'épreuve, jusqu'à ~17,6 pour la série complète) rend
+# l'achat en AK légèrement plus avantageux que le paiement direct, et cet
+# avantage croît avec la taille de la formule — c'est l'incitation voulue.
+# Un `None` rendrait la formule non payable en AK ; ces valeurs ne sont
+# appliquées qu'aux bases NEUVES (voir `seed_plans`), le backfill des bases
+# existantes est fait par `scripts_dev/migrate_2026_11.py` — le seed ne
+# s'exécute jamais sur une table `plans` déjà peuplée.
+_DEFAUTS_AK: dict[str, int] = {
+    "epreuve": 25,
+    "matiere_annee": 50,
+    "matiere": 120,
+    "annee": 200,
+    "filiere": 340,
+}
+
 
 def seed_plans(db: Session) -> None:
     if db.query(PlanORM.id).first():
         return
     for i, (scope, (prix, desc, desc_en)) in enumerate(_DEFAUTS.items()):
         db.add(PlanORM(scope=scope, libelle=SCOPE_LABELS[scope], libelle_en=_LIBELLES_EN[scope],
-                       description=desc, description_en=desc_en, prix=prix, duree_jours=365, ordre=i))
+                       description=desc, description_en=desc_en, prix=prix,
+                       prix_ak=_DEFAUTS_AK.get(scope), duree_jours=365, ordre=i))
     db.commit()
 
 

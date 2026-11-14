@@ -23,6 +23,8 @@ class PlanIn(BaseModel):
     description: str = Field(default="", max_length=300)
     description_en: str = Field(default="", max_length=300)
     prix: int = Field(ge=100, le=1_000_000)  # FCFA
+    # Prix en AK (monnaie interne). None = formule non payable en AK.
+    prix_ak: Optional[int] = Field(default=None, ge=1, le=1_000_000)
     duree_jours: int = Field(ge=1, le=3650)
     actif: bool = True
     ordre: int = 0
@@ -34,6 +36,7 @@ class PlanUpdate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=300)
     description_en: Optional[str] = Field(default=None, max_length=300)
     prix: Optional[int] = Field(default=None, ge=100, le=1_000_000)
+    prix_ak: Optional[int] = Field(default=None, ge=1, le=1_000_000)
     duree_jours: Optional[int] = Field(default=None, ge=1, le=3650)
     actif: Optional[bool] = None
     ordre: Optional[int] = None
