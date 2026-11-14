@@ -37,6 +37,15 @@ async function nouveauContexte(options = {}) {
 }
 // Un compte neuf par exécution : les plafonds (5 discussions par épreuve…) ne rendent pas la suite dépendante des précédentes.
 const RUN = Date.now().toString(36);
+// Épreuves créées par CETTE exécution : supprimées à la fin, sinon la base
+// grossit à chaque run et la première page du catalogue (« 24 épreuves ») finit
+// par ne contenir qu'une seule année — ce qui casse les scénarios de groupement
+// par année sans qu'il y ait la moindre régression produit.
+const epreuvesCreees = new Set();
+const suivreEpreuve = (e) => {
+  if (e?.id) epreuvesCreees.add(e.id);
+  return e;
+};
 async function connecterEleve(ctx, email = `eleve-${RUN}@test.cm`) {
   const r = await ctx.request.post("/api/auth/mock-login", { data: { email, nom: "Élève E2E" } });
   ok(r.ok(), "mock-login élève : " + r.status());
@@ -55,7 +64,7 @@ async function creerEpreuveRiche(matiere, annee, corps = null, duree = "3h") {
   const cree = await (await adm.request.post("/api/admin/epreuves", { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere, annee, gratuit: true, filieres: ["C", "D"], duree, ...contenu } })).json();
   await adm.request.post(`/api/admin/epreuves/${cree.id}/publish`);
   await adm.close();
-  return cree.id;
+  return suivreEpreuve(cree).id;
 }
 async function connecterAdmin(ctx) {
   await connecterEleve(ctx, ADMIN.email);
@@ -710,6 +719,7 @@ console.log("\nBack-office");
       },
     })
   ).json();
+  suivreEpreuve(epreuveDescription);
   const imageDescription = await (
     await ctx.request.post(`/api/admin/epreuves/${epreuveDescription.id}/images`, {
       multipart: { cible: "sujet", file: { name: `schema-${RUN}.png`, mimeType: "image/png", buffer: pngDescription } },
@@ -838,6 +848,7 @@ console.log("\nCalendrier, examen blanc, révisions, PDF");
     niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Mathématiques", annee: "2031", gratuit: true, filieres: ["C"], duree: "3h",
     contenu_markdown: "# Sujet 2031\n\nQuestion 1 : résoudre $x^2 = 4$.", corrige_markdown: "# Corrigé 2031\n\nSOLUTION-SECRETE-XYZ : x = 2 ou x = -2." } })).json();
   await adm.post(`/api/admin/epreuves/${cree.id}/publish`);
+  suivreEpreuve(cree);
   const gratuite = { id: cree.id };
 
   await test("examen blanc : le corrigé et l'assistant disparaissent, la note est enregistrée", async () => {
@@ -1125,6 +1136,7 @@ console.log("\nPWA et lecture hors-ligne");
   await admin.request.put(`/api/admin/epreuves/${cree.id}`, { data: { niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Chimie", annee: "2032", gratuit: true, filieres: ["C"], duree: "2h",
     contenu_markdown: `# Chimie 2032\n\nTEXTE-HORS-LIGNE-ABC : dosage d'un acide.\n\n![Schéma du dosage](${img.url})` } });
   await admin.request.post(`/api/admin/epreuves/${cree.id}/publish`);
+  suivreEpreuve(cree);
 
   await test("manifeste installable, icônes et service worker servis correctement", async () => {
     const m = await ctx.request.get("/manifest.webmanifest");
@@ -1241,9 +1253,11 @@ console.log("\nSEO et aperçus de partage");
     niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Informatique", annee: "2033", gratuit: true, filieres: ["C"],
     contenu_markdown: "# Informatique 2033\n\nTEXTE-SEO." } })).json();
   await adm.request.post(`/api/admin/epreuves/${publiee.id}/publish`);
+  suivreEpreuve(publiee);
   const brouillon = await (await adm.request.post("/api/admin/epreuves", { data: {
     niveau: "SECONDAIRE", classe: "3e", evaluation: "BEPC", matiere: "SVT", annee: "2034", gratuit: true, filieres: [],
     contenu_markdown: "# Brouillon SEO" } })).json();
+  suivreEpreuve(brouillon);
   const ctx = await nouveauContexte();
 
   await test("robots.txt : API et console exclus, sitemap annoncé en absolu", async () => {
@@ -2440,6 +2454,7 @@ console.log("\nConnexion, état du réseau, A−/A+ flottant");
     niveau: "SECONDAIRE", classe: "terminale", evaluation: "BAC", matiere: "Mathématiques", annee: "2033", gratuit: true, filieres: ["C"], duree: "3h",
     contenu_markdown: "# Épreuve longue\n\n" + longue } })).json();
   await adm.request.post(`/api/admin/epreuves/${cree.id}/publish`);
+  suivreEpreuve(cree);
   const lecteur = await nouveauContexte({ viewport: { width: 1280, height: 720 } });
   await connecterEleve(lecteur, `flot-${RUN}@test.cm`);
   const pl = await lecteur.newPage();
@@ -2662,6 +2677,24 @@ console.log("\nBoutons flottants et débordement horizontal (bureau et mobile)")
     });
     await ctx.close();
   }
+}
+
+// --- Nettoyage : les épreuves de CE run ne doivent pas s'accumuler dans la
+// base (sinon le catalogue se remplit de doublons d'années et les scénarios de
+// groupement échouent au run suivant, sans régression produit).
+if (epreuvesCreees.size) {
+  const menage = await nouveauContexte();
+  await connecterAdmin(menage).catch(() => {});
+  let supprimees = 0;
+  const restantes = [];
+  for (const id of epreuvesCreees) {
+    const r = await menage.request.delete(`/api/admin/epreuves/${id}`);
+    if (r.ok()) supprimees++;
+    // 404 : le scénario a déjà supprimé son épreuve lui-même — rien à faire.
+    else if (r.status() !== 404) restantes.push(`${id} (HTTP ${r.status()})`);
+  }
+  await menage.close();
+  console.log(`\n  Nettoyage : ${supprimees}/${epreuvesCreees.size} épreuves du run supprimées` + (restantes.length ? ` — restantes : ${restantes.join(", ")}` : ""));
 }
 
 await browser.close();
