@@ -92,6 +92,29 @@ export function formaterPoints(n: number, lang: string): string {
   return lang === "fr" ? texte.replace(".", ",") : texte;
 }
 
+/** Matières présentes dans la liste, sans doublon, dans l'ordre d'arrivée
+ * (le serveur trie déjà : l'ordre des filtres reste stable). */
+export function matieresDe(liste: ResumeGabarit[]): string[] {
+  return [...new Set(liste.map((ex) => ex.matiere))];
+}
+
+/** Difficultés présentes dans la liste, sans doublon et croissantes (1 à 3). */
+export function difficultesDe(liste: ResumeGabarit[]): number[] {
+  return [...new Set(liste.map((ex) => ex.difficulte))].sort((a, b) => a - b);
+}
+
+/** Filtre les exercices par matière et par difficulté. Une valeur vide
+ * (ou absente) ne filtre pas sur ce critère : c'est la valeur « Tous » du
+ * Combobox. La difficulté est une chaîne car elle vient du sélecteur. */
+export function filtrerExercices(
+  liste: ResumeGabarit[],
+  { matiere = "", difficulte = "" }: { matiere?: string; difficulte?: string } = {}
+): ResumeGabarit[] {
+  return liste.filter(
+    (ex) => (!matiere || ex.matiere === matiere) && (!difficulte || String(ex.difficulte) === difficulte)
+  );
+}
+
 /** Regroupe les exercices par matière puis chapitre (ordre d'arrivée conservé,
  * il est déjà trié par le serveur). */
 export function regrouper(liste: ResumeGabarit[]): { matiere: string; chapitres: { chapitre: string; exercices: ResumeGabarit[] }[] }[] {

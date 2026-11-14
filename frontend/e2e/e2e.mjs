@@ -533,6 +533,62 @@ console.log("\nEntraînement et gabarits");
     ok(remise.ok(), "remise de la validation : " + remise.status());
   });
 
+  await test("entraînement : filtres matière et difficulté, compteur, grille et réinitialisation (lot D11)", async () => {
+    // Un second gabarit validé, d'une autre matière : les filtres n'ont de sens
+    // qu'avec plusieurs matières dans la liste.
+    const admin = await (await ctx.request.get("/api/admin/gabarits")).json();
+    const premier = admin.gabarits.find((g) => g.id === gid);
+    const autre = admin.gabarits.find((g) => g.id !== gid && g.matiere !== premier.matiere);
+    ok(autre, "aucun gabarit d'une autre matière pour tester les filtres");
+    const val = await ctx.request.post(`/api/admin/gabarits/${autre.id}/validation`);
+    ok(val.ok(), "validation du second gabarit : " + val.status());
+    // Une difficulté 2 validée, dans la matière du premier gabarit : l'option
+    // existe dans la liste globale mais restera absente de l'autre matière.
+    const dur = admin.gabarits.find((g) => g.id !== gid && g.matiere === premier.matiere && g.difficulte === 2);
+    ok(dur, "aucun gabarit de difficulté 2 pour tester le filtre");
+    const valDur = await ctx.request.post(`/api/admin/gabarits/${dur.id}/validation`);
+    ok(valDur.ok(), "validation du gabarit de difficulté 2 : " + valDur.status());
+    const tous = await (await ctx.request.get("/api/entrainement/gabarits")).json();
+
+    await page.goto("/entrainement");
+    await page.getByRole("heading", { name: "Entraînement", exact: true }).waitFor({ timeout: 15000 });
+    const cartes = page.locator('a[href^="/entrainement?g="]');
+    await cartes.first().waitFor({ timeout: 15000 });
+    ok((await page.getByRole("group", { name: "Filtrer les exercices" }).count()) === 1, "barre de filtres absente");
+    const compteur = page.locator('p[role="status"]').filter({ hasText: /exercices?$/ });
+    const texteCompteur = async () => (await compteur.innerText()).trim();
+    ok((await texteCompteur()).includes(String(tous.length)), `compteur initial « ${await texteCompteur()} » au lieu de ${tous.length}`);
+
+    // Deux colonnes sur desktop (1366 px) : chaque grille de chapitre a deux pistes.
+    const pistes = await page.locator("ul.grid").first().evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
+    ok(pistes === 2, "la grille des exercices n'a pas deux colonnes : " + pistes);
+
+    // Filtre par matière : compteur et cartes suivent.
+    const matiere = tous.find((g) => g.id === autre.id).matiere;
+    const attendus = tous.filter((g) => g.matiere === matiere).length;
+    await page.getByRole("button", { name: "Matière : Tous", exact: true }).click();
+    await page.getByRole("option", { name: matiere, exact: true }).click();
+    await page.getByRole("button", { name: `Matière : ${matiere}`, exact: true }).waitFor();
+    ok((await texteCompteur()).includes(String(attendus)), `compteur après filtre matière « ${await texteCompteur()} » au lieu de ${attendus}`);
+    ok((await cartes.count()) === attendus, `${await cartes.count()} cartes affichées au lieu de ${attendus}`);
+
+    // Difficulté absente de cette matière : aucun résultat, message explicite.
+    const absente = [1, 2, 3].find((d) => !tous.some((g) => g.matiere === matiere && g.difficulte === d));
+    ok(absente, "toutes les difficultés sont présentes dans cette matière");
+    await page.getByRole("button", { name: "Difficulté : Tous", exact: true }).click();
+    await page.getByRole("option", { name: `Difficulté ${absente} sur 3`, exact: true }).click();
+    await page.getByText("Aucun exercice ne correspond à ces filtres.").waitFor({ timeout: 8000 });
+    ok((await cartes.count()) === 0, "des cartes restent affichées malgré un filtre sans résultat");
+
+    // Réinitialiser : liste complète et libellés « Tous ».
+    await page.getByRole("button", { name: "Réinitialiser", exact: true }).first().click();
+    await page.getByRole("button", { name: "Matière : Tous", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Difficulté : Tous", exact: true }).waitFor();
+    ok((await texteCompteur()).includes(String(tous.length)), "le compteur ne revient pas au total après réinitialisation");
+    ok((await cartes.count()) === tous.length, "la liste complète ne revient pas après réinitialisation");
+    await page.screenshot({ path: `${SHOTS}/entrainement-filtres.png` });
+  });
+
   await test("entraînement : une graine partagée redonne exactement la même variante", async () => {
     const graine = 20261113;
     const url = `/entrainement?g=${gid}&graine=${graine}`;

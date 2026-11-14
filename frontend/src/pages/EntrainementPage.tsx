@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { Combobox } from "../components/Combobox";
 import { MarkdownContent } from "../components/MarkdownContent";
 import { Spinner } from "../components/Spinner";
 import { useToast } from "../components/Toast";
@@ -12,9 +13,12 @@ import {
   type CorrectionVariante,
   type ResumeGabarit,
   type Variante,
+  difficultesDe,
+  filtrerExercices,
   formaterPoints,
   graineAleatoire,
   graineDepuisUrl,
+  matieresDe,
   regrouper,
 } from "../lib/entrainement";
 import { copierTexte } from "../lib/pressePapiers";
@@ -37,6 +41,8 @@ function Liste() {
   const [liste, setListe] = useState<ResumeGabarit[] | null>(null);
   const [erreur, setErreur] = useState(false);
   const [essai, setEssai] = useState(0);
+  const [matiere, setMatiere] = useState("");
+  const [difficulte, setDifficulte] = useState("");
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -51,8 +57,15 @@ function Liste() {
     return () => ctl.abort();
   }, [essai]);
 
+  const filtres = liste ? filtrerExercices(liste, { matiere, difficulte }) : [];
+  const filtreActif = matiere !== "" || difficulte !== "";
+  const reinitialiser = () => {
+    setMatiere("");
+    setDifficulte("");
+  };
+
   return (
-    <section className="mx-auto max-w-3xl space-y-6">
+    <section className="mx-auto max-w-5xl space-y-6">
       <header>
         <h1 className="font-serif-brand text-2xl">{t("Entraînement")}</h1>
         <p className="mt-2 text-sm text-ink-soft">
@@ -78,8 +91,40 @@ function Liste() {
           {t("Aucun exercice d'entraînement n'est encore disponible. Reviens bientôt !")}
         </p>
       )}
-      {liste &&
-        regrouper(liste).map((m) => (
+      {liste && liste.length > 0 && (
+        <div role="group" aria-label={t("Filtrer les exercices")} className="flex flex-wrap items-end gap-3">
+          <Combobox
+            label={t("Matière")}
+            value={matiere}
+            onChange={setMatiere}
+            options={matieresDe(liste).map((m) => ({ value: m, label: m }))}
+          />
+          <Combobox
+            label={t("Difficulté")}
+            value={difficulte}
+            onChange={setDifficulte}
+            options={difficultesDe(liste).map((d) => ({ value: String(d), label: t("Difficulté {n} sur 3", { n: d }) }))}
+          />
+          <p role="status" className="pb-3 text-sm text-ink-soft">
+            {t(filtres.length > 1 ? "{n} exercices" : "{n} exercice", { n: filtres.length })}
+          </p>
+          {filtreActif && (
+            <button type="button" onClick={reinitialiser} className="mb-1 min-h-[44px] text-sm underline">
+              {t("Réinitialiser")}
+            </button>
+          )}
+        </div>
+      )}
+      {liste && liste.length > 0 && filtres.length === 0 && (
+        <p className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5 text-sm">
+          {t("Aucun exercice ne correspond à ces filtres.")}{" "}
+          <button type="button" onClick={reinitialiser} className="min-h-[44px] underline">
+            {t("Réinitialiser")}
+          </button>
+        </p>
+      )}
+      {filtres.length > 0 &&
+        regrouper(filtres).map((m) => (
           <section key={m.matiere} aria-labelledby={`mat-${m.matiere}`} className="space-y-3">
             <h2 id={`mat-${m.matiere}`} className="font-serif-brand text-xl">
               {m.matiere}
@@ -87,16 +132,16 @@ function Liste() {
             {m.chapitres.map((c) => (
               <div key={c.chapitre} className="space-y-2">
                 <h3 className="font-mono-tag text-[11px] text-slate">{c.chapitre}</h3>
-                <ul className="space-y-2">
+                <ul className="grid gap-2 md:grid-cols-2">
                   {c.exercices.map((ex) => (
-                    <li key={ex.id} className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+                    <li key={ex.id} className="flex h-full flex-col rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
                       <p className="font-medium">{ex.titre}</p>
                       <p className="mt-1 text-xs text-ink-soft">
                         {t("Difficulté {n} sur 3", { n: ex.difficulte })} · {t("Classes : {liste}", { liste: ex.classes.map(classeLabel).join(", ") })}
                       </p>
                       <Link
                         to={`/entrainement?g=${encodeURIComponent(ex.id)}`}
-                        className="mt-3 inline-flex min-h-[44px] items-center rounded-full bg-ink px-5 text-sm font-medium text-paper"
+                        className="mt-3 inline-flex min-h-[44px] w-fit items-center self-start rounded-full bg-ink px-5 text-sm font-medium text-paper"
                       >
                         {t("Faire cet exercice")}
                         <span className="sr-only"> : {ex.titre}</span>

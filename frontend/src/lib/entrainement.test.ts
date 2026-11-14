@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { GRAINE_MAX, formaterPoints, graineAleatoire, graineDepuisUrl, regrouper, type ResumeGabarit } from "./entrainement";
+import {
+  GRAINE_MAX,
+  difficultesDe,
+  filtrerExercices,
+  formaterPoints,
+  graineAleatoire,
+  graineDepuisUrl,
+  matieresDe,
+  regrouper,
+  type ResumeGabarit,
+} from "./entrainement";
 
-const ex = (id: string, matiere: string, chapitre: string): ResumeGabarit => ({ id, titre: id, matiere, classes: ["terminale"], chapitre, difficulte: 1, total_points: 3 });
+const ex = (id: string, matiere: string, chapitre: string, difficulte = 1): ResumeGabarit => ({ id, titre: id, matiere, classes: ["terminale"], chapitre, difficulte, total_points: 3 });
 
 describe("graineDepuisUrl", () => {
   it("accepte un entier décimal valide", () => {
@@ -39,4 +49,45 @@ describe("regrouper", () => {
     expect(g[0].chapitres.map((c) => [c.chapitre, c.exercices.map((e) => e.id)])).toEqual([["Suites", ["a", "b"]], ["Limites", ["c"]]]);
   });
   it("liste vide", () => expect(regrouper([])).toEqual([]));
+});
+
+const listeFiltres = [
+  ex("a", "Maths", "Suites", 1),
+  ex("b", "Maths", "Limites", 2),
+  ex("c", "Physique", "Électricité", 3),
+  ex("d", "Maths", "Suites", 3),
+];
+
+describe("matieresDe", () => {
+  it("déduplique les matières dans l'ordre d'arrivée", () => {
+    expect(matieresDe(listeFiltres)).toEqual(["Maths", "Physique"]);
+  });
+  it("liste vide", () => expect(matieresDe([])).toEqual([]));
+});
+
+describe("difficultesDe", () => {
+  it("déduplique et trie les difficultés croissantes", () => {
+    expect(difficultesDe(listeFiltres)).toEqual([1, 2, 3]);
+    expect(difficultesDe([ex("x", "Maths", "Suites", 3), ex("y", "Maths", "Suites", 1)])).toEqual([1, 3]);
+  });
+  it("liste vide", () => expect(difficultesDe([])).toEqual([]));
+});
+
+describe("filtrerExercices", () => {
+  it("sans filtre (ou avec des valeurs vides) renvoie tout", () => {
+    expect(filtrerExercices(listeFiltres)).toHaveLength(4);
+    expect(filtrerExercices(listeFiltres, { matiere: "", difficulte: "" })).toHaveLength(4);
+  });
+  it("filtre par matière", () => {
+    expect(filtrerExercices(listeFiltres, { matiere: "Maths" }).map((e) => e.id)).toEqual(["a", "b", "d"]);
+  });
+  it("filtre par difficulté, comparée en chaîne (valeur du sélecteur)", () => {
+    expect(filtrerExercices(listeFiltres, { difficulte: "3" }).map((e) => e.id)).toEqual(["c", "d"]);
+  });
+  it("combine matière et difficulté", () => {
+    expect(filtrerExercices(listeFiltres, { matiere: "Maths", difficulte: "2" }).map((e) => e.id)).toEqual(["b"]);
+  });
+  it("renvoie une liste vide quand rien ne correspond", () => {
+    expect(filtrerExercices(listeFiltres, { matiere: "Physique", difficulte: "1" })).toEqual([]);
+  });
 });
