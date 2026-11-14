@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, Loader2, Plus, Search, X } from "lucide-react";
-import { api, ApiError, ensureReferentielOption } from "../../api/client";
+import { api, ApiError, ensureReferentielOption, resolveMediaUrl } from "../../api/client";
 import { AdminEpreuveCounts, EpreuveDetail, ReferentielOptions } from "../../api/types";
 import { AtelierExercicesModal } from "../../components/AtelierExercicesModal";
 import { BasculeAffichage } from "../../components/BasculeAffichage";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { DescriptionImageModal } from "../../components/DescriptionImageModal";
 import { ajouterALaSuite } from "../../lib/atelier";
+import { appliquerDescription, descriptionExistante } from "../../lib/descriptionImage";
 import { affichageInitial, contenuAffiche, type AffichageSujets } from "../../lib/sujets";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
@@ -123,6 +125,9 @@ export function EpreuvesPanel({
   const [application, setApplication] = useState<{ avant: EpreuveForm; avantStatut: string; apres: EpreuveForm; apresStatut: string; cles: string[] } | null>(null);
   const derniere = application?.apres === form && application.apresStatut === statutForm ? application : null;
   const modifie = (cle: string) => derniere?.cles.includes(cle) ?? false;
+  // Fenêtre « Décrire l'image » : texte alternatif à la main, ou proposition
+  // de l'IA à relire. Rien n'est écrit avant « Appliquer au texte ».
+  const [descImage, setDescImage] = useState<{ asset: Asset; initial: string } | null>(null);
   // Opération longue en cours : désactive les boutons d'action et affiche
   // un indicateur sur celui concerné — « charge le détail d'une épreuve,
   // enregistre, publie, dépublie » (les suppressions passent par la modale
@@ -560,6 +565,63 @@ export function EpreuvesPanel({
       ),
     }));
     showToast("Balise image insérée dans le texte.", "success");
+  }
+
+  /** Ouvre la fenêtre « Décrire l'image » d'une vignette : part du texte
+   * alternatif déjà rédigé (s'il existe) pour ne pas écraser une description
+   * relue par un humain. */
+  function ouvrirDescription(asset: Asset) {
+    const markdowns = form.sujets.flatMap((s) => [s.contenu_markdown, s.corrige_markdown]);
+    setDescImage({ asset, initial: descriptionExistante(markdowns, asset.id) });
+  }
+
+  /** Demande une proposition à l'IA (vision). Rejette si l'IA est
+   * indisponible : la fenêtre le signale et la saisie manuelle reste possible. */
+  async function proposerDescription(asset: Asset): Promise<string> {
+    if (!form.id) throw new Error("épreuve non enregistrée");
+    try {
+      const { description } = await api.post<{ description: string }>(
+        `/api/admin/epreuves/${form.id}/images/${asset.id}/description`,
+        undefined,
+        authHeaders(token)
+      );
+      return description;
+    } catch (err) {
+      handle401(err);
+      throw err;
+    }
+  }
+
+  /** Applique la description à TOUTES les balises de cette image (sujet ou
+   * corrigé selon sa cible). Le Markdown n'est enregistré qu'avec le bouton
+   * « Enregistrer » habituel de l'épreuve. */
+  function appliquerDescriptionImage(asset: Asset, description: string) {
+    // Le compte se fait AVANT setForm : l'updater de React n'est pas forcément
+    // exécuté tout de suite, et le message de confirmation doit être juste.
+    let remplacees = 0;
+    for (const s of form.sujets) {
+      const zone = asset.cible === "sujet" ? s.contenu_markdown : s.corrige_markdown;
+      remplacees += appliquerDescription(zone, asset.id, description, true).remplacees;
+    }
+    setForm((f) => ({
+      ...f,
+      sujets: f.sujets.map((s) => {
+        const zone = asset.cible === "sujet" ? s.contenu_markdown : s.corrige_markdown;
+        const r = appliquerDescription(zone, asset.id, description, true);
+        return r.remplacees > 0
+          ? asset.cible === "sujet"
+            ? { ...s, contenu_markdown: r.markdown }
+            : { ...s, corrige_markdown: r.markdown }
+          : s;
+      }),
+    }));
+    setDescImage(null);
+    showToast(
+      remplacees > 0
+        ? "Description appliquée au texte. Enregistre l'épreuve pour la conserver."
+        : "Image absente du texte : insère-la d'abord avec le bouton « + ».",
+      remplacees > 0 ? "success" : "info"
+    );
   }
 
   /** Sélecteur « Taille d'affichage » : réécrit la largeur `#w=NNN` de la
@@ -1140,6 +1202,7 @@ export function EpreuvesPanel({
                 assets={form.assets.filter((a) => a.cible === "sujet")}
                 documents={form.documents.filter((d) => d.cible === "sujet")}
                 onDeleteImage={deleteImage}
+                onDescribeImage={ouvrirDescription}
                 onInsertImage={insertImageTag}
                 onResizeImage={resizeImage}
                 onDeleteDocument={deleteDocument}
@@ -1160,6 +1223,7 @@ export function EpreuvesPanel({
                 assets={form.assets.filter((a) => a.cible === "corrige")}
                 documents={form.documents.filter((d) => d.cible === "corrige")}
                 onDeleteImage={deleteImage}
+                onDescribeImage={ouvrirDescription}
                 onInsertImage={insertImageTag}
                 onResizeImage={resizeImage}
                 onDeleteDocument={deleteDocument}
@@ -1261,6 +1325,16 @@ export function EpreuvesPanel({
           onInserer={insererAtelier}
           onAnnuler={annulerInsertionAtelier}
           onClose={() => setAtelierOuvert(false)}
+        />
+      )}
+
+      {descImage && (
+        <DescriptionImageModal
+          imageUrl={resolveMediaUrl(descImage.asset.url)}
+          initial={descImage.initial}
+          onProposer={() => proposerDescription(descImage.asset)}
+          onAppliquer={(d) => appliquerDescriptionImage(descImage.asset, d)}
+          onClose={() => setDescImage(null)}
         />
       )}
 

@@ -1,6 +1,6 @@
 import { useClickOutside } from "../../components/Combobox";
 import React, { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileText, FileUp, Plus, X } from "lucide-react";
+import { ChevronDown, FileText, FileUp, Plus, Sparkles, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatBytes } from "../../lib/format";
@@ -654,6 +654,7 @@ export function ContentBlock({
   assets,
   documents,
   onDeleteImage,
+  onDescribeImage,
   onInsertImage,
   onResizeImage,
   onDeleteDocument,
@@ -671,6 +672,9 @@ export function ContentBlock({
   assets: Asset[];
   documents: DocumentFile[];
   onDeleteImage: (asset: Asset) => void;
+  /** Ouvre la fenêtre « Décrire l'image » (texte alternatif, proposition de
+   * l'IA à relire). Absent : aucune vignette ne propose le bouton. */
+  onDescribeImage?: (asset: Asset) => void;
   onInsertImage: (asset: Asset, width?: number) => void;
   /** Redimensionne (réécrit `#w=NNN` de la balise existante) ou insère la
    * balise avec la largeur choisie si l'image n'est pas encore dans le
@@ -830,6 +834,19 @@ export function ContentBlock({
                 >
                   <X size={12} strokeWidth={2.5} aria-hidden="true" />
                 </button>
+                {/* Description (texte alternatif) : à la main ou proposée par
+                    l'IA, toujours relue avant d'être appliquée au Markdown. */}
+                {onDescribeImage && (
+                  <button
+                    type="button"
+                    onClick={() => onDescribeImage(a)}
+                    title="Décrire cette image (texte alternatif)"
+                    aria-label={`Décrire l'image ${a.filename}`}
+                    className="absolute bottom-0.5 left-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-paper shadow"
+                  >
+                    <Sparkles size={12} strokeWidth={2} aria-hidden="true" />
+                  </button>
+                )}
                 {/* Le bouton « + » n'apparaît QUE quand la balise est
                     absente du texte ; quand elle est présente, le sélecteur
                     « Taille d'affichage » en dessous gère le redimensionnement. */}

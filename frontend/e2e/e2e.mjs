@@ -689,6 +689,79 @@ console.log("\nBack-office");
     ok(pos >= 0 && pos < 200, `colonne non collante (top=${pos})`);
   });
 
+  // Lot I / B2 : texte alternatif d'une image — modale, saisie manuelle, échec
+  // honnête de la proposition IA (aucune clé LLM dans l'environnement E2E).
+  const pngDescription = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64"
+  );
+  const epreuveDescription = await (
+    await ctx.request.post("/api/admin/epreuves", {
+      data: {
+        niveau: "SECONDAIRE",
+        classe: "terminale",
+        evaluation: "BAC",
+        matiere: `Description ${RUN}`,
+        annee: "2032",
+        gratuit: true,
+        filieres: ["C"],
+        duree: "2h",
+        sujets: [{ index: 0, contenu_markdown: "Voir la figure ci-dessous." }],
+      },
+    })
+  ).json();
+  const imageDescription = await (
+    await ctx.request.post(`/api/admin/epreuves/${epreuveDescription.id}/images`, {
+      multipart: { cible: "sujet", file: { name: `schema-${RUN}.png`, mimeType: "image/png", buffer: pngDescription } },
+    })
+  ).json();
+  ok(imageDescription.url, "envoi de l'image refusé : " + JSON.stringify(imageDescription));
+  const majDescription = await ctx.request.put(`/api/admin/epreuves/${epreuveDescription.id}`, {
+    data: { sujets: [{ index: 0, contenu_markdown: `Voir la figure ci-dessous : ![légende](${imageDescription.url})` }] },
+  });
+  ok(majDescription.ok(), "insertion de la balise image : " + majDescription.status());
+
+  await test("admin › Décrire une image : proposition IA refusée proprement, texte manuel appliqué (lot I)", async () => {
+    const recherche = page.getByLabel("Rechercher une épreuve par matière ou année");
+    await recherche.fill(`Description ${RUN}`);
+    const ligne = page.getByRole("button", { name: new RegExp(`^Description ${RUN} — 2032`) });
+    await ligne.waitFor({ timeout: 15000 });
+    await ligne.click();
+    const vignette = page.getByRole("button", { name: `Décrire l'image ${imageDescription.filename}` });
+    await vignette.waitFor({ timeout: 15000 });
+
+    // 1) La proposition IA échoue sans clé : message clair, saisie manuelle possible.
+    await vignette.click();
+    const boite = page.getByRole("dialog", { name: "Décrire l'image" });
+    await boite.waitFor({ timeout: 10000 });
+    await boite.getByRole("button", { name: "Proposer avec l'IA" }).click();
+    await boite.getByText("L'IA n'a pas pu proposer de description — écris-la à la main.").waitFor({ timeout: 30000 });
+    await page.screenshot({ path: `${SHOTS}/admin-description-image-echec.png` });
+
+    // 2) Saisie manuelle : rien n'est écrit avant « Appliquer au texte ».
+    await boite.getByLabel("Texte alternatif").fill("Un carré rouge sur fond blanc.");
+    await boite.getByRole("button", { name: "Appliquer au texte" }).click();
+    await page.getByText("Description appliquée au texte. Enregistre l'épreuve pour la conserver.").waitFor({ timeout: 10000 });
+    await page.getByRole("group", { name: "Affichage du contenu" }).first().getByRole("button", { name: "Texte", exact: true }).click();
+    const texteSujet = page.getByLabel("Contenu Markdown").first();
+    const markdown = await texteSujet.inputValue();
+    ok(markdown.includes("![Un carré rouge sur fond blanc.](/api/files/"), "le texte alternatif n'est pas appliqué : " + markdown);
+
+    // 3) L'épreuve n'est PAS enregistrée par la modale (bouton « Enregistrer » à part).
+    const detail = await (await ctx.request.get(`/api/admin/epreuves/${epreuveDescription.id}`)).json();
+    ok(!detail.sujets[0].contenu_markdown.includes("Un carré rouge"), "la modale a enregistré l'épreuve à la place de l'administrateur");
+
+    // 4) Rouvrir la fenêtre : la description déjà rédigée est relue (pas écrasée).
+    await vignette.click();
+    const boite2 = page.getByRole("dialog", { name: "Décrire l'image" });
+    await boite2.waitFor({ timeout: 10000 });
+    ok((await boite2.getByLabel("Texte alternatif").inputValue()) === "Un carré rouge sur fond blanc.", "la description existante n'est pas relue à la réouverture");
+    await boite2.getByRole("button", { name: "Annuler" }).click();
+    await page.screenshot({ path: `${SHOTS}/admin-description-image.png` });
+
+    await ctx.request.delete(`/api/admin/epreuves/${epreuveDescription.id}`);
+  });
+
   await test("admin › Formules : créer, modifier, activer puis supprimer", async () => {
     await page.getByRole("tab", { name: "Formules" }).click();
     await page.getByText("Les formules actives sont proposées").waitFor({ timeout: 10000 });
