@@ -9,13 +9,14 @@ import os
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core.textsearch import contient
-from ..core import epreuve_files, images, referentiel, referentiel_options, signing
+from ..core import assistant, epreuve_files, images, referentiel, referentiel_options, signing
 from ..core.logging_config import get_logger
+from ..core.rate_limit import SlidingWindowLimiter, client_ip
 from ..db import get_db, utc_now
 from ..db_models import (
     AdminAIConversationORM,
@@ -39,6 +40,15 @@ log = get_logger("admin_epreuves")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 STATUTS_VALIDES = ("brouillon", "a_reviser", "publie")
+
+# Plafonne le coût LLM par administrateur (comptage mémoire, mono-instance ;
+# même interrupteur que l'assistant : désactivé en test).
+_decrire_limiter = SlidingWindowLimiter(
+    max_attempts=20,
+    window_seconds=600.0,
+    message="Trop de demandes à l'assistant — réessaie dans quelques minutes",
+    env_switch="ASSISTANT_RATE_LIMIT",
+)
 
 
 def _normalize_filieres(raw: list[str]) -> list[str]:
@@ -610,6 +620,40 @@ def admin_upload_image(
         "cible": cible,
         "doublon_de": doublon.epreuve_id if doublon else None,
     }
+
+
+@router.post("/epreuves/{epreuve_id}/images/{image_id}/description")
+async def admin_decrire_image(
+    epreuve_id: str,
+    image_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Propose un texte alternatif pour une image de l'épreuve (vision IA).
+    L'administrateur le RELIT avant de l'enregistrer dans le Markdown : rien
+    n'est écrit ici. Une image absente, d'une autre épreuve ou non image →
+    404."""
+    e = get_epreuve_or_404(db, epreuve_id)
+    row = (
+        db.query(EpreuveFileORM)
+        .filter(
+            EpreuveFileORM.id == image_id,
+            EpreuveFileORM.epreuve_id == epreuve_id,
+            EpreuveFileORM.format == "image",
+        )
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(404, "Fichier introuvable")
+    _decrire_limiter.check(f"{lock.email}|{client_ip(request)}")
+    lang = "en" if request.headers.get("accept-language", "").lower().startswith("en") else "fr"
+    try:
+        description = await assistant.decrire_image(row.id, matiere=e.matiere, lang=lang)
+    except (assistant.FournisseursIndisponiblesError, FileNotFoundError) as exc:
+        raise HTTPException(503, "L'assistant IA est momentanément indisponible") from exc
+    log_admin_event(db, epreuve_id, "image_description_proposed", email=lock.email, details={"image": row.id})
+    return {"description": description}
 
 
 @router.post("/epreuves/{epreuve_id}/documents")

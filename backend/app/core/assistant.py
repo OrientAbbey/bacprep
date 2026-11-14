@@ -100,6 +100,13 @@ def _groq_vision_models() -> set[str]:
     return extra or set(_GROQ_VISION_MODELS)
 
 
+def _groq_vision_models_ordonnes() -> list[str]:
+    """Modèles Groq de vision, dans l'ordre d'essai (`GROQ_VISION_MODELS` en
+    CSV, sinon le défaut). Utilisé quand un modèle texte seul ne peut pas
+    répondre : la description d'une figure exige de VOIR l'image."""
+    return _csv_env("GROQ_VISION_MODELS") or sorted(_GROQ_VISION_MODELS)
+
+
 def _groq_models_ordonnes(image_paths: list[Path]) -> list[str]:
     """Ordre d'essai des modèles Groq pour une question.
 
@@ -568,13 +575,23 @@ async def _call_groq(
     )
 
 
-async def call_cascade(prompt: str, image_paths: list[Path]) -> Optional[str]:
-    """Adaptateur B1 de la cascade d'`evolution` : ici, Groq seulement.
+async def call_cascade(prompt: str, image_paths: list[Path], vision_seulement: bool = False) -> Optional[str]:
+    """Cascade d'appels pour l'atelier d'exercices et la description d'images.
 
-    L'atelier d'exercices impose ses modèles (`GENERATION_GROQ_MODELS`,
-    défaut gpt-oss-120b puis gpt-oss-20b) pour ne pas consommer le quota
-    du tuteur. None si Groq ne répond pas — le mode démonstration relève
-    de l'appelant, jamais de cette fonction."""
+    - génération d'exercices (`vision_seulement=False`) : Groq seulement, avec
+      ses modèles dédiés (`GENERATION_GROQ_MODELS`, défaut gpt-oss-120b puis
+      gpt-oss-20b) pour ne pas consommer le quota du tuteur ;
+    - description de figure (`vision_seulement=True`) : Gemini d'abord, puis
+      les modèles Groq de VISION — un modèle texte seul ne peut rien dire
+      d'une image.
+
+    None si aucun fournisseur ne répond — le mode démonstration relève de
+    l'appelant, jamais de cette fonction."""
+    if vision_seulement:
+        reponse = await _call_gemini(prompt, image_paths)
+        if reponse:
+            return reponse
+        return await _call_groq(prompt, image_paths, models=_groq_vision_models_ordonnes())
     modeles = _csv_env("GENERATION_GROQ_MODELS") or ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
     return await _call_groq(prompt, image_paths, models=modeles)
 
@@ -691,3 +708,67 @@ async def ask_assistant_stream(
         yield _demo_fallback(epreuve_meta, question, image_paths, cle_ia)
     finally:
         _cleanup_image_paths(image_paths)
+
+
+# --- Description d'une figure (outil d'édition, réservé aux administrateurs) ---
+# Les modèles texte seul (repli Groq) et les lecteurs d'écran ne voient pas une
+# image. Un texte alternatif RÉEL (écrit ou relu par un humain) règle les deux :
+# il part dans le contexte avec le Markdown, et il est l'accessibilité de la
+# figure. Ici l'IA ne fait que PROPOSER ; l'administrateur relit avant
+# d'enregistrer. Jamais publié automatiquement.
+DESCRIPTION_MAX_CHARS = 600
+
+_CONSIGNE_DESCRIPTION = {
+    "fr": (
+        "DESCRIPTION DE FIGURE D'ÉPREUVE.\n"
+        "Tu aides un enseignant à rédiger le texte alternatif d'une figure d'une épreuve ({matiere}). Décris UNIQUEMENT ce qui est "
+        "visible, de façon que quelqu'un qui ne voit pas la figure puisse la comprendre et résoudre l'exercice : nature de la figure "
+        "(schéma, courbe, tableau, géométrie…), éléments nommés (points, segments, angles, axes, légendes), valeurs avec leurs unités, "
+        "relations indiquées (parallèles, perpendiculaires, égalités, codages), et ce qu'on demande de trouver s'il est écrit. "
+        "N'invente rien : écris « [illisible] » pour ce que tu ne peux pas lire. Ne résous pas l'exercice. "
+        "Réponds en un seul paragraphe de texte brut en français (pas de liste, pas de Markdown), {limite} caractères au plus."
+    ),
+    "en": (
+        "EXAM FIGURE DESCRIPTION.\n"
+        "You help a teacher write the alternative text of a figure from an exam ({matiere}). Describe ONLY what is visible, so that "
+        "someone who cannot see the figure can understand it and solve the exercise: kind of figure (diagram, curve, table, "
+        "geometry…), named elements (points, segments, angles, axes, labels), values with their units, stated relations (parallel, "
+        "perpendicular, equal lengths, markings), and what is asked if it is written. Invent nothing: write “[unreadable]” for "
+        "anything you cannot read. Do not solve the exercise. "
+        "Answer in a single paragraph of plain English text (no list, no Markdown), at most {limite} characters."
+    ),
+}
+
+
+def nettoyer_description(texte: str) -> str:
+    """Rend la description sûre comme TEXTE ALTERNATIF Markdown `![ici](url)` :
+    une seule ligne, sans crochets (ils fermeraient la balise), bornée à
+    DESCRIPTION_MAX_CHARS."""
+    texte = " ".join((texte or "").split())
+    texte = texte.replace("[", "(").replace("]", ")")
+    if len(texte) > DESCRIPTION_MAX_CHARS:
+        texte = texte[: DESCRIPTION_MAX_CHARS - 1].rstrip() + "…"
+    return texte
+
+
+async def decrire_image(file_id: str, matiere: str = "", lang: str = "fr") -> str:
+    """Propose un texte alternatif pour l'image `file_id` (Gemini puis Groq
+    vision). Lève FournisseursIndisponiblesError si aucun fournisseur ne
+    répond (jamais de description simulée : l'admin croirait relire une vraie
+    description). Pas de contrôle de paywall ici : l'appelant est un
+    administrateur."""
+    paths = await _extract_local_image_paths_async(f"![]({'/api/files/' + file_id})", None)
+    if not paths:
+        raise FileNotFoundError(file_id)
+    consigne = _CONSIGNE_DESCRIPTION["en" if lang == "en" else "fr"].format(
+        matiere=matiere or "—", limite=DESCRIPTION_MAX_CHARS
+    )
+    try:
+        async with _get_semaphore():
+            reponse = await call_cascade(consigne, paths, vision_seulement=True)
+    finally:
+        _cleanup_image_paths(paths)
+    texte = nettoyer_description(reponse or "")
+    if not texte:
+        raise FournisseursIndisponiblesError()
+    return texte
