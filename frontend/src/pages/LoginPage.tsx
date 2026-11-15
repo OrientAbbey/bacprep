@@ -30,6 +30,14 @@ export function LoginPage() {
   // authentification (transmise par RequireAuth), accueil sinon.
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/";
 
+  // Redirection depuis une page réservée : sans ce mot d'accueil, arriver sur
+  // /connexion sans explication donnait l'impression d'un lien cassé (cas
+  // signalé sur /entrainement). On nomme la raison au lieu de la deviner.
+  const depuisEntrainement = from.startsWith("/entrainement");
+  const messageArrivee = depuisEntrainement
+    ? t("L'entraînement est réservé aux comptes : connecte-toi pour y accéder.")
+    : t("Connecte-toi pour ouvrir les épreuves et tes abonnements.");
+
   const fetchConfig = useCallback(() => {
     setConfigError(false);
     api.get<AuthConfig>("/api/auth/config")
@@ -100,7 +108,7 @@ export function LoginPage() {
           </div>
           <h1 className="font-serif-brand text-2xl">{t("Copies & Corrigés")}</h1>
           <p className="mt-1 mb-6 text-sm text-ink-soft">
-            {t("Connecte-toi pour ouvrir les épreuves et tes abonnements.")}
+            {messageArrivee}
           </p>
 
           {!config && !configError && (
