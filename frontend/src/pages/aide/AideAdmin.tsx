@@ -16,6 +16,7 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     intro: "La console est réservée aux comptes administrateurs.",
     points: [
       "Le lien « Admin » apparaît dans l'en-tête pour les comptes administrateurs ; la console demande le jeton d'administration à l'ouverture.",
+      "La page d'accueil de la console présente des statistiques générales ; les indicateurs détaillés restent dans l'onglet correspondant.",
       "« Déconnexion admin » ferme la session d'administration sans fermer ton compte.",
       "Pour gagner de la place, le menu des sections se replie (« Masquer le menu ») et les statistiques aussi (« Masquer les statistiques ») ; les deux choix sont mémorisés. Replié, le menu laisse une liste déroulante pour changer de section. Sur téléphone, une liste déroulante remplace toujours le menu.",
     ],
@@ -109,7 +110,11 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     id: "calendrier",
     onglet: "calendrier",
     titre: "Calendrier",
-    points: ["Saisis les dates officielles des examens : elles alimentent la page Calendrier et le compte à rebours de l'accueil."],
+    points: [
+      "Ajoute les dates d'examens, de résultats ou d'inscriptions, avec une évaluation et un lien https:// facultatifs.",
+      "La case Visible détermine si l'événement apparaît sur la page Calendrier ; les événements publiés alimentent aussi le compte à rebours de l'accueil.",
+      "La suppression retire l'événement du calendrier public après confirmation.",
+    ],
   },
   {
     id: "utilisateurs",
@@ -118,6 +123,7 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     points: [
       "Le tableau montre, pour chaque compte, le profil, les consentements, le nombre de notes, de discussions IA et de consultations, les abonnements actifs, le montant dépensé (FCFA) et la dernière connexion.",
       "« Supprimer » efface le compte et toutes ses données, après confirmation.",
+      "Tu peux bannir un compte ou lever son bannissement ; le bannissement ferme sa session et la réautorisation lui permet de se reconnecter.",
       "La promotion en administrateur et la révocation sont réservées au compte racine ; le compte racine lui-même n'est pas modifiable.",
     ],
   },
@@ -126,8 +132,8 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     onglet: "signalements",
     titre: "Signalements",
     points: [
-      "Liste des problèmes signalés par les élèves (énoncé, corrigé, image, lisibilité), avec un lien « ouvrir l'épreuve ».",
-      "Corrige l'épreuve, puis « Marquer résolu » : le signalement passe de Ouvert à Résolu.",
+      "La liste regroupe les problèmes signalés par les élèves (énoncé, corrigé, image, lisibilité) ; recherche dans les messages et filtre par statut.",
+      "Le lien « ouvrir l'épreuve » mène au contenu concerné. Corrige l'épreuve, puis « Marquer résolu » pour mettre à jour le statut du signalement.",
     ],
   },
   {
@@ -135,8 +141,8 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     onglet: "notifications",
     titre: "Notifications",
     points: [
-      "Crée une notification avec un titre (obligatoire), un détail facultatif et un type.",
-      "« Active (visible par tous) » la publie dans la cloche des élèves ; « Inactive (masquée) » la garde de côté.",
+      "Crée une notification avec un titre obligatoire, un message facultatif et un type.",
+      "« Active (visible par tous) » la publie dans la cloche des élèves ; « Inactive (masquée) » la garde de côté. Tu peux modifier ou supprimer une notification.",
     ],
   },
   {
@@ -144,7 +150,8 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     onglet: "parametres",
     titre: "Paramètres : référentiels",
     points: [
-      "Les listes de valeurs (niveaux, classes, évaluations, matières, séries) alimentent les formulaires et les filtres.",
+      "Les listes de valeurs (niveaux, classes, évaluations, matières, séries) alimentent les formulaires d'épreuve et les filtres du catalogue.",
+      "Tu peux ajouter, renommer ou supprimer une option. Si elle est utilisée, la suppression change la liste mais ne réécrit pas les épreuves déjà enregistrées.",
       "Les matières s'enrichissent à l'usage ; une série saisie hors référentiel dans une épreuve y est mémorisée.",
     ],
   },
@@ -154,7 +161,11 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     titre: "Sauvegardes",
     points: [
       "Une sauvegarde contient le catalogue entier : épreuves, sujets, corrigés, images et identifiants.",
-      "L'export se déclenche à la main depuis l'onglet ; la restauration affiche d'abord l'inventaire de l'archive et te fait choisir un mode de restauration.",
+      "L'export se déclenche à la main depuis l'onglet. Avant la restauration, l'inventaire affiche le contenu détecté et te laisse choisir un mode.",
+      "Commence toujours par l'essai à blanc : il n'écrit rien. L'écriture n'est proposée qu'après un essai terminé sans anomalie et une confirmation explicite.",
+      "« Recharge du stockage » ne modifie pas les lignes de la base ; « Restauration complète » recrée aussi les métadonnées et n'est acceptée que si la base ne contient aucune épreuve.",
+      "Si l'essai signale une anomalie, ne lance pas l'écriture : examine le rapport et choisis une autre sauvegarde ou demande une vérification technique.",
+      "La suppression d'une sauvegarde est distincte de la restauration et demande une confirmation.",
     ],
     astuce: "Fais une sauvegarde avant toute opération lourde (import massif, suppression en série).",
   },
@@ -162,7 +173,10 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     id: "journal",
     onglet: "journal",
     titre: "Journal d'audit",
-    points: ["Historique des actions de la console (créations, modifications, suppressions…) avec leur détail : qui, quoi, sur quelle épreuve."],
+    points: [
+      "L'historique liste les actions de la console (créations, modifications, suppressions…) avec leur détail : qui, quoi, sur quelle épreuve.",
+      "Utilise la recherche et les filtres pour retrouver une action ; ce journal sert à suivre les opérations de la console.",
+    ],
   },
   {
     id: "assistant-global",

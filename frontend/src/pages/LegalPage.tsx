@@ -15,7 +15,7 @@ import { locale, t } from "../i18n";
  */
 
 /** Date de dernière révision du texte (les deux pages avancent ensemble). */
-const DATE_REVISION = new Date(2026, 10, 13);
+const DATE_REVISION = new Date(2026, 10, 15);
 
 interface Section {
   id: string;
@@ -30,8 +30,8 @@ const SECTIONS_CONFIDENTIALITE: Section[] = [
     titre: t("Qui traite tes données"),
     intro: t("Copies & Corrigés est un service de révision pour les élèves du secondaire camerounais, de la 6e à la Terminale."),
     points: [
-      t("Le responsable du traitement est l'équipe qui édite Copies & Corrigés. Pour toute question sur tes données, écris à l'adresse e-mail affichée dans ton profil, onglet « Confidentialité »."),
-      t("Nous appliquons les principes de la loi camerounaise n° 2010/012 du 21 décembre 2010 relative à la cybersécurité et à la cybercriminalité, dont l'ANTIC assure la promotion : finalité déterminée, proportionnalité, durée limitée, droits d'accès et d'effacement."),
+      t("Le responsable du traitement est l'équipe qui édite Copies & Corrigés. Les commandes décrites dans la rubrique « Tes droits » te permettent de gérer les consentements, d'exporter tes données et de supprimer ton compte."),
+      t("Le cadre camerounais comprend notamment la loi n° 2024/017 du 23 décembre 2024 relative à la protection des données à caractère personnel. Les modalités de mise en conformité et les voies de recours doivent encore être confirmées par une relecture juridique."),
     ],
   },
   {
@@ -93,10 +93,10 @@ const SECTIONS_CONFIDENTIALITE: Section[] = [
   {
     id: "droits",
     titre: t("Tes droits"),
-    intro: t("Tu exerces ces droits directement dans l'application, sans attendre notre réponse."),
+    intro: t("Les commandes suivantes sont disponibles directement dans l'application."),
     points: [
       t("Accès et portabilité : « Exporter mes données », dans ton profil, onglet « Confidentialité », télécharge en un fichier JSON tout ce qui est conservé sur toi."),
-      t("Effacement : « Supprimer mon compte » efface immédiatement et définitivement ton profil, tes sessions, tes notes, tes conversations, tes consultations, tes essais, tes signalements, ton avatar, tes abonnements et tes paiements."),
+      t("Effacement : « Supprimer mon compte » lance la suppression définitive de ton profil, de tes sessions, de tes notes, de tes conversations, de tes consultations, de tes essais, de tes signalements, de ton avatar, de tes abonnements et des paiements associés à ton compte."),
       t("Rectification : ton nom, ton niveau, ta classe, ton établissement et ta photo se modifient dans ton profil."),
       t("Retrait du consentement : décoche une finalité dans l'onglet « Confidentialité » puis appuie sur « Enregistrer mes choix »."),
     ],
@@ -108,13 +108,13 @@ const SECTIONS_CONFIDENTIALITE: Section[] = [
       t("Le cookie de session est httpOnly et SameSite=Lax, et marqué Secure en production : il n'est pas lisible par le JavaScript de la page."),
       t("Un seul appareil est connecté à la fois ; une nouvelle connexion ferme la précédente et prévient l'ancienne."),
       t("Les pages consultées portent un filigrane avec ton identité et l'horodatage : il dissuade la rediffusion des épreuves et permet de retrouver l'origine d'une fuite."),
-      t("Les échanges passent en HTTPS en production, et la politique de sécurité du site limite les scripts aux domaines nécessaires, dont Google pour la connexion."),
+      t("Les échanges passent en HTTPS en production. La politique CSP est actuellement en mode rapport seulement : elle signale des violations potentielles, mais ne bloque pas encore les scripts."),
     ],
   },
   {
     id: "contact",
     titre: t("Une question sur tes données"),
-    intro: t("Écris à l'adresse e-mail affichée dans ton profil, onglet « Confidentialité ». Si la réponse ne te satisfait pas, tu peux saisir l'ANTIC, l'autorité camerounaise chargée de la protection des données personnelles."),
+    intro: t("Pour exercer les commandes disponibles, consulte la rubrique « Tes droits ». Aucun canal de contact ni organisme de recours n'est indiqué ici tant que ses coordonnées et modalités n'ont pas été confirmées."),
   },
 ];
 
@@ -202,7 +202,6 @@ const SECTIONS_CONDITIONS: Section[] = [
     titre: t("Droit applicable"),
     points: [
       t("Ces conditions sont régies par le droit camerounais ; les tribunaux camerounais sont compétents en cas de litige."),
-      t("Une question sur ces conditions ? Écris à l'adresse e-mail affichée dans ton profil."),
     ],
   },
 ];

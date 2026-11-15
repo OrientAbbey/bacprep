@@ -8,10 +8,12 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
     titre: t("Pour commencer"),
     intro: t("Copies & Corrigés réunit les épreuves et leurs corrigés du secondaire camerounais, de la 6e à la Terminale."),
     points: [
-      t("Depuis l'accueil, choisis ta classe, puis une matière : les épreuves sont regroupées par année."),
-      t("La barre de recherche de l'en-tête retrouve une épreuve par sa matière, son année ou sa série, même sans accents."),
+      t("Depuis l'accueil, choisis un niveau puis une classe pour afficher les matières et les épreuves disponibles."),
+      t("Dans le catalogue, utilise la recherche et les filtres pour affiner par classe, série, matière, année, évaluation, présence d'un corrigé ou type d'accès ; « Voir plus » charge les résultats suivants."),
+      t("La recherche de l'en-tête retrouve une épreuve par sa matière, son année ou sa série, même sans accents."),
       t("Sans compte, tu peux consulter les épreuves gratuites. Connecte-toi pour faire les exercices d'entraînement, utiliser le Tuteur IA, prendre des notes et suivre ton activité."),
-      t("Certaines épreuves demandent un abonnement : les formules sont présentées sur la page Abonnement."),
+      t("Une épreuve marquée Payant mène à la page Abonnement ; si elle est déjà couverte, tu peux l'ouvrir directement."),
+      t("La page Calendrier donne les dates saisies par l'équipe et les liens officiels disponibles pour les examens."),
     ],
   },
   {
@@ -24,7 +26,8 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
       t("A− et A+ règlent la taille du texte de 40 % à 200 %. Sur téléphone, pince la feuille avec deux doigts : seule l'épreuve est zoomée, pas la page du site."),
       t("Le bouton Immersion masque l'en-tête et le pied de page du site et replie les outils derrière « Outils » : toute la place est pour l'épreuve. Le bouton Retour te ramène en arrière."),
       t("« Hors-ligne » télécharge l'épreuve pour la lire sans connexion ; « PDF » ouvre l'impression de la feuille."),
-      t("Le drapeau à côté du titre permet de signaler une erreur dans l'épreuve : énoncé, corrigé, image…"),
+      t("Le drapeau à côté du titre permet de signaler une erreur dans l'épreuve : énoncé, corrigé, image… Le message envoyé est associé à cette épreuve."),
+      t("Le filigrane affiché sur la lecture identifie le compte et l'heure de consultation ; évite de diffuser une capture avec ces informations."),
     ],
   },
   {
@@ -35,7 +38,8 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
       t("Pose ta question sur l'épreuve entière, ou sélectionne un passage pour interroger le Tuteur sur ce passage précis."),
       t("Tes discussions sont regroupées en onglets ; tu peux modifier une question, relancer une réponse ou copier un texte."),
       t("Si tu as accepté l'enregistrement des conversations, tu retrouves tes discussions d'une visite à l'autre ; sinon elles disparaissent à la fermeture."),
-      t("Le nombre de questions est limité chaque jour pour que tout le monde puisse en profiter."),
+      t("Le nombre de questions est limité chaque jour pour que tout le monde puisse en profiter. Si tu atteins la limite, réessaie plus tard."),
+      t("Pour un retour plus utile, précise la question et l'étape qui te bloque ; n'inclus pas de mot de passe ni de donnée personnelle sensible."),
     ],
     astuce: t("Le Tuteur peut se tromper. Compare toujours avec le corrigé officiel et demande à ton professeur en cas de doute."),
   },
@@ -46,7 +50,7 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
     points: [
       t("Sélectionne un passage du texte puis choisis « Prendre une note » : ta note reste liée à l'épreuve."),
       t("Retrouve toutes tes notes dans ton profil, onglet « Mes notes »."),
-      t("L'éditeur te propose un aperçu de la mise en forme avant d'enregistrer."),
+      t("L'éditeur te propose un aperçu de la mise en forme avant d'enregistrer ; ferme-le sans enregistrer si tu veux abandonner."),
       t("Tes notes ne sont conservées que si tu l'as accepté ; tu peux changer ce choix à tout moment dans ton profil, onglet « Confidentialité »."),
     ],
   },
@@ -65,9 +69,11 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
     titre: t("Réviser et suivre ta progression"),
     intro: t("Reviens sur ce qui compte, au bon moment."),
     points: [
+      t("Sur la page Entraînement, filtre les exercices par matière ou difficulté, puis génère une nouvelle variante ou affiche la correction détaillée."),
+      t("Le compositeur d'épreuve permet de choisir classe, matière, série, format et difficulté ; certaines matières requièrent un abonnement actif."),
       t("« À revoir » ajoute l'épreuve à ta liste de révision espacée : elle te revient selon un calendrier de révision."),
       t("Ton profil, onglet « Activité », retrace tes connexions, consultations, notes et discussions."),
-      t("La page Calendrier affiche les dates officielles des examens ; l'accueil affiche un compte à rebours."),
+      t("La page Calendrier affiche les dates publiées par l'équipe ; l'accueil met en avant les prochaines échéances."),
     ],
   },
   {
@@ -77,6 +83,7 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
     points: [
       t("La page Abonnement présente les formules : une épreuve précise, une matière, une année ou une série complète, avec leur prix en FCFA et leur durée."),
       t("Un abonnement actif et les épreuves qu'il couvre apparaissent dans ton profil, onglet « Abonnements »."),
+      t("Les AK sont des crédits internes : la connexion quotidienne en crédite selon ta série, et certaines formules peuvent être payées avec ton solde AK. Le solde et les derniers mouvements sont visibles dans ton profil."),
     ],
   },
   {

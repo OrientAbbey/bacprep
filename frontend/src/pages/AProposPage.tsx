@@ -22,7 +22,9 @@ export function AProposPage() {
           <li>{t("Les épreuves et corrigés du BAC et d'autres évaluations, classés par classe, matière, année et série.")}</li>
           <li>{t("Un lecteur confortable : feuille A4, taille du texte réglable, mode immersion, lecture hors-ligne.")}</li>
           <li>{t("Le Tuteur IA, les notes personnelles, le chronomètre, l'examen blanc et la révision espacée.")}</li>
-          <li>{t("Le calendrier officiel des examens, en français et en anglais.")}</li>
+          <li>{t("Des exercices types à refaire et un compositeur d'épreuves personnalisées, selon les matières et les accès disponibles.")}</li>
+          <li>{t("Des crédits AK gagnés lors des connexions quotidiennes et utilisables pour certaines formules.")}</li>
+          <li>{t("Un calendrier avec les dates saisies par l'équipe et les liens officiels disponibles, en français et en anglais.")}</li>
         </ul>
       </section>
       <section aria-labelledby="a-propos-principes">

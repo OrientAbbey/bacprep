@@ -112,7 +112,11 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                   to={to}
                   end={end}
                   className={({ isActive }) =>
-                    isActive ? "font-medium text-highlight-text" : "hover:text-ink"
+                    `rounded-full px-3 py-2 transition-colors ${
+                      isActive
+                        ? "bg-highlight-soft font-medium text-highlight-text"
+                        : "text-ink-soft hover:bg-paper hover:text-ink"
+                    }`
                   }
                 >
                   {t(label)}
@@ -121,7 +125,11 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               <NavLink
                 to="/aide"
                 className={({ isActive }) =>
-                  isActive ? "font-medium text-highlight-text" : "hover:text-ink"
+                  `rounded-full px-3 py-2 transition-colors ${
+                    isActive
+                      ? "bg-highlight-soft font-medium text-highlight-text"
+                      : "text-ink-soft hover:bg-paper hover:text-ink"
+                  }`
                 }
               >
                 {t("Aide")}
@@ -134,7 +142,11 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 <NavLink
                   to="/admin"
                   className={({ isActive }) =>
-                    isActive ? "font-medium text-highlight-text" : "hover:text-ink"
+                    `rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                      isActive
+                        ? "border-highlight bg-highlight text-highlight-ink"
+                        : "border-highlight/50 text-highlight-text hover:bg-highlight-soft"
+                    }`
                   }
                 >
                   {t("Admin")}
