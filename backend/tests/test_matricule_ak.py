@@ -235,8 +235,6 @@ def test_achat_ak_solde_insuffisant(visiteur, admin):
 
 
 def test_achat_ak_formule_non_payable_en_ak_refuse(visiteur, admin, db):
-    from app.db_models import PlanORM
-
     eid = _epreuve_payante(admin, "Botanique AK")
     # Formule dédiée SANS prix_ak, prioritaire sur la formule par défaut.
     pid = admin.post(

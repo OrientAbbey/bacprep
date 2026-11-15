@@ -5,13 +5,8 @@ import json
 import uuid
 from datetime import timedelta
 
-from fastapi.testclient import TestClient
-
-from app.main import app
-
 from app.db import utc_now
 from app.db_models import (
-    BanqueClasseMetaORM,
     BanqueExerciceORM,
     BanqueGenerationORM,
     BanqueJournalORM,
