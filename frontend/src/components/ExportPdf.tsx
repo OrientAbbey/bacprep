@@ -1,5 +1,5 @@
 import { Printer } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MarkdownContent } from "./MarkdownContent";
 import { t } from "../i18n";
@@ -25,6 +25,29 @@ export function ExportPdf({
 }) {
   const [choix, setChoix] = useState<ChoixPdf | null>(null);
   const [menu, setMenu] = useState(false);
+  const boiteRef = useRef<HTMLDivElement>(null);
+  const boutonRef = useRef<HTMLButtonElement>(null);
+
+  // Le menu de choix (Sujet / Corrigé / Les deux) se referme comme un vrai
+  // menu : clic à côté, ou Échap (le focus revient alors au bouton PDF).
+  // Sans cela, cliquer ailleurs le laissait ouvert au-dessus du lecteur.
+  useEffect(() => {
+    if (!menu) return;
+    const dehors = (e: PointerEvent) => {
+      if (!boiteRef.current?.contains(e.target as Node)) setMenu(false);
+    };
+    const echap = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setMenu(false);
+      boutonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", dehors);
+    document.addEventListener("keydown", echap);
+    return () => {
+      document.removeEventListener("pointerdown", dehors);
+      document.removeEventListener("keydown", echap);
+    };
+  }, [menu]);
 
   useEffect(() => {
     if (!choix) return;
@@ -42,8 +65,9 @@ export function ExportPdf({
 
   return (
     <>
-      <div className="relative">
+      <div className="relative" ref={boiteRef}>
         <button
+          ref={boutonRef}
           type="button"
           aria-haspopup="menu"
           aria-expanded={menu}

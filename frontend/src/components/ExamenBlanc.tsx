@@ -27,6 +27,10 @@ export function ExamenBlanc({
   const [phase, setPhase] = useState<"repos" | "composition" | "note">("repos");
   const [restant, setRestant] = useState(total);
   const [note, setNote] = useState("");
+  const [enregistrement, setEnregistrement] = useState(false);
+  // « À revoir » déjà pris en compte pour cette épreuve : le bouton reste
+  // désactivé pour la visite (un second clic ne doit pas créer de doublon).
+  const [dejaRevoir, setDejaRevoir] = useState(false);
   const debut = useRef(0);
 
   useEffect(() => {
@@ -59,19 +63,27 @@ export function ExamenBlanc({
     setPhase("composition");
   };
   const enregistrer = (valeur: number | null) => {
+    if (enregistrement) return; // double clic : un seul essai créé
     arreterAlarme();
+    setEnregistrement(true);
     void api
-      .post("/api/me/essais", {
+      .post<{ ok: boolean; deja?: boolean }>("/api/me/essais", {
         epreuve_id: epreuveId,
         note: valeur,
         duree_s: phase === "note" ? Math.round((Date.now() - debut.current) / 1000) : undefined,
       })
-      .then(() => {
-        showToast(valeur === null ? t("Ajoutée à tes révisions.") : t("Essai enregistré."), "success");
+      .then((reponse) => {
+        if (valeur === null) {
+          setDejaRevoir(true);
+          showToast(reponse?.deja ? t("Déjà dans tes révisions") : t("Ajoutée à tes révisions."), "success");
+        } else {
+          showToast(t("Essai enregistré."), "success");
+        }
         setPhase("repos");
         setNote("");
       })
-      .catch(() => showToast(t("Enregistrement impossible — réessaie."), "error"));
+      .catch(() => showToast(t("Enregistrement impossible — réessaie."), "error"))
+      .finally(() => setEnregistrement(false));
   };
 
   if (phase === "composition")
@@ -129,8 +141,13 @@ export function ExamenBlanc({
       <button onClick={demarrer} title={t("Compte à rebours, sans corrigé ni assistant")} className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
         <ClipboardCheck size={14} aria-hidden="true" /> {t("Examen blanc")}
       </button>
-      <button onClick={() => enregistrer(null)} title={t("Revenir sur cette épreuve dans quelques jours")} className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm">
-        <RotateCcw size={14} aria-hidden="true" /> {t("À revoir")}
+      <button
+        onClick={() => enregistrer(null)}
+        disabled={enregistrement || dejaRevoir}
+        title={dejaRevoir ? t("Déjà dans tes révisions") : t("Revenir sur cette épreuve dans quelques jours")}
+        className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-sm disabled:opacity-50"
+      >
+        <RotateCcw size={14} aria-hidden="true" /> {dejaRevoir ? t("Déjà dans tes révisions") : t("À revoir")}
       </button>
     </div>
   );

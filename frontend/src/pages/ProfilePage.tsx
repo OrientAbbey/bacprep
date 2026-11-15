@@ -57,6 +57,18 @@ interface Profil {
   ak_mouvements: MouvementAK[];
 }
 
+/** Le profil peut arriver SANS certains tableaux (réponse encore servie par
+ * le cache du service worker d'une version antérieure du serveur) : on
+ * normalise une fois, à l'entrée, pour qu'aucun écran ne casse sur
+ * `undefined.length`. */
+function normaliserProfil(p: Profil): Profil {
+  return {
+    ...p,
+    abonnements: Array.isArray(p.abonnements) ? p.abonnements : [],
+    ak_mouvements: Array.isArray(p.ak_mouvements) ? p.ak_mouvements : [],
+  };
+}
+
 const ICONE_ACTIVITE: Record<string, typeof Activity> = {
   connexion: LogIn,
   consultation: GraduationCap,
@@ -123,7 +135,7 @@ export function ProfilePage() {
   }
 
   function applyProfil(p: Profil) {
-    setProfil(p);
+    setProfil(normaliserProfil(p));
     setForm({
       nom: p.nom ?? "",
       niveau: p.niveau ?? "",
@@ -187,7 +199,7 @@ export function ProfilePage() {
       setFormOuvert(false);
       await api
         .get<Profil>("/api/me/profil")
-        .then(setProfil)
+        .then(applyProfil)
         .catch(() => setErreurChargement(true));
     } catch {
       // Avant : try/finally sans catch — un échec laissait la modale
@@ -571,12 +583,12 @@ function CarteSoldeAK({
   solde,
   serie,
   dernierJour,
-  mouvements,
+  mouvements = [],
 }: {
   solde: number;
   serie: number;
   dernierJour: string | null;
-  mouvements: MouvementAK[];
+  mouvements?: MouvementAK[];
 }) {
   const prochainGain = gainProchaineConnexion(serie, dernierJour);
   return (

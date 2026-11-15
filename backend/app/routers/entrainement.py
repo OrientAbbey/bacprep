@@ -1,5 +1,5 @@
 """Entraînement : exercices générés à partir de GABARITS PARAMÉTRÉS validés
-(voir `core/gabarits.py`). Public, sans jeton, sans IA.
+(voir `core/gabarits.py`). Réservé aux comptes connectés, sans IA.
 
 Un gabarit n'est visible que s'il est VALIDÉ par un enseignant pour son contenu
 actuel (table `gabarit_validations`, liée au hash). L'énoncé et la correction
@@ -61,7 +61,7 @@ def instancier_ou_500(g: gab.Gabarit, graine: int) -> dict:
 
 
 @router.get("/gabarits")
-def lister(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def lister(request: Request, db: Session = Depends(get_db), user=Depends(require_user)) -> list[dict]:
     _limiter.check(client_ip(request))
     return sorted(
         (g.resume() for g in gabarits_valides(db).values()),
@@ -75,6 +75,7 @@ def variante(
     request: Request,
     graine: int | None = Query(default=None, ge=0, le=gab.GRAINE_MAX),
     db: Session = Depends(get_db),
+    user=Depends(require_user),
 ) -> dict:
     """Une variante SANS ses réponses. Sans `graine`, le serveur en tire une et
     la rend (pour pouvoir la partager ou la signaler)."""
@@ -90,6 +91,7 @@ def correction(
     request: Request,
     graine: int = Query(ge=0, le=gab.GRAINE_MAX),
     db: Session = Depends(get_db),
+    user=Depends(require_user),
 ) -> dict:
     _limiter.check(client_ip(request))
     g = _valide_ou_404(db, gabarit_id)

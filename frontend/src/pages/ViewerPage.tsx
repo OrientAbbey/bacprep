@@ -104,6 +104,9 @@ export function ViewerPage() {
   function basculerImmersion() {
     setImmersion(!immersion);
     memoriserImmersion(!immersion);
+    // En sortant de l'immersion, la boîte à outils se referme : son bouton
+    // disparaît, la laisser ouverte n'aurait plus de sens.
+    if (immersion) setOutils(false);
   }
   const [searchParams] = useSearchParams();
   // Deep-link depuis le profil : /epreuve/{id}?conv={id} rouvre l'onglet de
@@ -482,15 +485,22 @@ export function ViewerPage() {
             {immersion && !examenEnCours && (
               <button
                 type="button"
-                onClick={() => setOutils(!outils)}
+                onClick={() => setOutils((v) => !v)}
                 aria-expanded={outils}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-ink-soft/25 px-3 text-xs text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
+                aria-controls="lecteur-outils lecteur-outils-sujets"
+                aria-label={outils ? t("Masquer les outils") : t("Afficher les outils")}
+                title={outils ? t("Masquer les outils") : t("Afficher les outils")}
+                className={`flex min-h-[44px] items-center gap-1.5 rounded-full border px-3 text-xs ${
+                  outils
+                    ? "border-highlight bg-highlight-soft text-ink"
+                    : "border-ink-soft/25 text-ink-soft hover:border-highlight/50 hover:bg-highlight-soft/40"
+                }`}
               >
                 <SlidersHorizontal size={14} strokeWidth={1.75} aria-hidden="true" />
-                {t("Outils")}
+                {outils ? t("Masquer les outils") : t("Afficher les outils")}
               </button>
             )}
-            <div className={outilsVisibles ? "contents" : "hidden"}>
+            <div id="lecteur-outils" className={outilsVisibles ? "contents" : "hidden"}>
               {user && <ExamenBlanc epreuveId={epreuve.id} duree={epreuve.duree} onChange={setExamenEnCours} />}
               {user && !examenEnCours && <TelechargerHorsLigne id={epreuve.id} matiere={epreuve.matiere} annee={epreuve.annee} evaluation={epreuve.evaluation} />}
               {!examenEnCours && (
@@ -532,7 +542,7 @@ export function ViewerPage() {
           </div>
         </div>
 
-        <div className={outilsVisibles ? "contents" : "hidden"}>
+        <div id="lecteur-outils-sujets" className={outilsVisibles ? "contents" : "hidden"}>
           {/* Sujets multiples : rangée d'onglets pour choisir quel sujet
               afficher — le bascule revient toujours sur le sujet de l'onglet
               (jamais directement sur son corrigé). */}

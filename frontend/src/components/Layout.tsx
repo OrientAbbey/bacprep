@@ -4,14 +4,15 @@ import { IndicateurConnexion } from "./IndicateurConnexion";
 import { ServeurLent } from "./ServeurLent";
 import { BandeauAlarme } from "./BandeauAlarme";
 import { BoutonInviter } from "./Invitation";
-import { Menu, Moon, Search, Sun, X } from "lucide-react";
+import { CircleHelp, Info, Menu, Moon, Search, ShieldCheck, Sun, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
 import { PhotoProfil } from "./PhotoProfil";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
+import { NAV_ITEMS } from "./navItems";
 import { t } from "../i18n";
 
 export function Layout({ children }: { children?: React.ReactNode }) {
@@ -27,7 +28,9 @@ export function Layout({ children }: { children?: React.ReactNode }) {
     e.preventDefault();
     const q = query.trim();
     if (q) {
-      navigate(`/catalogue?q=${encodeURIComponent(q)}`);
+      // Le nonce force le catalogue à repartir de zéro même si la requête est
+      // identique à la précédente (filtres déjà posés).
+      navigate(`/catalogue?q=${encodeURIComponent(q)}`, { state: { recherche: Date.now() } });
       setQuery("");
     }
   }
@@ -66,7 +69,10 @@ export function Layout({ children }: { children?: React.ReactNode }) {
             <span className="hidden font-serif-brand text-lg sm:inline">{t("Copies & Corrigés")}</span>
           </Link>
 
-          <form onSubmit={submitSearch} className="mx-auto hidden max-w-xs flex-1 md:block">
+          {/* Recherche d'en-tête : masquée sous xl pour laisser la place aux
+              six entrées de navigation (elle reste accessible depuis
+              l'accueil, le catalogue et le tiroir). */}
+          <form onSubmit={submitSearch} className="mx-auto hidden max-w-xs flex-1 xl:block">
             <div className="relative">
               <Search
                 size={16}
@@ -91,33 +97,48 @@ export function Layout({ children }: { children?: React.ReactNode }) {
               onClick={() => setMenuOpen(true)}
               aria-label={t("Ouvrir le menu")}
               aria-expanded={menuOpen}
-              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft sm:hidden after:absolute after:-inset-1 after:rounded-full after:content-['']"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft lg:hidden after:absolute after:-inset-1 after:rounded-full after:content-['']"
             >
               <Menu size={20} strokeWidth={1.75} aria-hidden="true" />
             </button>
 
-            {/* Navigation BUREAU (visible dès sm) */}
-            <div className="hidden items-center gap-4 sm:flex">
-              <Link to="/" className="hover:text-ink">
-                {t("Accueil")}
-              </Link>
-              <Link to="/entrainement" className="hover:text-ink">
-                {t("Entraînement")}
-              </Link>
-              <Link to="/abonnement" className="hover:text-ink">
-                {t("Abonnement")}
-              </Link>
-              <Link to="/aide" className="hover:text-ink">
+            {/* Navigation BUREAU (visible dès lg) : mêmes entrées que le
+                tiroir mobile et la barre d'onglets, via `navItems.ts`.
+                La page ouverte est colorée comme dans la barre d'onglets. */}
+            <div className="hidden items-center gap-4 lg:flex">
+              {NAV_ITEMS.map(({ to, label, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  className={({ isActive }) =>
+                    isActive ? "font-medium text-highlight-text" : "hover:text-ink"
+                  }
+                >
+                  {t(label)}
+                </NavLink>
+              ))}
+              <NavLink
+                to="/aide"
+                className={({ isActive }) =>
+                  isActive ? "font-medium text-highlight-text" : "hover:text-ink"
+                }
+              >
                 {t("Aide")}
-              </Link>
+              </NavLink>
               {/* Console admin : réservée aux comptes de la liste blanche
                   (is_admin calculé serveur) — le lien ne s'affiche même pas
                   pour les autres ; la route reste de toute façon protégée par
                   le jeton admin vérifié à chaque appel API. */}
               {user?.is_admin && (
-                <Link to="/admin" className="hover:text-ink">
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) =>
+                    isActive ? "font-medium text-highlight-text" : "hover:text-ink"
+                  }
+                >
                   {t("Admin")}
-                </Link>
+                </NavLink>
               )}
 
               {user ? (
@@ -168,7 +189,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
       {/* Tiroir de navigation MOBILE : Accueil, Abonnement, Admin (si admin),
           recherche et compte — masqué à partir de sm (papillon bureau). */}
       {menuOpen && (
-        <div className="fixed inset-0 z-50 sm:hidden" role="dialog" aria-modal="true" aria-label={t("Menu")}>
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label={t("Menu")}>
           <div className="absolute inset-0 bg-ink/40" onClick={() => setMenuOpen(false)} aria-hidden="true" />
           <div className="absolute inset-y-0 right-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto border-l border-ink-soft/15 bg-paper p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
@@ -177,7 +198,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 type="button"
                 onClick={() => setMenuOpen(false)}
                 aria-label={t("Fermer le menu")}
-className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
               >
                 <X size={18} strokeWidth={1.75} aria-hidden="true" />
               </button>
@@ -201,26 +222,81 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
             </form>
 
             <nav className="flex flex-col gap-1">
-              <Link to="/" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                {t("Accueil")}
-              </Link>
-              <Link to="/entrainement" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                {t("Entraînement")}
-              </Link>
-              <Link to="/abonnement" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                {t("Abonnement")}
-              </Link>
-              <Link to="/aide" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                {t("Aide")}
-              </Link>
-              <Link to="/a-propos" className="rounded-lg px-3 py-2.5 hover:bg-highlight-soft">
-                {t("À propos")}
-              </Link>
-              <BoutonInviter variante="lien" className="rounded-lg px-3 py-2.5 text-left hover:bg-highlight-soft" />
+              {NAV_ITEMS.map(({ to, label, Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-lg px-3 py-2.5 ${
+                      isActive
+                        ? "bg-highlight-soft font-medium text-highlight-text"
+                        : "hover:bg-highlight-soft"
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Icon
+                        size={18}
+                        strokeWidth={1.75}
+                        aria-hidden="true"
+                        className={`shrink-0 ${isActive ? "" : "text-ink-soft"}`}
+                      />
+                      {t(label)}
+                    </>
+                  )}
+                </NavLink>
+              ))}
+              <NavLink
+                to="/aide"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 rounded-lg px-3 py-2.5 ${
+                    isActive
+                      ? "bg-highlight-soft font-medium text-highlight-text"
+                      : "hover:bg-highlight-soft"
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <CircleHelp size={18} strokeWidth={1.75} aria-hidden="true" className={`shrink-0 ${isActive ? "" : "text-ink-soft"}`} />
+                    {t("Aide")}
+                  </>
+                )}
+              </NavLink>
+              <NavLink
+                to="/a-propos"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 rounded-lg px-3 py-2.5 ${
+                    isActive
+                      ? "bg-highlight-soft font-medium text-highlight-text"
+                      : "hover:bg-highlight-soft"
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <Info size={18} strokeWidth={1.75} aria-hidden="true" className={`shrink-0 ${isActive ? "" : "text-ink-soft"}`} />
+                    {t("À propos")}
+                  </>
+                )}
+              </NavLink>
+              <BoutonInviter variante="lien" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-highlight-soft" />
               {user?.is_admin && (
-                <Link to="/admin" className="rounded-lg px-3 py-2.5 font-medium text-highlight-text hover:bg-highlight-soft">
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium ${
+                      isActive
+                        ? "bg-highlight-soft text-highlight-text"
+                        : "text-highlight-text hover:bg-highlight-soft"
+                    }`
+                  }
+                >
+                  <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
                   {t("Admin")}
-                </Link>
+                </NavLink>
               )}
             </nav>
 
@@ -258,23 +334,23 @@ className="relative flex h-9 w-9 items-center justify-center rounded-full hover:
       <main className="w-full flex-1 px-4 py-6 pb-24 sm:pb-6 md:px-6 lg:px-8">{children ?? <Outlet />}</main>
 
       <BottomNav />
-      <footer data-chrome className="border-t border-ink-soft/15 px-4 py-6 text-center text-xs text-slate">
-        <nav aria-label={t("Informations")} className="mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-          <Link to="/confidentialite" className="min-h-[44px] leading-[44px] hover:text-ink">
+      <footer data-chrome className="border-t border-ink-soft/15 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 text-center text-xs text-slate sm:pb-6">
+        <nav aria-label={t("Informations")} className="mb-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-0.5">
+          <Link to="/confidentialite" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink">
             {t("Confidentialité")}
           </Link>
-          <Link to="/conditions" className="min-h-[44px] leading-[44px] hover:text-ink">
+          <Link to="/conditions" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink">
             {t("Conditions")}
           </Link>
-          <Link to="/a-propos" className="min-h-[44px] leading-[44px] hover:text-ink">
+          <Link to="/a-propos" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink">
             {t("À propos")}
           </Link>
-          <Link to="/aide" className="min-h-[44px] leading-[44px] hover:text-ink">
+          <Link to="/aide" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink">
             {t("Aide")}
           </Link>
-          <BoutonInviter variante="lien" className="min-h-[44px] hover:text-ink" />
+          <BoutonInviter variante="lien" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink" />
         </nav>
-        {t("Copies & Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)")}
+        <p className="mt-0.5">{t("Copies & Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)")}</p>
       </footer>
     </div>
   );

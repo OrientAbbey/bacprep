@@ -103,9 +103,29 @@ export function SubscribePage() {
   // Formule choisie ; à défaut, la première formule de la portée courante.
   const plan = pricing?.plans.find((p) => p.id === planId && p.scope === scope) ?? pricing?.plans.find((p) => p.scope === scope);
 
-  const chargerTarifs = useCallback(() => {
+  // Primitive (et non l'identité de `searchParams`, qui peut changer à
+  // chaque rendu du routeur) : évite de relancer les requêtes inutilement.
+  const epreuveIdPre = searchParams.get("epreuve_id") ?? "";
+
+  const chargerTarifs = useCallback(async () => {
     setErreurPricing(false);
-    api.get<Pricing>("/api/pricing").then(setPricing).catch(() => setErreurPricing(true));
+    // Une relance automatique avant l'état d'erreur : un échec transitoire
+    // (cold start, requête interrompue, service worker obsolète) ne doit pas
+    // condamner la page. Le bouton « Réessayer » reste disponible ensuite.
+    for (let essai = 0; essai < 2; essai += 1) {
+      if (essai > 0) await new Promise((resolve) => setTimeout(resolve, 600));
+      try {
+        const res = await api.get<Pricing>("/api/pricing");
+        // Garde de forme : sans tableau `plans`, la page planterait plus loin.
+        if (res && Array.isArray(res.plans)) {
+          setPricing(res);
+          return;
+        }
+      } catch {
+        // Nouvelle tentative (une seule) ; l'erreur n'est signalée qu'à la fin.
+      }
+    }
+    setErreurPricing(true);
   }, []);
 
   useEffect(() => {
@@ -116,12 +136,11 @@ export function SubscribePage() {
     api.get<EpreuveListItem[]>("/api/epreuves?limit=100").then(setEpreuves).catch(() => {});
 
     // Préremplissage depuis le catalogue (clic sur une épreuve verrouillée)
-    const pre = searchParams.get("epreuve_id");
-    if (pre) {
+    if (epreuveIdPre) {
       setScope("epreuve");
-      setEpreuveId(pre);
+      setEpreuveId(epreuveIdPre);
     }
-  }, [searchParams, chargerTarifs]);
+  }, [epreuveIdPre, chargerTarifs]);
 
   // Filtres dynamiques dans le cadre de la classe choisie.
   useEffect(() => {

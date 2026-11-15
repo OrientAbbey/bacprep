@@ -1,4 +1,4 @@
-"""Entraînement : routes publiques (variantes sans réponses, correction à part, signalement) et back-office (validation liée au hash, aperçu, signalements).
+"""Entraînement : routes réservées aux comptes connectés (variantes sans réponses, correction à part, signalement) et back-office (validation liée au hash, aperçu, signalements).
 
 Les vrais gabarits livrés (app/gabarits/) servent de données. Les gabarits « cassés » ou « modifiés » sont injectés en remplaçant le cache de `gabarits.tous()`."""
 from __future__ import annotations
@@ -49,27 +49,36 @@ def valider(admin, gid: str = GID):
     assert r.status_code == 200, r.text
 
 
-# --- Public -----------------------------------------------------------------------------------------------------------------
+# --- Élèves connectés --------------------------------------------------------------------------------------------------------
 
-def test_rien_n_est_public_avant_validation(visiteur, admin):
-    assert visiteur.get(URL).json() == []
-    assert visiteur.get(f"{URL}/{GID}").status_code == 404
-    assert visiteur.get(f"{URL}/{GID}/correction?graine=1").status_code == 404
-    assert visiteur.get(f"{URL}/{GID}").json()["detail"] == "Exercice introuvable"
+def test_exercices_reserves_aux_comptes_connectes(visiteur, admin):
+    """Plus rien n'est public : sans session, on refuse AVANT de révéler
+    l'existence d'un gabarit (même validé)."""
+    valider(admin)
+    assert visiteur.get(URL).status_code == 401
+    assert visiteur.get(f"{URL}/{GID}?graine=1").status_code == 401
+    assert visiteur.get(f"{URL}/{GID}/correction?graine=1").status_code == 401
 
 
-def test_liste_des_gabarits_valides(visiteur, admin):
+def test_rien_n_est_visible_avant_validation(eleve, admin):
+    assert eleve.get(URL).json() == []
+    assert eleve.get(f"{URL}/{GID}").status_code == 404
+    assert eleve.get(f"{URL}/{GID}/correction?graine=1").status_code == 404
+    assert eleve.get(f"{URL}/{GID}").json()["detail"] == "Exercice introuvable"
+
+
+def test_liste_des_gabarits_valides(eleve, admin):
     valider(admin)
     valider(admin, "suite-arithmetique")
-    liste = visiteur.get(URL).json()
+    liste = eleve.get(URL).json()
     assert {x["id"] for x in liste} == {GID, "suite-arithmetique"}
     assert set(liste[0]) == {"id", "titre", "matiere", "classes", "chapitre", "difficulte", "total_points"}
     assert [(x["matiere"], x["chapitre"]) for x in liste] == sorted((x["matiere"], x["chapitre"]) for x in liste)
 
 
-def test_variante_deterministe_et_sans_reponses(visiteur, admin):
+def test_variante_deterministe_et_sans_reponses(eleve, admin):
     valider(admin)
-    r1, r2 = visiteur.get(f"{URL}/{GID}?graine=123"), visiteur.get(f"{URL}/{GID}?graine=123")
+    r1, r2 = eleve.get(f"{URL}/{GID}?graine=123"), eleve.get(f"{URL}/{GID}?graine=123")
     assert r1.status_code == 200 and r1.json() == r2.json()
     corps = r1.json()
     assert set(corps) == {"id", "titre", "graine", "enonce", "questions", "total_points"} and corps["graine"] == 123
@@ -77,57 +86,57 @@ def test_variante_deterministe_et_sans_reponses(visiteur, admin):
     assert corps["enonce"] == inst["enonce"] and [q["enonce"] for q in corps["questions"]] == [q["enonce"] for q in inst["questions"]]
     texte = json.dumps(corps, ensure_ascii=False)
     assert all(c["reponse"] not in texte and c["etapes"] not in texte for c in inst["corrections"])
-    assert visiteur.get(f"{URL}/{GID}?graine=124").json() != corps
+    assert eleve.get(f"{URL}/{GID}?graine=124").json() != corps
 
 
-def test_sans_graine_le_serveur_en_tire_une(visiteur, admin):
+def test_sans_graine_le_serveur_en_tire_une(eleve, admin):
     valider(admin)
-    graines = {visiteur.get(f"{URL}/{GID}").json()["graine"] for _ in range(6)}
+    graines = {eleve.get(f"{URL}/{GID}").json()["graine"] for _ in range(6)}
     assert len(graines) >= 2 and all(0 <= x <= g.GRAINE_MAX for x in graines)
-    rejouee = visiteur.get(f"{URL}/{GID}?graine={next(iter(graines))}").json()
+    rejouee = eleve.get(f"{URL}/{GID}?graine={next(iter(graines))}").json()
     assert rejouee["graine"] == next(iter(graines))  # la graine rendue suffit à retrouver la variante
 
 
 @pytest.mark.parametrize("graine", ["-1", str(g.GRAINE_MAX + 1), "abc", "1.5", ""])
-def test_graine_invalide_422(visiteur, admin, graine):
+def test_graine_invalide_422(eleve, admin, graine):
     valider(admin)
-    assert visiteur.get(f"{URL}/{GID}?graine={graine}").status_code == 422
-    assert visiteur.get(f"{URL}/{GID}/correction?graine={graine}").status_code == 422
+    assert eleve.get(f"{URL}/{GID}?graine={graine}").status_code == 422
+    assert eleve.get(f"{URL}/{GID}/correction?graine={graine}").status_code == 422
 
 
-def test_correction_a_part_et_exacte(visiteur, admin):
+def test_correction_a_part_et_exacte(eleve, admin):
     valider(admin)
-    r = visiteur.get(f"{URL}/{GID}/correction?graine=77")
+    r = eleve.get(f"{URL}/{GID}/correction?graine=77")
     assert r.status_code == 200
     assert r.json() == g.vue_correction(g.tous()[0][GID].instancier(77))
-    assert visiteur.get(f"{URL}/{GID}/correction").status_code == 422  # la graine est obligatoire
+    assert eleve.get(f"{URL}/{GID}/correction").status_code == 422  # la graine est obligatoire
 
 
-def test_id_inconnu_ou_etrange(visiteur, admin):
+def test_id_inconnu_ou_etrange(eleve, admin):
     valider(admin)
     for mauvais in ("inconnu", "..%2F..%2Fetc%2Fpasswd", "DERIVEE", "x" * 200):
-        assert visiteur.get(f"{URL}/{mauvais}").status_code == 404
+        assert eleve.get(f"{URL}/{mauvais}").status_code == 404
 
 
-def test_gabarit_modifie_cesse_d_etre_public_jusqu_a_revalidation(visiteur, admin, monkeypatch):
+def test_gabarit_modifie_cesse_d_etre_public_jusqu_a_revalidation(eleve, admin, monkeypatch):
     valider(admin)
-    assert visiteur.get(f"{URL}/{GID}?graine=1").status_code == 200
+    assert eleve.get(f"{URL}/{GID}?graine=1").status_code == 200
     _remplacer(monkeypatch, GID, titre="Titre modifié après validation")
-    assert visiteur.get(f"{URL}/{GID}?graine=1").status_code == 404 and visiteur.get(URL).json() == []
+    assert eleve.get(f"{URL}/{GID}?graine=1").status_code == 404 and eleve.get(URL).json() == []
     ligne = next(x for x in admin.get(ADM).json()["gabarits"] if x["id"] == GID)
     assert ligne["statut"] == "modifie"
     valider(admin)
-    assert visiteur.get(f"{URL}/{GID}?graine=1").json()["titre"] == "Titre modifié après validation"
+    assert eleve.get(f"{URL}/{GID}?graine=1").json()["titre"] == "Titre modifié après validation"
 
 
-def test_limite_de_debit_public(visiteur, admin, monkeypatch):
+def test_limite_de_debit(eleve, admin, monkeypatch):
     from app.routers import entrainement
 
     valider(admin)
     monkeypatch.setenv("ENTRAINEMENT_RATE_LIMIT", "1")
     monkeypatch.setattr(entrainement._limiter, "_max", 3)
     entrainement._limiter._attempts.clear()
-    codes = [visiteur.get(f"{URL}/{GID}?graine=1").status_code for _ in range(4)]
+    codes = [eleve.get(f"{URL}/{GID}?graine=1").status_code for _ in range(4)]
     entrainement._limiter._attempts.clear()
     assert codes == [200, 200, 200, 429]
 
@@ -211,12 +220,12 @@ def test_validation_refusee_si_le_rapport_automatique_echoue(admin, monkeypatch)
     assert ligne["statut"] == "a_valider" and not ligne["rapport"]["ok"]
 
 
-def test_retirer_la_validation(admin, visiteur, db):
+def test_retirer_la_validation(admin, eleve, db):
     from app.db_models import AdminEventORM
 
     valider(admin)
     assert admin.delete(f"{ADM}/{GID}/validation").status_code == 200
-    assert visiteur.get(URL).json() == []
+    assert eleve.get(URL).json() == []
     assert next(x for x in admin.get(ADM).json()["gabarits"] if x["id"] == GID)["statut"] == "a_valider"
     assert db.query(AdminEventORM).filter(AdminEventORM.action == "gabarit_validation_retiree").count() == 1
     assert admin.delete(f"{ADM}/{GID}/validation").status_code == 200  # sans effet, sans nouvel événement

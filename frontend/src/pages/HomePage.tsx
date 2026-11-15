@@ -75,7 +75,9 @@ export function HomePage() {
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
     const q = query.trim();
-    if (q) navigate(`/catalogue?q=${encodeURIComponent(q)}`);
+    // Le nonce force le catalogue à repartir de zéro même si la requête est
+    // identique à la précédente (filtres déjà posés).
+    if (q) navigate(`/catalogue?q=${encodeURIComponent(q)}`, { state: { recherche: Date.now() } });
   }
 
   return (

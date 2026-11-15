@@ -137,6 +137,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const completeLogin = useCallback(
     (me: User) => {
       setUser(me);
+      // Le service worker met en cache /api/auth/me (lecture hors-ligne). Sans
+      // purge, un /me lent au prochain chargement (démarrage à froid) pouvait
+      // resservir l'ANCIEN compte après un changement de compte Google.
+      if (typeof caches !== "undefined") caches.delete("session").catch(() => {});
       closeSocket(false);
       intentionalClose.current = false;
       reconnectAttempt.current = 0;

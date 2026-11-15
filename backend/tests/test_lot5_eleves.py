@@ -50,6 +50,20 @@ def test_essai_valide_la_note_et_l_acces(eleve, epreuve_gratuite, epreuve_payant
     assert eleve.post("/api/me/essais", json={"epreuve_id": "inconnue", "note": 12}).status_code == 404
 
 
+def test_a_revoir_est_idempotent(eleve, epreuve_gratuite):
+    """Deux clics sur « À revoir » ne créent qu'un essai sans note tant que la
+    révision demandée n'est pas encore due (sinon l'échéance reculait à chaque
+    clic)."""
+    for _ in range(2):
+        r = eleve.post("/api/me/essais", json={"epreuve_id": epreuve_gratuite, "note": None})
+        assert r.status_code == 200
+    assert r.json().get("deja") is True
+    h = eleve.get("/api/me/essais").json()
+    assert sum(1 for e in h["essais"] if e["epreuve_id"] == epreuve_gratuite and e["note"] is None) == 1
+    # Un essai NOTÉ reste possible : « À revoir » n'a rien bloqué.
+    assert eleve.post("/api/me/essais", json={"epreuve_id": epreuve_gratuite, "note": 12}).status_code == 200
+
+
 def test_revisions_calculees_depuis_les_essais(eleve, epreuve_gratuite):
     uid = eleve.get("/api/auth/me").json()["id"]
     assert eleve.post("/api/me/essais", json={"epreuve_id": epreuve_gratuite, "note": 8}).status_code == 200

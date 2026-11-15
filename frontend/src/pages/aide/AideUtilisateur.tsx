@@ -10,7 +10,7 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
     points: [
       t("Depuis l'accueil, choisis ta classe, puis une matière : les épreuves sont regroupées par année."),
       t("La barre de recherche de l'en-tête retrouve une épreuve par sa matière, son année ou sa série, même sans accents."),
-      t("Sans compte, tu peux consulter les épreuves gratuites. Connecte-toi pour utiliser le Tuteur IA, prendre des notes et suivre ton activité."),
+      t("Sans compte, tu peux consulter les épreuves gratuites. Connecte-toi pour faire les exercices d'entraînement, utiliser le Tuteur IA, prendre des notes et suivre ton activité."),
       t("Certaines épreuves demandent un abonnement : les formules sont présentées sur la page Abonnement."),
     ],
   },

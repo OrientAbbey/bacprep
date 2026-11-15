@@ -46,6 +46,22 @@ def _label(e: EpreuveORM) -> dict:
 @router.post("/essais")
 def enregistrer(payload: EssaiIn, db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
     get_public_epreuve_or_404(db, payload.epreuve_id, user)  # accès (abonnement) vérifié
+    # « À revoir » est IDEMPOTENT : tant que la révision demandée n'est pas
+    # encore due, un second clic (double-clic, retour sur la page) ne crée pas
+    # un doublon qui décalerait inutilement l'échéance.
+    if payload.note is None:
+        dernier = (
+            db.query(EssaiORM)
+            .filter(EssaiORM.user_id == user.id, EssaiORM.epreuve_id == payload.epreuve_id)
+            .order_by(EssaiORM.created_at.desc())
+            .first()
+        )
+        if (
+            dernier is not None
+            and dernier.note is None
+            and dernier.created_at + timedelta(days=intervalle_jours(None, 1)) > utc_now()
+        ):
+            return {"ok": True, "deja": True}
     db.add(EssaiORM(user_id=user.id, epreuve_id=payload.epreuve_id, note=payload.note, duree_s=payload.duree_s))
     db.commit()
     return {"ok": True}

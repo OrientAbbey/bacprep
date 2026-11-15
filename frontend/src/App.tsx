@@ -79,14 +79,6 @@ export default function App() {
                 <Route path="/abonnement" element={<SubscribePage />} />
                 <Route path="/calendrier" element={<CalendrierPage />} />
                 <Route
-                  path="/entrainement"
-                  element={
-                    <Suspense fallback={<Skeleton className="h-64" />}>
-                      <EntrainementPage />
-                    </Suspense>
-                  }
-                />
-                <Route
                   path="/aide"
                   element={
                     <Suspense fallback={<Skeleton className="h-64" />}>
@@ -124,8 +116,18 @@ export default function App() {
               {/* Routes sans Layout */}
               <Route path="/connexion" element={<LoginPage />} />
 
-              {/* Routes protégées auth avec Layout */}
+              {/* Routes protégées auth avec Layout : l'entraînement est
+                  réservé aux comptes connectés (les exercices ne sont ni
+                  publics ni indexables). */}
               <Route element={<RequireAuth><Layout /></RequireAuth>}>
+                <Route
+                  path="/entrainement"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <EntrainementPage />
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="/profil"
                   element={

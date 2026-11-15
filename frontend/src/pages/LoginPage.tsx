@@ -58,6 +58,27 @@ export function LoginPage() {
     }
   }
 
+  // Le choix du compte Google aboutit ici. Sans ce catch, un refus du serveur
+  // (jeton invalide, limite de tentatives, cookie bloqué…) laissait la page
+  // de connexion affichée sans aucune explication.
+  async function connecterAvecGoogle(credential: string) {
+    if (enCours) return;
+    setError(null);
+    setEnCours(true);
+    try {
+      await loginGoogle(credential);
+      navigate(from);
+    } catch (err) {
+      setError(
+        messageErreurConnexion(
+          err,
+          t("Connexion Google refusée — choisis un autre compte et réessaie."),
+        ),
+      );
+      setEnCours(false);
+    }
+  }
+
   return (
     <div className="relative flex min-h-screen flex-col bg-paper text-ink">
       {/* En-tête épuré : la page de connexion n'a pas la navigation du site ;
@@ -102,11 +123,23 @@ export function LoginPage() {
           )}
 
           {config?.mode === "google" && config.google_client_id && (
-            <div className="flex justify-center">
+            <div className="flex flex-col items-center">
               <GoogleSignInButton
                 clientId={config.google_client_id}
-                onCredential={(cred) => loginGoogle(cred).then(() => navigate(from))}
+                onCredential={connecterAvecGoogle}
+                disabled={enCours}
               />
+              {enCours && (
+                <p className="mt-3 flex items-center gap-2 text-xs text-ink-soft" role="status">
+                  <Spinner />
+                  {t("Connexion…")}
+                </p>
+              )}
+              {error && (
+                <p role="alert" className="mt-3 text-sm text-correction">
+                  {error}
+                </p>
+              )}
             </div>
           )}
 
