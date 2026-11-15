@@ -128,6 +128,71 @@ def _ensure_epreuve_files_sujet_index() -> None:
             conn.execute(sa_text("ALTER TABLE epreuve_files ADD COLUMN sujet_index INTEGER NOT NULL DEFAULT 0"))
 
 
+def _migrer_schema() -> None:
+    """Amène une base existante au schéma attendu par le code déployé.
+
+    Ces réparations étaient auparavant réservées à
+    `scripts_dev/migrate_2026_11.py`, qu'un déploiement Render n'exécute pas :
+    une base en retard faisait échouer l'ORM à la première requête
+    (`UndefinedColumn: plans.prix_ak` → `500` sur `/api/pricing`, et lecture
+    impossible de `users.matricule` / `users.solde_ak` à la connexion).
+
+    Un échec ici ne doit pas empêcher le démarrage (le service resterait alors
+    totalement indisponible) : on journalise l'erreur en ERROR — elle est
+    visible dans les logs Render — et la route concernée continuera de
+    répondre `500` jusqu'à la correction. Le rétrofill des matricules et des
+    prix AK est lui aussi non bloquant.
+    """
+    from .core.schema_migrations import (
+        assurer_index,
+        reparer_schema,
+        retrofill_matricules,
+        retrofill_prix_ak,
+    )
+
+    try:
+        applique = reparer_schema(engine)
+        if applique["renommees"] or applique["ajoutees"]:
+            log.info(
+                "Schéma réparé — renommages : %s ; colonnes ajoutées : %s",
+                applique["renommees"] or "aucun",
+                applique["ajoutees"] or "aucune",
+            )
+    except Exception:
+        log.exception(
+            "Réparation du schéma impossible — les routes lisant les colonnes "
+            "manquantes répondront 500 jusqu'à correction"
+        )
+        return
+
+    try:
+        crees = assurer_index(engine)
+        if crees:
+            log.info("Index créés : %s", crees)
+    except Exception:
+        log.exception("Création des index impossible (sans impact sur les routes)")
+
+    db = SessionLocal()
+    try:
+        matricules = retrofill_matricules(db)
+        if matricules:
+            log.info("Rétrofill : %d matricule(s) attribué(s)", matricules)
+    except Exception:
+        log.exception("Rétrofill des matricules impossible")
+    finally:
+        db.close()
+
+    db = SessionLocal()
+    try:
+        prix_ak = retrofill_prix_ak(db)
+        if prix_ak:
+            log.info("Rétrofill : %d formule(s) dotée(s) d'un prix AK", prix_ak)
+    except Exception:
+        log.exception("Rétrofill des prix AK impossible")
+    finally:
+        db.close()
+
+
 def _ensure_epreuve_files_document_unique() -> None:
     """Migration minimale et idempotente : crée l'index unique partiel
     `uq_epreuve_files_document` sur les documents Markdown.
@@ -245,6 +310,11 @@ async def lifespan(app: FastAPI):
     _ensure_users_role_column()
     _ensure_epreuve_files_sujet_index()
     _ensure_epreuve_files_document_unique()
+    # Après `create_all` (les tables neuves sont complètes) et après les
+    # micro-migrations historiques : complète les bases antérieures au
+    # chantier « matricule + monnaie AK » (colonnes `plans.prix_ak`,
+    # `users.solde_ak`…), sans quoi l'ORM échoue sur ces colonnes.
+    _migrer_schema()
     db = SessionLocal()
     try:
         from .core.referentiel_options import seed_referentiel_options

@@ -69,7 +69,7 @@ class UserORM(Base):
     # Identifiant public DICTABLE (ex. « CC-26-A7K3M9 ») : généré serveur à
     # la création, sans aucune donnée personnelle. NULL uniquement pour les
     # comptes créés avant la migration 2026-11 (rétrofillés par
-    # `scripts_dev/migrate_2026_11.py`) ; l'unicité est garantie par l'index.
+    # `core.schema_migrations`, appliqué au démarrage) ; l'unicité est garantie par l'index.
     matricule = Column(String(16), unique=True, nullable=True, index=True)
     # Monnaie AK (voir core/ak.py) : le solde est DÉNORMALISÉ pour l'affichage
     # rapide, mais la source de vérité comptable est `ak_mouvements`

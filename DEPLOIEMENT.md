@@ -201,12 +201,25 @@ schéma.
 est automatiquement peuplée des 3 épreuves d'exemple au démarrage.
 
 ⚠️ **Évolution d'une base EXISTANTE** : `create_all` ne crée que les tables
-absentes, jamais les nouvelles colonnes. Après une mise à jour du code
-touchant au schéma, exécuter la migration idempotente (compatible
-SQLite/PostgreSQL) :
+absentes, jamais les nouvelles colonnes. Les ajouts de colonnes ne sont donc
+pas tous automatiques : appliquer la migration correspondant à l'évolution
+avant d'utiliser les nouvelles fonctions. La migration `2026_09` reste à
+exécuter manuellement (SQLite/PostgreSQL) :
 
 ```bash
 python -m scripts_dev.migrate_2026_09
+```
+
+La migration `2026_11` (« matricule + monnaie AK ») est, elle, appliquée de
+façon idempotente au démarrage du backend : renommages historiques de colonnes
+`plans`, ajout des colonnes manquantes (`users`, `plans`, `payments`), index
+et rétrofill des matricules et prix AK. Cela évite qu'une base en retard casse
+`/api/pricing` ou les routes de connexion. Le backend journalise les erreurs
+de migration sans bloquer son démarrage ; vérifier les logs Render après une
+mise à jour. Pour lancer/réexécuter cette migration hors ligne depuis `backend/` :
+
+```bash
+python -m scripts_dev.migrate_2026_11
 ```
 
 Pour déployer le générateur V4.10 sur une base existante, exécuter également
@@ -263,7 +276,8 @@ lien admin n'apparaît que pour ces comptes).
 Les nouvelles variables sont déjà dans `render.yaml` (valeurs par défaut) ; seuls les secrets se saisissent dans Render.
 
 1. **Tables nouvelles** (`plans`, `evenements`, `essais`) : créées automatiquement au démarrage ; les
-   formules par défaut sont insérées si la table `plans` est vide. **Aucune table existante n'est modifiée.**
+   formules par défaut sont insérées si la table `plans` est vide. Les colonnes anciennes sont complétées par
+   les migrations idempotentes décrites ci-dessus ; aucune donnée existante n'est supprimée.
 2. **Recherche sans accents** : l'extension PostgreSQL `unaccent` est activée au démarrage
    (`CREATE EXTENSION IF NOT EXISTS unaccent`, extension « de confiance » : testée avec un rôle non
    superutilisateur). Si l'activation échoue, la recherche reste sensible aux accents (avertissement dans les logs).

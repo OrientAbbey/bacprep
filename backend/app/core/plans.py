@@ -30,7 +30,8 @@ _LIBELLES_EN = {
 # avantage croît avec la taille de la formule — c'est l'incitation voulue.
 # Un `None` rendrait la formule non payable en AK ; ces valeurs ne sont
 # appliquées qu'aux bases NEUVES (voir `seed_plans`), le backfill des bases
-# existantes est fait par `scripts_dev/migrate_2026_11.py` — le seed ne
+# existantes est fait par `core.schema_migrations` (aussi disponible via
+# `scripts_dev/migrate_2026_11.py`) — le seed ne
 # s'exécute jamais sur une table `plans` déjà peuplée.
 _DEFAUTS_AK: dict[str, int] = {
     "epreuve": 25,
