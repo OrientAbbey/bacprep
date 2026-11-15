@@ -10,7 +10,7 @@ import asyncio
 import json
 from fractions import Fraction
 
-import httpx
+import httpx2 as httpx
 import pytest
 
 from app.core import assistant
