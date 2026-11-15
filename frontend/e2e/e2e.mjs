@@ -1539,28 +1539,36 @@ console.log("\nAssistant d'édition : application automatique");
   });
 
   await test("échecs : extrait introuvable puis ambigu — rien n'est appliqué, rien à annuler", async () => {
+    const avant = await zone(0).inputValue();
     await poser("Corrige", bloc("remplacer-sujet:1", paire("Texte absent du sujet", "X")));
     await page.getByText(/extrait introuvable/).waitFor({ timeout: 10000 });
+    ok((await zone(0).inputValue()) === avant, "le sujet a été modifié après un extrait introuvable");
     await poser("Corrige encore", bloc("remplacer-sujet:1", paire("calculer la dérivée", "Y")));
     await page.getByText(/extrait présent plusieurs fois/).waitFor({ timeout: 10000 });
-    ok((await zone(0).inputValue()) === BROUILLON, "le sujet a été modifié malgré l'échec");
+    ok((await zone(0).inputValue()) === avant, "le sujet a été modifié malgré l'échec");
     ok((await surligne().count()) === 0 && (await boutonAnnuler.count()) === 0, "un échec ne doit rien signaler ni proposer d'annuler");
     ok((await d.getByText("Appliqué automatiquement au formulaire").count()) === 0, "faux « appliqué »");
   });
 
   await test("case décochée : rien n'est appliqué tout seul, bouton manuel, préférence mémorisée", async () => {
+    const avant = await zone(0).inputValue();
     await d.getByLabel("Appliquer automatiquement").uncheck();
-    await poser("Précise l'exercice 2", bloc("remplacer-sujet:1", paire("Exercice 2 : calculer la dérivée de g.", "Exercice 2 : calculer la dérivée de g(x) = 3x.")));
-    const manuel = d.getByRole("button", { name: "Appliquer 1 modification au sujet 1" });
-    await manuel.waitFor({ timeout: 10000 });
-    ok((await zone(0).inputValue()) === BROUILLON, "appliqué malgré la case décochée");
-    await manuel.click();
-    await page.waitForFunction(() => document.querySelector("textarea").value.includes("g(x) = 3x"), null, { timeout: 8000 });
-    ok((await surligne(":has(textarea)").count()) === 1, "le champ modifié à la main doit aussi être signalé");
-    await page.reload();
-    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
-    ok(!(await d.getByLabel("Appliquer automatiquement").isChecked()), "la préférence n'est pas mémorisée");
-    await d.getByLabel("Appliquer automatiquement").check();
+    try {
+      await poser("Précise l'exercice 2", bloc("remplacer-sujet:1", paire("Exercice 2 : calculer la dérivée de g.", "Exercice 2 : calculer la dérivée de g(x) = 3x.")));
+      const manuel = d.getByRole("button", { name: "Appliquer 1 modification au sujet 1" });
+      await manuel.waitFor({ timeout: 10000 });
+      ok((await zone(0).inputValue()) === avant, "appliqué malgré la case décochée");
+      await manuel.click();
+      await page.waitForFunction(() => document.querySelector("textarea").value.includes("g(x) = 3x"), null, { timeout: 8000 });
+      ok((await surligne(":has(textarea)").count()) === 1, "le champ modifié à la main doit aussi être signalé");
+      await page.reload();
+      await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).click();
+      ok(!(await d.getByLabel("Appliquer automatiquement").isChecked()), "la préférence n'est pas mémorisée");
+    } finally {
+      await page.evaluate(() => localStorage.setItem("bacprep-assistant-admin-auto", "1"));
+      await page.reload();
+      await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).waitFor({ timeout: 10000 });
+    }
   });
 
   await test("sujet non affiché modifié : son onglet est signalé, et sa zone une fois ouvert", async () => {
@@ -1730,17 +1738,18 @@ console.log("\nLecteur : feuille de largeur A4 et immersion");
     // mais moins qu'avec l'ancien lecteur bas qui ne remplissait pas la page.
     ok(h1 >= h0 + 40, `zone de lecture : ${h0} → ${h1} px (site masqué ET outils repliés)`);
     // Outils repliés par défaut en immersion : plus de place encore, sans démonter les composants à état (chrono, examen).
-    await page.getByRole("button", { name: "Outils", exact: true }).waitFor({ timeout: 5000 });
+    const boutonOutils = () => page.getByRole("button", { name: /^(Afficher|Masquer) les outils$/ });
+    await boutonOutils().waitFor({ timeout: 5000 });
     ok(!(await page.getByRole("button", { name: "Examen blanc" }).isVisible()), "les outils devraient être repliés");
     await page.screenshot({ path: `${SHOTS}/lecteur-immersion.png` });
-    await page.getByRole("button", { name: "Outils", exact: true }).click();
+    await boutonOutils().click();
     await page.getByRole("button", { name: "Examen blanc" }).waitFor({ timeout: 5000 });
     ok((await boite(panneau)).height < h1 - 100, "ouvrir les outils doit reprendre de la place à la lecture");
     await page.getByRole("button", { name: "Chrono" }).evaluate((e) => (e.dataset.marque = "1")); // repère posé sur le DOM du chrono
-    await page.getByRole("button", { name: "Outils", exact: true }).click(); // replie
-    await page.getByRole("button", { name: "Outils", exact: true }).click(); // rouvre
+    await boutonOutils().click(); // replie
+    await boutonOutils().click(); // rouvre
     ok((await page.locator("[data-marque]").count()) === 1, "le chrono a été démonté puis recréé : son état serait perdu");
-    await page.getByRole("button", { name: "Outils", exact: true }).click(); // replie à nouveau
+    await boutonOutils().click(); // replie à nouveau
     await page.reload();
     await feuille.waitFor({ timeout: 15000 });
     ok(!(await page.locator("header[data-chrome]").isVisible()), "l'immersion n'est pas mémorisée");
@@ -2493,11 +2502,11 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
   await ctx.request.post(`/api/admin/notifications/${ids[0]}/toggle`);
   await page.goto("/admin");
 
-  await test("navigation : panneau latéral groupé (3 familles, 11 sections), flèches ↑↓, repli en liste déroulante sur mobile", async () => {
+  await test("navigation : panneau latéral groupé (3 familles, 12 sections), flèches ↑↓, repli en liste déroulante sur mobile", async () => {
     const liste = page.getByRole("tablist", { name: "Sections du back-office" });
     await liste.waitFor({ timeout: 15000 });
     ok((await liste.getAttribute("aria-orientation")) === "vertical", "pas vertical");
-    ok((await liste.getByRole("tab").count()) === 11, "il doit y avoir 11 sections");
+    ok((await liste.getByRole("tab").count()) === 12, "il doit y avoir 12 sections");
     for (const g of ["Contenu", "Communauté", "Système"]) await liste.getByText(g, { exact: true }).waitFor();
     const x0 = (await liste.boundingBox()).x, larg = (await liste.boundingBox()).width;
     ok(larg < 260 && x0 < 100, `panneau latéral attendu (x=${x0}, largeur=${larg})`);

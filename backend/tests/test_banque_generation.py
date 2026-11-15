@@ -13,7 +13,6 @@ Le module testé est PUR : pas de base, pas de réseau, `random.Random` injecté
 """
 from __future__ import annotations
 
-import itertools
 import random
 
 import pytest

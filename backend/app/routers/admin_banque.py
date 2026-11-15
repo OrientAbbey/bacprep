@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,13 +17,12 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..core import referentiel, referentiel_options as ref_store
+from ..core import referentiel
 from ..core.banque_generation import DIFFICULTES, SPECIAL_AUCUNE
 from ..db import get_db, utc_now
 from ..db_models import (
     BanqueClasseMetaORM,
     BanqueExerciceORM,
-    BanqueGenerationORM,
     BanqueJournalORM,
     BanquePartieORM,
     ReferentielOptionORM,
