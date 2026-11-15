@@ -2394,7 +2394,9 @@ console.log("\nConnexion, état du réseau, A−/A+ flottant");
       await route.continue();
     });
     await page.goto("/admin");
-    await page.locator("#admin-login-email").fill(ADMIN.email);
+    // Le formulaire ne demande plus d'e-mail : l'identité vient de la session
+    // élève déjà ouverte (connecterEleve ci-dessus), le jeton suffit.
+    ok((await page.locator("#admin-login-email").count()) === 0, "le champ e-mail est encore présent sur /admin");
     await page.locator("#admin-login-token").fill("mauvais-jeton");
     const bouton = page.getByRole("button", { name: /Se connecter/ });
     await bouton.click();
@@ -2411,7 +2413,7 @@ console.log("\nConnexion, état du réseau, A−/A+ flottant");
   await test("connexion admin : jeton refusé → message d'identifiants ; réseau coupé → message de connexion (jamais l'inverse)", async () => {
     await page.locator("#admin-login-token").fill("encore-faux");
     await page.getByRole("button", { name: /Se connecter/ }).click();
-    await page.getByText("Connexion refusée — vérifie l'e-mail et le jeton.").waitFor({ timeout: 8000 });
+    await page.getByText("Jeton refusé, ou session expirée — reconnecte-toi à l'application puis réessaie.").waitFor({ timeout: 8000 });
     await ctx.setOffline(true);
     await page.locator("#admin-login-token").fill("peu-importe");
     await page.getByRole("button", { name: /Se connecter/ }).click();
