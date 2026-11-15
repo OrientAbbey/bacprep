@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateLongue, heureCourte } from "./dates";
+import { dateLongue, horodatageCourt } from "./dates";
 
 /** Date construite en heure LOCALE pour éviter toute dépendance au fuseau
  * de la machine qui lance les tests. */
@@ -7,16 +7,19 @@ function isoLocal(y: number, mo: number, d: number, h: number, mi: number): stri
   return new Date(y, mo - 1, d, h, mi).toISOString();
 }
 
-describe("heureCourte — timestamps des messages assistant", () => {
-  it("formate une date ISO en HH:MM", () => {
-    expect(heureCourte(isoLocal(2026, 9, 15, 14, 5))).toBe("14:05");
-    expect(heureCourte(isoLocal(2026, 9, 15, 9, 30))).toBe("09:30");
+describe("horodatageCourt — timestamps des messages assistant", () => {
+  it("formate une date ISO en date + heure (l'heure seule ne suffit pas)", () => {
+    const a = horodatageCourt(isoLocal(2026, 9, 15, 14, 5));
+    expect(a).toContain("2026");
+    expect(a).toContain("14:05");
+    // Deux jours différents ne donnent pas le même libellé.
+    expect(horodatageCourt(isoLocal(2026, 9, 16, 14, 5))).not.toBe(a);
   });
 
   it("renvoie null sans horodatage", () => {
-    expect(heureCourte(undefined)).toBeNull();
-    expect(heureCourte(null)).toBeNull();
-    expect(heureCourte("pas-une-date")).toBeNull();
+    expect(horodatageCourt(undefined)).toBeNull();
+    expect(horodatageCourt(null)).toBeNull();
+    expect(horodatageCourt("pas-une-date")).toBeNull();
   });
 });
 

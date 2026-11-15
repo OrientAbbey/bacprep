@@ -102,7 +102,9 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   `is_admin` calculé serveur, la liste n'est jamais exposée ; la console
   reste protégée par `ADMIN_TOKEN` + liste blanche à chaque appel. Seul le
   **root** peut promouvoir/révoquer un admin ; le root ne peut être ni
-  banni, ni supprimé, ni révoqué. **Déconnexion automatique uniquement
+  banni, ni supprimé, ni révoqué. Sur `/admin`, seul le jeton partagé est
+  saisi : le serveur déduit l'e-mail du compte déjà connecté et le vérifie
+  encore dans la liste blanche. **Déconnexion automatique uniquement
   après avoir quitté la console** : la page ouverte envoie un battement de
   cœur toutes les 30 s qui maintient le verrou ; le délai
   `ADMIN_SESSION_TIMEOUT_MINUTES` (défaut **3**) s'applique une fois la
