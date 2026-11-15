@@ -426,6 +426,7 @@ def test_export_et_suppression_compte(client, epreuve_payante):
             "avatar",
             "abonnements",
             "paiements",
+            "epreuves_generees",
             # Journal de la monnaie interne : donnée personnelle dérivée
             # (série de connexion, achats) — incluse au titre de la
             # portabilité (Art. 20), comme les notes et les paiements.
