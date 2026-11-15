@@ -14,6 +14,35 @@ def test_admin_login_ok_et_mauvais_jeton(client):
     assert dict(client.cookies).get("admin_session")
 
 
+def test_admin_login_sans_email_deduit_la_session_eleve(client):
+    """Le formulaire /admin ne demande plus d'e-mail : l'identité vient du
+    cookie de session élève (la console est déjà réservée aux comptes admin)."""
+    r = client.post("/api/auth/mock-login", json={"email": "admin@example.com", "nom": "Admin"})
+    assert r.status_code == 200, r.text
+    r = client.post("/api/admin/login", json={"token": "test-admin-token"})
+    assert r.status_code == 200, r.text
+    # L'e-mail utilisé est celui du compte connecté, pas une saisie libre.
+    assert r.json()["email"] == "admin@example.com"
+    assert dict(client.cookies).get("admin_session")
+
+
+def test_admin_login_sans_email_ni_session_refuse(client):
+    """Sans cookie élève, l'e-mail est indispensable : 401 explicite (et non
+    un 422 de validation, qui ne dirait pas quoi faire)."""
+    r = client.post("/api/admin/login", json={"token": "test-admin-token"})
+    assert r.status_code == 401
+    assert "e-mail" in r.json()["detail"].lower()
+
+
+def test_admin_login_sans_email_refuse_un_compte_non_admin(eleve):
+    """Le cookie élève ne suffit pas : l'e-mail déduit doit rester dans la
+    liste blanche admin, sinon n'importe quel élève connecté entrerait dans
+    la console avec le jeton partagé."""
+    r = eleve.post("/api/admin/login", json={"token": "test-admin-token"})
+    assert r.status_code == 401
+    assert "non autoris" in r.json()["detail"].lower()
+
+
 def test_routes_admin_sans_session_401(client):
     for method, path in (("get", "/api/admin/stats"), ("get", "/api/admin/epreuves"), ("get", "/api/admin/signalements")):
         r = getattr(client, method)(path)

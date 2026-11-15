@@ -60,7 +60,6 @@ function useOuvert(cle: string): [boolean, () => void] {
 export function AdminPage() {
   const { showToast } = useToast();
   const [token, setToken] = useState("");
-  const [email, setEmail] = useState("");
   const [loginToken, setLoginToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -227,8 +226,10 @@ export function AdminPage() {
     setBlocker(null);
     setConnexionEnCours(true);
     try {
-      await api.post<{ email: string }>("/api/admin/login", {
-        email,
+      // Aucun e-mail à saisir : /admin n'est accessible qu'aux comptes admin
+      // déjà connectés (RequireAdmin), le serveur déduit donc l'identité du
+      // cookie de session. Le champ e-mail du formulaire a été retiré.
+      const session = await api.post<{ email: string }>("/api/admin/login", {
         token: loginToken,
         force,
       });
@@ -238,12 +239,19 @@ export function AdminPage() {
       // Le cookie est déjà posé : charge les stats immédiatement au lieu de
       // laisser le tableau de bord sans compteurs jusqu'à un rafraîchissement.
       void loadStats("actif");
-      showToast(`Connecté en tant que ${email}.`, "success");
+      showToast(`Connecté en tant que ${session.email}.`, "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setBlocker(err.detail as { message: string; active_email: string });
       } else {
-        setError(messageErreurConnexion(err));
+        // Le formulaire ne demande plus d'e-mail : le message de refus par
+        // défaut (« vérifie l'e-mail et le jeton ») serait trompeur.
+        setError(
+          messageErreurConnexion(
+            err,
+            "Jeton refusé, ou session expirée — reconnecte-toi à l'application puis réessaie.",
+          ),
+        );
       }
     } finally {
       setConnexionEnCours(false);
@@ -272,7 +280,6 @@ export function AdminPage() {
     // session précédente restaient affichés au retour à l'écran de
     // connexion (risque sur poste partagé).
     setToken("");
-    setEmail("");
     setLoginToken("");
     setError(null);
     setBlocker(null);
@@ -295,23 +302,10 @@ export function AdminPage() {
         className="mx-auto max-w-sm space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-6"
       >
         <h1 className="font-serif-brand text-xl">Connexion administrateur</h1>
-        <div>
-          <label htmlFor="admin-login-email" className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
-            E-mail admin
-          </label>
-          <input
-            id="admin-login-email"
-            type="email"
-            placeholder="admin@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            required
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? "admin-login-error" : undefined}
-            className="min-h-[44px] w-full rounded-[2px] border border-ink-soft/25 bg-paper-raised px-3 text-sm"
-          />
-        </div>
+        <p className="text-sm text-ink-soft">
+          Ton identité est reprise du compte avec lequel tu es connecté : seul le jeton
+          d'accès est nécessaire.
+        </p>
         <div>
           <label htmlFor="admin-login-token" className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
             Jeton d'accès
@@ -369,6 +363,9 @@ export function AdminPage() {
           {connexionEnCours && <Spinner />}
           {connexionEnCours ? "Connexion…" : "Se connecter"}
         </button>
+        <Link to="/connexion" className="block text-center text-xs underline text-ink-soft">
+          Ce n'est pas ton compte ? Se reconnecter
+        </Link>
       </form>
     );
   }

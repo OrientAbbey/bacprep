@@ -67,6 +67,7 @@ def admin_login(
     payload: AdminLoginIn,
     response: Response,
     request: Request,
+    bacprep_session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ) -> dict:
     """Connexion admin : jeton partagé (ADMIN_TOKEN) + email dans la liste
@@ -74,6 +75,11 @@ def admin_login(
     connecté (verrou persisté en base, voir admin_session.py), répond 409
     avec qui est connecté depuis quand — sauf si `force=true`, qui prend le
     contrôle.
+
+    L'e-mail est FACULTATIF dans le corps : `/admin` est déjà réservé aux
+    comptes admin connectés (`RequireAdmin`), donc l'identité est déduite du
+    cookie de session élève quand le champ n'est pas envoyé. Un e-mail
+    explicitement fourni reste prioritaire (curl, scripts, tests).
 
     Le jeton de session part dans un cookie httpOnly (SameSite=Lax, Secure
     en prod) et n'est JAMAIS restitué dans le corps : un XSS même-origine ne
@@ -94,8 +100,25 @@ def admin_login(
     if not secrets.compare_digest(payload.token.encode("utf-8"), expected_token.encode("utf-8")):
         raise HTTPException(401, "Jeton invalide")
 
-    allowed = admin_session.allowed_emails(db)
     email = payload.email.strip().lower()
+    if not email:
+        # Pas d'e-mail dans le corps : on prend celui du compte connecté.
+        # Le cookie de session élève prouve l'identité (le jeton admin, lui,
+        # prouve l'autorisation) — les deux restent exigés.
+        courant = store.resolve_session(db, bacprep_session or "")
+        if not courant:
+            raise HTTPException(
+                401,
+                "Adresse e-mail manquante — reconnecte-toi à l'application puis réessaie.",
+            )
+        email = courant.email.strip().lower()
+        log.info("Connexion admin sans e-mail saisi — identité déduite de la session : %s", email)
+
+    # `email` a été résolu ci-dessus (saisie explicite OU session élève) : ne
+    # surtout pas le réécrire depuis `payload.email`, vide quand le formulaire
+    # n'envoie que le jeton — le contrôle de liste blanche tomberait alors sur
+    # une chaîne vide et refuserait un admin légitime.
+    allowed = admin_session.allowed_emails(db)
     if not allowed:
         # Sans liste blanche, quiconque devine le jeton devient admin.
         # En dev on tolère (warning) ; en production c'est un refus franc.

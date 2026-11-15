@@ -232,7 +232,11 @@ class WebhookIn(BaseModel):
 # ---------- Admin ----------
 
 class AdminLoginIn(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
+    # E-mail de l'administrateur. FACULTATIF : la console est déjà réservée aux
+    # comptes admin connectés (RequireAdmin), le serveur déduit donc l'identité
+    # du cookie de session élève quand le champ est vide. Les clients directs
+    # (curl, tests, scripts) peuvent continuer à l'envoyer.
+    email: str = Field(default="", max_length=254)
     token: str = Field(min_length=1, max_length=256)
     force: bool = False
 
