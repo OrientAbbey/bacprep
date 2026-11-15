@@ -266,8 +266,8 @@ export function UtilisateursPanel({ token }: { token: string }) {
                 <td className="py-2 pr-3 text-right">{u.discussions_ia}</td>
                 <td className="py-2 pr-3 text-right">{u.consultations}</td>
                 <td className="py-2 pr-3 text-right">{u.abonnements_actifs}</td>
-                <td className="py-2 pr-3 text-right">{u.total_depense_fcfa.toLocaleString("fr-FR")}</td>
-                <td className="py-2 pr-3 text-right font-mono-tag text-xs">{u.solde_ak.toLocaleString("fr-FR")}</td>
+                <td className="py-2 pr-3 text-right">{(u.total_depense_fcfa ?? 0).toLocaleString("fr-FR")}</td>
+                <td className="py-2 pr-3 text-right font-mono-tag text-xs">{(u.solde_ak ?? 0).toLocaleString("fr-FR")}</td>
                 <td className="py-2 pr-3 font-mono-tag text-[10px] text-slate">
                   {u.derniere_connexion ? formatRelativeTime(u.derniere_connexion) : "—"}
                 </td>

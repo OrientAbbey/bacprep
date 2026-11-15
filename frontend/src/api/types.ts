@@ -243,9 +243,12 @@ export interface AdminUtilisateur {
   /** Identifiant public dictable (« CC-26-A7K3M9 ») : le seul que l'élève
    * communique au support. `null` sur un compte créé avant la migration
    * 2026-11 et pas encore rétrofillé. */
-  matricule: string | null;
-  /** Solde de la monnaie interne AK (le journal `ak_mouvements` fait foi). */
-  solde_ak: number;
+  matricule?: string | null;
+  /** Solde de la monnaie interne AK (le journal `ak_mouvements` fait foi).
+   * FACULTATIF : un backend antérieur à la migration 2026-11 ne renvoie pas
+   * ce champ — l'affichage retombe sur 0 au lieu de planter toute la table
+   * (`undefined.toLocaleString()` faisait tomber l'écran entier). */
+  solde_ak?: number | null;
   niveau: string | null;
   classe: string | null;
   etablissement: string | null;

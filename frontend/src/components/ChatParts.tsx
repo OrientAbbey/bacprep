@@ -1,7 +1,7 @@
 import { Bot, Check, Clock, Copy, Pencil, RotateCcw, Send } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { t } from "../i18n";
-import { dateLongue, heureCourte } from "../lib/dates";
+import { dateLongue, horodatageCourt } from "../lib/dates";
 import { getInitials } from "../lib/initials";
 import { copierTexte } from "../lib/pressePapiers";
 import { MarkdownContent } from "./MarkdownContent";
@@ -19,7 +19,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   /** Horodatage ISO posé par le serveur (voie persistée) ou le client (éphémère),
-   * affiché en HH:MM ; absent des messages stockés avant son introduction. */
+   * affiché en date + heure ; absent des messages stockés avant son introduction. */
   ts?: string;
 }
 
@@ -90,7 +90,7 @@ export function ChatBubble({
   const isUser = m.role === "user";
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(m.content);
-  const heure = heureCourte(m.ts);
+  const horodatage = horodatageCourt(m.ts);
   const titreDate = dateLongue(m.ts);
   const nom = isUser ? userNom : ASSISTANT_SIGNATURE;
 
@@ -107,9 +107,9 @@ export function ChatBubble({
       <div className="min-w-0 max-w-[78%]">
         <p className={`mb-0.5 flex items-center gap-1.5 font-mono-tag text-[10px] text-slate ${isUser ? "flex-row-reverse" : ""}`}>
           <span>{nom}</span>
-          {heure && (
+          {horodatage && (
             <span title={titreDate ?? undefined} className="text-slate/70">
-              {heure}
+              {horodatage}
             </span>
           )}
         </p>
