@@ -14,6 +14,9 @@ Prérequis : Python 3.10+ (stdlib uniquement), accès réseau à l'URL.
 
     # avec export de test et nettoyage :
     ... python backend/scripts_dev/verifier_prod_admin.py --write --cleanup
+
+    # reprendre le suivi d'un job déjà lancé (sans en créer un autre) :
+    ... python backend/scripts_dev/verifier_prod_admin.py --job-id <id> --cleanup
 """
 from __future__ import annotations
 
@@ -92,7 +95,7 @@ class Verif:
         print(f"  FAIL {nom}" + (f" — {detail}" if detail else ""))
         return False
 
-    def lancer(self, ecrire: bool, nettoyer: bool) -> None:
+    def lancer(self, ecrire: bool, nettoyer: bool, job_id_existant: str | None = None) -> None:
         print(f"Vérification de {self.base}")
         token = os.getenv("VERIFY_ADMIN_TOKEN", "")
         email = os.getenv("VERIFY_ADMIN_EMAIL", "")
@@ -154,22 +157,29 @@ class Verif:
             f"HTTP {code}",
         )
 
-        if ecrire:
+        if job_id_existant:
+            self._verifier_export(nettoyer, job_id_existant)
+        elif ecrire:
             self._verifier_export(nettoyer)
 
-    def _verifier_export(self, nettoyer: bool) -> None:
-        print("  — export de test (écriture) —")
-        code, job = self.appeler("POST", "/api/admin/sauvegardes/export", {})
-        if not self.verifier("lancement export (200)", code == 200, f"HTTP {code} {job}"):
-            return
-        job_id = job.get("id") if isinstance(job, dict) else None
-        if not job_id:
-            self.verifier("identifiant de job renvoyé", False, str(job))
-            return
-        print(f"       job de test : {job_id}")
+    def _verifier_export(self, nettoyer: bool, job_id_existant: str | None = None) -> None:
+        if job_id_existant:
+            job_id = job_id_existant
+            print(f"  — reprise du job existant {job_id} —")
+        else:
+            print("  — export de test (écriture) —")
+            code, job = self.appeler("POST", "/api/admin/sauvegardes/export", {})
+            if not self.verifier("lancement export (200)", code == 200, f"HTTP {code} {job}"):
+                return
+            job_id = job.get("id") if isinstance(job, dict) else None
+            if not job_id:
+                self.verifier("identifiant de job renvoyé", False, str(job))
+                return
+            print(f"       job de test : {job_id}")
 
         echeance = time.time() + self.timeout
         etat: dict = {}
+        derniere_trace = 0.0
         while time.time() < echeance:
             code, etat = self.appeler("GET", f"/api/admin/sauvegardes/jobs/{job_id}")
             if code != 200:
@@ -177,9 +187,19 @@ class Verif:
                 return
             if etat.get("status") in {"done", "error"}:
                 break
+            maintenant = time.time()
+            if maintenant - derniere_trace >= 15:
+                print(
+                    f"       statut={etat.get('status')} phase={etat.get('phase') or '-'} "
+                    f"durée={etat.get('duration_ms')} heartbeat={etat.get('heartbeat_at') or '-'}"
+                )
+                derniere_trace = maintenant
             time.sleep(2)
         self.verifier(
-            "job terminé", etat.get("status") == "done", f"statut={etat.get('status')}"
+            "job terminé",
+            etat.get("status") == "done",
+            f"statut={etat.get('status')} après {self.timeout:.0f}s"
+            + (f" — reprendre avec --job-id {job_id}" if etat.get("status") != "done" else ""),
         )
         if etat.get("status") != "done":
             return
@@ -210,18 +230,23 @@ def main() -> int:
     parser.add_argument("--write", action="store_true", help="lance un export de test")
     parser.add_argument("--cleanup", action="store_true", help="supprime la sauvegarde créée")
     parser.add_argument(
-        "--timeout", type=float, default=float(os.getenv("VERIFY_TIMEOUT", "120")),
-        help="délai max en secondes pour le polling du job",
+        "--job-id",
+        help="reprend le suivi d'un job existant au lieu d'en créer un nouveau",
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=None,
+        help="délai max en secondes pour le polling (défaut : VERIFY_TIMEOUT ou 600)",
     )
     args = parser.parse_args()
+    timeout = args.timeout if args.timeout is not None else float(os.getenv("VERIFY_TIMEOUT", "600"))
 
     base = os.getenv("VERIFY_URL", "").strip()
     if not base:
         print("VERIFY_URL est obligatoire (URL du service Render / staging).", file=sys.stderr)
         return 2
 
-    verif = Verif(base, args.timeout)
-    verif.lancer(args.write, args.cleanup)
+    verif = Verif(base, timeout)
+    verif.lancer(args.write, args.cleanup, args.job_id)
     print(f"\n{verif.ok} OK, {verif.echecs} échec(s)")
     return 0 if verif.echecs == 0 else 1
 

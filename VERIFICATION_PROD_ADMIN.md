@@ -43,7 +43,15 @@ Il contrôle : connexion admin, `/api/admin/stats`, inventaire des sauvegardes, 
 
 Il lance une sauvegarde, suit le job jusqu'à `done`, vérifie `duration_ms`, le rapport, la présence de la sauvegarde dans l'inventaire, puis supprime la sauvegarde créée. Sans `--cleanup`, la clé à supprimer manuellement est affichée.
 
-Variables optionnelles : `VERIFY_FORCE=true` si un autre admin détient le verrou (409), `VERIFY_TIMEOUT=180` pour allonger le polling.
+Variables optionnelles : `VERIFY_FORCE=true` si un autre admin détient le verrou (409), `VERIFY_TIMEOUT` pour allonger le polling (défaut **600 s**).
+
+Si le job est encore `running` au bout du délai, **ne relance pas `--write`** (cela créerait une sauvegarde de plus). Reprends son suivi avec l’identifiant affiché :
+
+```bash
+python scripts_dev/verifier_prod_admin.py --job-id <id_du_job> --cleanup --timeout 900
+```
+
+Le script affiche toutes les 15 s le statut, la phase, la durée et le heartbeat, puis vérifie le rapport et nettoie la sauvegarde créée par ce job.
 
 > Le script ne stocke aucun secret : il lit uniquement les variables d'environnement de la machine qui l'exécute.
 
