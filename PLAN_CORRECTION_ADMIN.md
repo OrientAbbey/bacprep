@@ -9,7 +9,7 @@
 ## État global
 
 - [x] Tous les lots sont implémentés *(lots 1 à 10)*
-- [x] La suite backend complète passe (838 tests réussis, 2 ignorés en local,
+- [x] La suite backend complète passe (839 tests réussis, 2 ignorés en local,
       Ruff vert ; les deux échecs historiques sont levés :
       `test_acces_type_gratuit` rendu indépendant de l'ordre d'exécution et
       `test_export_et_suppression_compte` corrigé en amont)
@@ -17,7 +17,7 @@
 - [x] Les tests E2E passent
 - [ ] Une vérification manuelle en production a été effectuée
 
-> **Dernière validation locale ciblée :** suite backend complète 838 passés /
+> **Dernière validation locale ciblée :** suite backend complète 839 passés /
 > 2 ignorés et Ruff vert, 104 tests backend ciblés sauvegardes/imports/jobs/banque,
 > 298 tests frontend et `npm run build` réussis. Un import .zip a aussi été
 > parcouru dans l’interface locale jusqu’au rapport terminé ; l’inventaire local
@@ -108,9 +108,9 @@
 
 - [x] Écrire un marqueur final `_READY` uniquement après l’écriture complète
       de l’index.
-- [ ] Ne pas afficher une sauvegarde qui n’a pas de marqueur final.
-      *(Exception assumée : les sauvegardes antérieures au marqueur restent
-      listées si aucun job actif ne les concerne.)*
+- [x] Ne pas afficher une sauvegarde qui n’a pas de marqueur final.
+      *(À partir du 16/11/2026, une archive sans `_READY` est signalée dans les
+      ignorées ; les sauvegardes antérieures restent listées pour compatibilité.)*
 - [x] Ignorer les destinations liées à un job `pending` ou `running`.
 - [x] Conserver les sauvegardes anciennes compatibles sans marqueur, ou
       prévoir une stratégie de migration explicite.
@@ -153,8 +153,9 @@
 
 - [x] Conserver l’archive source d’un import dans un stockage persistant.
 - [x] Ne pas dépendre uniquement du disque temporaire du processus.
-- [ ] Conserver le snapshot JSON nécessaire aux imports de banque.
-      *(Hors périmètre : l’import de banque n’est pas encore un job.)*
+- [x] Conserver le snapshot JSON nécessaire aux imports de banque.
+      *(Archivage best-effort du JSON brut dans `banque-snapshots/` et clé
+      conservée dans l'évènement d'audit ; l'import reste synchrone.)*
 - [x] Conserver les paramètres et la source de chaque opération.
 - [x] Ne supprimer les fichiers sources qu’après un état terminal confirmé.
 
@@ -221,7 +222,9 @@
 - [x] Expliquer la différence entre fusionner et remplacer.
 - [x] Décrire précisément les données exportées.
 - [x] Afficher une confirmation renforcée avant le remplacement.
-- [ ] Afficher la progression si l’import ou l’export devient long.
+- [x] Afficher la progression si l’import ou l’export devient long
+      *(indicateur `role="status"` avec libellé et roue de chargement dans le
+      panneau de transfert ; boutons désactivés pendant l'opération).*
 - [ ] Transformer l’opération en job persistant si les mesures montrent qu’elle
       dépasse le seuil acceptable.
 
@@ -317,7 +320,7 @@
 - [x] Lot 6 — Documentation de la banque.
 - [x] Lot 7 — Guide des exercices types.
 - [x] Lots 8 à 10 — Tests backend, frontend et E2E
-      *(838 tests backend, 298 tests frontend, 128/128 scénarios E2E ; CI
+      *(839 tests backend, 298 tests frontend, 128/128 scénarios E2E ; CI
       `refonte` verte sur SQLite, PostgreSQL, frontend et E2E).*
 
 ## 12. État de référence avant implémentation
@@ -334,7 +337,7 @@
   inventaire actif, manifeste/index absents, panne de stockage).
 - Tests frontend complets : **290 tests** (dont `lib/jobs.test.ts`).
 - `npm run build` : réussi.
-- Suite backend complète : **838 passés, 2 ignorés** en local (SQLite) et Ruff
+- Suite backend complète : **839 passés, 2 ignorés** en local (SQLite) et Ruff
   vert. Les deux échecs historiques sont levés : `test_acces_type_gratuit` a été
   rendu indépendant de l'ordre d'exécution (matière unique + filtre explicite)
   et `test_export_et_suppression_compte` a été corrigé en amont.

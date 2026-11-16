@@ -741,6 +741,33 @@ def test_ancienne_sauvegarde_sans_marqueur_reste_listee(admin, db, epreuve_gratu
     assert any(s["cle"] == prefixe for s in inventaire["sauvegardes"]), inventaire
 
 
+def test_sauvegarde_recente_sans_marqueur_ignoree(admin, epreuve_gratuite) -> None:
+    """Une sauvegarde récente sans `_READY` n'est pas proposée à la restauration.
+
+    La tolérance historique ne doit pas devenir un trou permanent : à partir de
+    `READY_OBLIGATOIRE_DEPUIS`, une archive sans marqueur final est incomplète,
+    même si son index et son manifeste sont lisibles.
+    """
+    from app.core.export_service import NOM_INDEX, NOM_MANIFESTE
+
+    prefixe = f"{PREFIXE}/2026-11-20T120000Z"
+    stockage = get_storage()
+    stockage.put_bytes(
+        f"{prefixe}/{NOM_MANIFESTE}",
+        json.dumps({"epreuve_count": 1, "fichier_count": 2}).encode("utf-8"),
+    )
+    stockage.put_bytes(
+        f"{prefixe}/{NOM_INDEX}",
+        json.dumps({"parties": [{"nom": "partie-1.zip", "octets": 10, "sha256": "a"}]}).encode("utf-8"),
+    )
+
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    ignoree = next((i for i in inventaire["ignorees"] if i["cle"] == prefixe), None)
+    assert ignoree is not None, inventaire
+    assert "_READY" in ignoree["raison"]
+    assert all(s["cle"] != prefixe for s in inventaire["sauvegardes"])
+
+
 def test_manifeste_absent_signale_dans_les_ignorees(admin, epreuve_gratuite) -> None:
     """Un index seul ne fait pas une sauvegarde : le manifeste est requis.
 

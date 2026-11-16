@@ -19,6 +19,7 @@ sinon la requête HTTP, et le serveur web derrière un proxy la tuerait.
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -51,6 +52,12 @@ from .deps import log_admin_event, require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin-sauvegardes"])
 log = get_logger("admin_sauvegardes")
+
+# À partir de cette date, une sauvegarde doit porter le marqueur `_READY`
+# pour apparaître dans l'inventaire. Les archives antérieures restent
+# restaurables (compatibilité avec les sauvegardes créées avant l'instrumentation).
+READY_OBLIGATOIRE_DEPUIS = "2026-11-16T000000Z"
+_HORODATAGE_SAUVEGARDE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{6}Z)")
 
 
 def _job_to_dict(job: SauvegardeJobORM) -> dict:
@@ -229,8 +236,14 @@ def _lister_sauvegardes(db: Session) -> tuple[list[dict], list[dict]]:
             if etat == "error":
                 ignorees.append({"cle": prefixe, "raison": "export interrompu ou incomplet"})
                 continue
-            # Aucun job connu : sauvegarde antérieure au marqueur `_READY`.
-            # On l'accepte si son index et son manifeste sont lisibles.
+            # Aucun job connu : distinguer une archive historique (acceptée
+            # si index et manifeste sont lisibles) d'une sauvegarde récente
+            # dont le marqueur final n'a jamais été écrit — celle-ci est
+            # incomplète et ne doit pas être proposée à la restauration.
+            horodatage = _HORODATAGE_SAUVEGARDE.match(prefixe.rsplit("/", 1)[-1])
+            if horodatage and horodatage.group(1) >= READY_OBLIGATOIRE_DEPUIS:
+                ignorees.append({"cle": prefixe, "raison": "marqueur final _READY absent"})
+                continue
         try:
             lectures += 2  # index + manifeste
             resume = _resume(prefixe, stockage)

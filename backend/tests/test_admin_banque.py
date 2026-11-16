@@ -1,6 +1,7 @@
 """Tests API admin de la banque du générateur V4.10."""
 from __future__ import annotations
 
+import json
 import uuid
 
 from app.db_models import BanqueJournalORM
@@ -70,7 +71,17 @@ def test_admin_banque_rejette_referentiel_inconnu_et_tag_session_vide(admin):
     assert r.status_code == 422
 
 
-def test_export_import_roundtrip(admin):
+def test_export_import_roundtrip(admin, monkeypatch):
+    from app.routers import admin_banque
+
+    archives: list[tuple[str, bytes]] = []
+
+    class StockageArchive:
+        def put_bytes(self, cle: str, donnees: bytes) -> None:
+            archives.append((cle, donnees))
+
+    monkeypatch.setattr(admin_banque, "get_storage", lambda: StockageArchive())
+
     matiere = "Banque Roundtrip"
     _cree_matiere(admin, matiere)
     partie = admin.post("/api/admin/banque/parties", json={"matiere": matiere, "nom": "A"}).json()
@@ -84,7 +95,14 @@ def test_export_import_roundtrip(admin):
     assert snapshot.status_code == 200
     value = snapshot.json()
     assert value["schemaVersion"] == "1.0"
-    assert admin.post("/api/admin/banque/import", json={"mode": "fusionner", "snapshot": value}).status_code == 200
+    importe = admin.post("/api/admin/banque/import", json={"mode": "fusionner", "snapshot": value})
+    assert importe.status_code == 200, importe.text
+    # Le JSON brut est archivé tel quel dans le stockage persistant : même si
+    # l'import n'est pas encore un job relançable, on peut reconstruire la
+    # banque ou vérifier ce qui a été envoyé.
+    assert importe.json()["snapshot_cle"].startswith("banque-snapshots/")
+    assert len(archives) == 1
+    assert json.loads(archives[0][1].decode("utf-8")) == value
     listing = admin.get("/api/admin/banque").json()
     assert any(row["id"] == exercice.json()["id"] for row in listing["exercices"])
     bad = dict(value)

@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 
 from ..core import referentiel
 from ..core.banque_generation import DIFFICULTES, SPECIAL_AUCUNE
+from ..core.logging_config import get_logger
+from ..core.storage import get_storage
 from ..db import get_db, utc_now
 from ..db_models import (
     BanqueClasseMetaORM,
@@ -30,9 +32,29 @@ from ..db_models import (
 from .deps import log_admin_event, require_admin
 
 router = APIRouter(prefix="/api/admin/banque", tags=["admin-banque"])
+log = get_logger("admin_banque")
 
 SESSIONS_CONNNUES = sum(1 for v in referentiel.EVALUATIONS if v.startswith("SEQUENCE "))
 ID_32 = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _archiver_snapshot(snapshot: dict[str, Any]) -> str | None:
+    """Conserve le JSON brut d'un import dans le stockage persistant.
+
+    L'import de banque reste une requête synchrone : ce n'est PAS un job
+    relançable. Garder le snapshot tel qu'il a été envoyé permet néanmoins de
+    reconstruire la banque après une erreur d'application ou de vérifier ce
+    qui a été importé. L'archivage est best-effort : une panne de stockage ne
+    doit pas empêcher un import valide d'aboutir.
+    """
+    try:
+        cle = f"banque-snapshots/{utc_now().strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex}.json"
+        contenu = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
+        get_storage().put_bytes(cle, contenu)
+        return cle
+    except Exception:
+        log.exception("Archivage du snapshot de banque impossible — l'import continue")
+        return None
 
 
 def _uuid_hex(value: str | None, *, optional: bool = False) -> str:
@@ -502,6 +524,7 @@ def _validate_snapshot(db: Session, snapshot: dict[str, Any]) -> dict[str, list[
 @router.post("/import")
 def importer(payload: ImportIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
     data = _validate_snapshot(db, payload.snapshot)
+    snapshot_cle = _archiver_snapshot(payload.snapshot)
     try:
         if payload.mode == "remplacer":
             db.query(BanqueExerciceORM).delete(synchronize_session=False)
@@ -540,5 +563,17 @@ def importer(payload: ImportIn, db: Session = Depends(get_db), lock=Depends(requ
     except (IntegrityError, ValueError, KeyError, TypeError) as exc:
         db.rollback()
         raise HTTPException(422, "Snapshot invalide ou incompatible") from exc
-    log_admin_event(db, None, "banque_import", lock.email, {"mode": payload.mode, "exercices": len(data["exercices"])})
-    return {"ok": True, "mode": payload.mode, "exercices": len(data["exercices"]), "parties": len(data["parties"])}
+    log_admin_event(
+        db,
+        None,
+        "banque_import",
+        lock.email,
+        {"mode": payload.mode, "exercices": len(data["exercices"]), "snapshot_cle": snapshot_cle},
+    )
+    return {
+        "ok": True,
+        "mode": payload.mode,
+        "exercices": len(data["exercices"]),
+        "parties": len(data["parties"]),
+        "snapshot_cle": snapshot_cle,
+    }

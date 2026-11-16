@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, FileUp, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Download, FileUp, LoaderCircle, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
   BanqueAdminData,
@@ -60,6 +60,7 @@ export function BanquePanel({ token }: { token: string }) {
   const [suppression, setSuppression] = useState<{ type: "partie" | "exercice"; id: string; nom: string } | null>(null);
   const [importEnAttente, setImportEnAttente] = useState<{ snapshot: Record<string, unknown>; mode: "fusionner" | "remplacer" } | null>(null);
   const [operation, setOperation] = useState(false);
+  const [operationLibelle, setOperationLibelle] = useState<string | null>(null);
   const [metaEnCours, setMetaEnCours] = useState<Record<string, boolean>>({});
 
   const charger = useCallback(async () => {
@@ -220,6 +221,8 @@ export function BanquePanel({ token }: { token: string }) {
   }
 
   async function exporter() {
+    setOperation(true);
+    setOperationLibelle("Préparation de l’export de la banque…");
     try {
       const snapshot = await api.get<Record<string, unknown>>("/api/admin/banque/export", authHeaders(token));
       const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
@@ -232,6 +235,9 @@ export function BanquePanel({ token }: { token: string }) {
       showToast("Export de la banque téléchargé.", "success");
     } catch (err) {
       erreurAction(err, "L'export n'a pas pu être préparé.");
+    } finally {
+      setOperation(false);
+      setOperationLibelle(null);
     }
   }
 
@@ -249,6 +255,7 @@ export function BanquePanel({ token }: { token: string }) {
   async function importer() {
     if (!importEnAttente) return;
     setOperation(true);
+    setOperationLibelle("Import de la banque en cours…");
     try {
       const result = await api.post<{ exercices: number; parties: number }>("/api/admin/banque/import", importEnAttente, authHeaders(token));
       showToast(`Import terminé : ${result.parties} partie(s), ${result.exercices} exercice(s).`, "success");
@@ -259,6 +266,7 @@ export function BanquePanel({ token }: { token: string }) {
       throw err;
     } finally {
       setOperation(false);
+      setOperationLibelle(null);
     }
   }
 
@@ -482,9 +490,15 @@ export function BanquePanel({ token }: { token: string }) {
 
       <section aria-labelledby="banque-transfert" className="space-y-3 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
         <h3 id="banque-transfert" className="font-serif-brand">Import et export</h3>
+        {operationLibelle && (
+          <p role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-ink-soft">
+            <LoaderCircle size={15} className="animate-spin" aria-hidden="true" />
+            {operationLibelle}
+          </p>
+        )}
         <p className="text-sm text-ink-soft">L&apos;export produit un fichier JSON unique contenant les parties, les exercices, le référentiel (matières, classes, séries, séquences) et les métadonnées de classe. Il sert de sauvegarde ou de transfert entre environnements.</p>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void exporter()} className={bouton}><Download size={14} aria-hidden="true" /> Exporter en JSON</button>
+          <button type="button" onClick={() => void exporter()} disabled={operation} className={bouton}><Download size={14} aria-hidden="true" /> Exporter en JSON</button>
           <label className="flex min-h-[40px] items-center gap-2 rounded-full border border-ink-soft/25 px-3 text-sm">
             <FileUp size={14} aria-hidden="true" /> Importer
             <input ref={fichierRef} type="file" accept=".json,application/json" aria-label="Fichier JSON de la banque" className="max-w-48 text-xs" onChange={(e) => { void lireFichier(e.target.files?.[0], modeImportRef.current); modeImportRef.current = "fusionner"; e.target.value = ""; }} />
