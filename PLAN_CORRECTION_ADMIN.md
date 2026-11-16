@@ -9,15 +9,17 @@
 ## État global
 
 - [ ] Tous les lots sont implémentés
-- [ ] La suite backend complète passe (104 tests ciblés sauvegardes/imports/jobs/
-      banque réussis ; les deux échecs historiques de la suite complète restent
-      à revalider : `test_acces_type_gratuit` et `test_export_et_suppression_compte`)
+- [x] La suite backend complète passe (837 tests réussis, 2 ignorés en local,
+      Ruff vert ; les deux échecs historiques sont levés :
+      `test_acces_type_gratuit` rendu indépendant de l'ordre d'exécution et
+      `test_export_et_suppression_compte` corrigé en amont)
 - [x] Les tests frontend passent
 - [x] Les tests E2E passent
 - [ ] Une vérification manuelle en production a été effectuée
 
-> **Dernière validation locale ciblée :** 104 tests backend sauvegardes/imports/jobs/
-> banque, 298 tests frontend et `npm run build` réussis. Un import .zip a aussi été
+> **Dernière validation locale ciblée :** suite backend complète 837 passés /
+> 2 ignorés et Ruff vert, 104 tests backend ciblés sauvegardes/imports/jobs/banque,
+> 298 tests frontend et `npm run build` réussis. Un import .zip a aussi été
 > parcouru dans l’interface locale jusqu’au rapport terminé ; l’inventaire local
 > a répondu HTTP 200 avec une liste lisible. Un processus worker distinct a
 > repris un job `running` périmé, ré-extrait son archive et terminé l’import.
@@ -26,8 +28,8 @@
 > reprise après navigation, import suivi après rechargement et aides intégrées).
 >
 > **Reste à faire en priorité :** vérification en production avec Render/S3 et
-> scénario navigateur où un import est encore actif pendant la navigation puis
-> est retrouvé après redémarrage du worker.
+> confirmation de la CI PostgreSQL (SQLite local et Ruff sont verts). Le suivi
+> navigateur d'un import actif et sa reprise sont désormais couverts.
 
 ## 1. Diagnostic et mesure des performances
 
@@ -326,10 +328,10 @@
   inventaire actif, manifeste/index absents, panne de stockage).
 - Tests frontend complets : **290 tests** (dont `lib/jobs.test.ts`).
 - `npm run build` : réussi.
-- Suite backend complète : **821 passés, 2 échecs préexistants hors périmètre**
-  (`test_acces_type_gratuit` dépend de l’ordre d’exécution ;
-  `test_export_et_suppression_compte` attend une liste d’export qui ne contient
-  pas encore `epreuves_generees`).
+- Suite backend complète : **837 passés, 2 ignorés** en local (SQLite) et Ruff
+  vert. Les deux échecs historiques sont levés : `test_acces_type_gratuit` a été
+  rendu indépendant de l'ordre d'exécution (matière unique + filtre explicite)
+  et `test_export_et_suppression_compte` a été corrigé en amont.
 - Le suivi des jobs survit à la navigation : la liste serveur est rechargée au
   montage, le job actif est rattaché une seule fois, l’historique affiche durée,
   taille, fichiers et dernière activité.
