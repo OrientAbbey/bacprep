@@ -9,7 +9,7 @@
 ## État global
 
 - [x] Tous les lots sont implémentés *(lots 1 à 10)*
-- [x] La suite backend complète passe (837 tests réussis, 2 ignorés en local,
+- [x] La suite backend complète passe (838 tests réussis, 2 ignorés en local,
       Ruff vert ; les deux échecs historiques sont levés :
       `test_acces_type_gratuit` rendu indépendant de l'ordre d'exécution et
       `test_export_et_suppression_compte` corrigé en amont)
@@ -17,7 +17,7 @@
 - [x] Les tests E2E passent
 - [ ] Une vérification manuelle en production a été effectuée
 
-> **Dernière validation locale ciblée :** suite backend complète 837 passés /
+> **Dernière validation locale ciblée :** suite backend complète 838 passés /
 > 2 ignorés et Ruff vert, 104 tests backend ciblés sauvegardes/imports/jobs/banque,
 > 298 tests frontend et `npm run build` réussis. Un import .zip a aussi été
 > parcouru dans l’interface locale jusqu’au rapport terminé ; l’inventaire local
@@ -97,7 +97,10 @@
 - [x] Tester une sauvegarde dont le manifeste est présent mais dont l’index
       est encore absent.
 - [x] Tester une indisponibilité temporaire du stockage.
-- [ ] Tester une session admin expirée pendant le chargement.
+- [x] Tester une session admin expirée pendant le chargement
+      *(backend : `test_session_admin_expiree_pendant_inventaire_401_pas_503` —
+      la session est vérifiée avant l'accès au stockage : 401 distincte du 503
+      d'inventaire).*
 - [x] Remplacer le message générique par une erreur technique journalisée et
       un message utilisateur adapté.
 
@@ -314,7 +317,7 @@
 - [x] Lot 6 — Documentation de la banque.
 - [x] Lot 7 — Guide des exercices types.
 - [x] Lots 8 à 10 — Tests backend, frontend et E2E
-      *(837 tests backend, 298 tests frontend, 128/128 scénarios E2E ; CI
+      *(838 tests backend, 298 tests frontend, 128/128 scénarios E2E ; CI
       `refonte` verte sur SQLite, PostgreSQL, frontend et E2E).*
 
 ## 12. État de référence avant implémentation
@@ -331,7 +334,7 @@
   inventaire actif, manifeste/index absents, panne de stockage).
 - Tests frontend complets : **290 tests** (dont `lib/jobs.test.ts`).
 - `npm run build` : réussi.
-- Suite backend complète : **837 passés, 2 ignorés** en local (SQLite) et Ruff
+- Suite backend complète : **838 passés, 2 ignorés** en local (SQLite) et Ruff
   vert. Les deux échecs historiques sont levés : `test_acces_type_gratuit` a été
   rendu indépendant de l'ordre d'exécution (matière unique + filtre explicite)
   et `test_export_et_suppression_compte` a été corrigé en amont.
