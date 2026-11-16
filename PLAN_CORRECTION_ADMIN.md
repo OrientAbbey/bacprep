@@ -9,7 +9,7 @@
 ## État global
 
 - [x] Tous les lots sont implémentés *(lots 1 à 10)*
-- [x] La suite backend complète passe (839 tests réussis, 2 ignorés en local,
+- [x] La suite backend complète passe (842 tests réussis, 2 ignorés en local,
       Ruff vert ; les deux échecs historiques sont levés :
       `test_acces_type_gratuit` rendu indépendant de l'ordre d'exécution et
       `test_export_et_suppression_compte` corrigé en amont)
@@ -17,7 +17,7 @@
 - [x] Les tests E2E passent
 - [ ] Une vérification manuelle en production a été effectuée
 
-> **Dernière validation locale ciblée :** suite backend complète 839 passés /
+> **Dernière validation locale ciblée :** suite backend complète 842 passés /
 > 2 ignorés et Ruff vert, 104 tests backend ciblés sauvegardes/imports/jobs/banque,
 > 298 tests frontend et `npm run build` réussis. Un import .zip a aussi été
 > parcouru dans l’interface locale jusqu’au rapport terminé ; l’inventaire local
@@ -93,7 +93,10 @@
       *(scénario E2E : bandeau global, changement d'onglet, retour et rapport).*
 - [x] Reproduire le problème avec le backend de stockage local
       *(inventaire local HTTP 200 lisible et tests backend de stockage).*
-- [ ] Reproduire le problème avec le backend S3 *(accès S3 non disponible ici)*.
+- [x] Reproduire le problème avec le backend S3
+      *(reproduction locale via `S3CompatibleStorage` et client boto3 factice :
+      pagination `list_objects_v2`, `ClientError` → 503, `_READY` absent via
+      `head_object` ; validation sur un vrai bucket reste à faire en production).*
 - [x] Tester une sauvegarde dont le manifeste est présent mais dont l’index
       est encore absent.
 - [x] Tester une indisponibilité temporaire du stockage.
@@ -320,7 +323,7 @@
 - [x] Lot 6 — Documentation de la banque.
 - [x] Lot 7 — Guide des exercices types.
 - [x] Lots 8 à 10 — Tests backend, frontend et E2E
-      *(839 tests backend, 298 tests frontend, 128/128 scénarios E2E ; CI
+      *(842 tests backend, 298 tests frontend, 128/128 scénarios E2E ; CI
       `refonte` verte sur SQLite, PostgreSQL, frontend et E2E).*
 
 ## 12. État de référence avant implémentation
@@ -337,7 +340,7 @@
   inventaire actif, manifeste/index absents, panne de stockage).
 - Tests frontend complets : **290 tests** (dont `lib/jobs.test.ts`).
 - `npm run build` : réussi.
-- Suite backend complète : **839 passés, 2 ignorés** en local (SQLite) et Ruff
+- Suite backend complète : **842 passés, 2 ignorés** en local (SQLite) et Ruff
   vert. Les deux échecs historiques sont levés : `test_acces_type_gratuit` a été
   rendu indépendant de l'ordre d'exécution (matière unique + filtre explicite)
   et `test_export_et_suppression_compte` a été corrigé en amont.
