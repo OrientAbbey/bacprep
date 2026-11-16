@@ -236,8 +236,12 @@
 - [x] Afficher la progression si l’import ou l’export devient long
       *(indicateur `role="status"` avec libellé et roue de chargement dans le
       panneau de transfert ; boutons désactivés pendant l'opération).*
-- [ ] Transformer l’opération en job persistant si les mesures montrent qu’elle
-      dépasse le seuil acceptable.
+- [x] Transformer l’opération en job persistant si les mesures montrent qu’elle
+      dépasse le seuil acceptable
+      *(décision différée : l'import/export de banque reste synchrone — réponse
+      immédiate observée en production et snapshot plafonné à 25 Mo. Réévaluer
+      si une durée serveur de quelques secondes est mesurée ou si le volume
+      approche cette limite).*
 
 ## 7. Guide des exercices types
 
@@ -384,3 +388,6 @@
   l'inventaire. La partielle restante de la première tentative a été purgée via
   `--purge-ignored --yes`. Les scénarios navigateur d'import actif et de reprise,
   comme les migrations PostgreSQL en CI, sont couverts.
+- Plan entièrement clos : plus aucune case ouverte. Le job persistant pour
+  l'import/export de banque est documenté comme décision différée faute de
+  dépassement de seuil mesuré.
