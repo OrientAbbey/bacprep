@@ -904,6 +904,137 @@ console.log("\nBack-office");
     await page.unroute((url) => url.pathname === "/api/admin/sauvegardes/export");
   });
 
+  await test("admin › opérations longues : import suivi pendant la navigation, retrouvé après rechargement", async () => {
+    // Même parti pris que pour l'export : le job est simulé pour que la
+    // navigation et le rechargement tombent à coup sûr pendant l'import. Le
+    // bandeau, la reprise du panneau et le journal, eux, sont réels.
+    const id = "e2e0000000000000000000000000002";
+    const fichier = "catalogue-e2e.zip";
+    const debut = new Date(Date.now() - 8_000).toISOString();
+    let lance = false;
+    const job = {
+      id,
+      filename: fichier,
+      status: "running",
+      created_at: debut,
+      started_at: debut,
+      heartbeat_at: new Date().toISOString(),
+      finished_at: null,
+      duration_ms: null,
+      report: {},
+      logs: ["Archive reçue.", "Archive extraite : 3 fichiers."],
+    };
+    const json = (route, body, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+
+    await page.route(
+      (url) => url.pathname === "/api/admin/sauvegardes/jobs",
+      (route) => json(route, { jobs: [] })
+    );
+    await page.route(
+      (url) => url.pathname === "/api/admin/import/jobs",
+      (route) => json(route, lance ? [job] : [])
+    );
+    await page.route(
+      (url) => url.pathname === `/api/admin/import/jobs/${id}`,
+      (route) => json(route, job)
+    );
+    await page.route(
+      (url) => url.pathname === "/api/admin/import",
+      (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        lance = true;
+        return json(route, { job_id: id, status: "pending" }, 202);
+      }
+    );
+
+    await page.getByRole("tab", { name: "Import massif" }).click();
+    await page.getByRole("heading", { name: "Importer un dossier d'épreuves" }).waitFor({ timeout: 10000 });
+    await page.locator('input[type="file"][accept=".zip"]').setInputFiles({
+      name: fichier,
+      mimeType: "application/zip",
+      buffer: Buffer.from("PK\u0003\u0004import-e2e"),
+    });
+    await page.getByText(fichier, { exact: true }).waitFor();
+    const lancer = page.getByRole("button", { name: "Lancer l'import" });
+    ok(await lancer.isEnabled(), "le bouton d'import reste désactivé après le choix de l'archive");
+    await lancer.click();
+
+    const bandeau = page.getByRole("status", { name: "Opérations en cours" });
+    await bandeau.getByText("Import massif").waitFor({ timeout: 15000 });
+    await bandeau.getByText(fichier).waitFor();
+    await page.screenshot({ path: `${SHOTS}/admin-import-bandeau.png` });
+
+    // Quitter l'onglet d'import ne perd pas le suivi : le bandeau global
+    // reste alimenté par la liste serveur, comme pour une sauvegarde.
+    await page.getByRole("tab", { name: "Sauvegardes" }).click();
+    await page.getByRole("heading", { name: "Sauvegardes", exact: true }).waitFor({ timeout: 10000 });
+    await bandeau.getByText("Import massif").waitFor({ timeout: 10000 });
+
+    // Fermeture complète de la page Admin : au rechargement, plus aucun état
+    // React ne subsiste et le bandeau doit retrouver le job côté serveur.
+    await page.reload();
+    await page.getByRole("tab", { name: "Épreuves" }).waitFor({ timeout: 20000 });
+    await bandeau.getByText("Import massif").waitFor({ timeout: 15000 });
+    await bandeau.getByText(fichier).waitFor();
+
+    // « Voir » ramène à l'onglet Import ; le panneau rattache le job actif et
+    // reprend son journal, sans nouvel upload.
+    await bandeau.getByRole("button", { name: "Voir" }).click();
+    await page.getByRole("heading", { name: "Importer un dossier d'épreuves" }).waitFor({ timeout: 10000 });
+    await page.getByText("Traitement en cours…").waitFor({ timeout: 10000 });
+    const journal = page.getByLabel("Journal d'exécution de l'import");
+    await journal.waitFor({ timeout: 10000 });
+    ok((await journal.innerText()).includes("Archive extraite"), "le journal de l'import n'est pas repris après rechargement");
+
+    // Fin côté worker : le rapport et l'historique restent consultables.
+    job.status = "done";
+    job.finished_at = new Date().toISOString();
+    job.duration_ms = 8_000;
+    job.report = {
+      racine: "catalogue-e2e",
+      analyses: 3,
+      epreuves_creees: 1,
+      images_importees: 0,
+      doublons: [],
+      creees: [{ fichier: "2023/Terminale/Mathematiques/bac-D-sujet.md", epreuve_id: "e2e", cible: "sujet" }],
+      erreurs: [],
+    };
+    job.logs = [...job.logs, "Import terminé : 1 épreuve créée."];
+    await page.getByText("Terminé", { exact: true }).first().waitFor({ timeout: 10000 });
+    await page.getByText("Épreuves créées").waitFor();
+    await page.getByText("Imports précédents").waitFor({ timeout: 10000 });
+    await page.screenshot({ path: `${SHOTS}/admin-import-rapport.png` });
+    await bandeau.waitFor({ state: "detached", timeout: 15000 });
+
+    await page.unroute((url) => url.pathname === "/api/admin/sauvegardes/jobs");
+    await page.unroute((url) => url.pathname === "/api/admin/import/jobs");
+    await page.unroute((url) => url.pathname === `/api/admin/import/jobs/${id}`);
+    await page.unroute((url) => url.pathname === "/api/admin/import");
+  });
+
+  await test("admin › aides intégrées : banque d'exercices et guide des exercices types", async () => {
+    await page.getByRole("tab", { name: "Banque" }).click();
+    const banque = page.locator("details", { hasText: "Comprendre la banque d'exercices" });
+    await banque.waitFor({ timeout: 10000 });
+    await banque.locator("summary").click();
+    const texteBanque = await banque.innerText();
+    for (const attendu of ["Ordre", "pas une priorité de tirage", "Aucune spécialité", "Exemple complet"]) {
+      ok(texteBanque.includes(attendu), `aide de la banque incomplète : « ${attendu} » absent`);
+    }
+    await page.screenshot({ path: `${SHOTS}/admin-aide-banque.png` });
+
+    await page.getByRole("tab", { name: "Exercices types" }).click();
+    const gabarits = page.locator("details", { hasText: "Guide : de la relecture à la publication" });
+    await gabarits.waitFor({ timeout: 10000 });
+    await gabarits.locator("summary").click();
+    const texteGabarits = await gabarits.innerText();
+    for (const attendu of ["Variantes et graine", "Avant de valider — checklist", "Retirer", "Revalider", "Fichiers illisibles"]) {
+      ok(texteGabarits.includes(attendu), `guide des exercices types incomplet : « ${attendu} » absent`);
+    }
+    await page.screenshot({ path: `${SHOTS}/admin-aide-gabarits.png` });
+  });
+
   await test("page Abonnement : les formules viennent de la base (prix modifié visible)", async () => {
     const plans = (await (await ctx.request.get("/api/admin/plans")).json()).plans;
     const p = plans.find((x) => x.scope === "epreuve" && x.actif);
@@ -2300,7 +2431,7 @@ console.log("\nInvitation, À propos et Aide");
       await pg.getByRole("heading", { level: 2, name: rubrique }).waitFor({ timeout: 5000 });
     }
     // Tous les onglets de la console sont documentés.
-    for (const onglet of ["Épreuves", "Import", "Formules", "Exercices types", "Calendrier", "Utilisateurs", "Signalements", "Notifications", "Paramètres", "Sauvegardes", "Journal"]) {
+    for (const onglet of ["Épreuves", "Import", "Formules", "Exercices types", "Banque", "Calendrier", "Utilisateurs", "Signalements", "Notifications", "Paramètres", "Sauvegardes", "Journal"]) {
       ok((await pg.locator("main").getByText(onglet, { exact: false }).count()) > 0, `onglet « ${onglet} » absent de l'aide`);
     }
     await pg.getByRole("navigation", { name: "Sommaire" }).getByRole("link", { name: "Exercices types (gabarits)" }).click();
