@@ -57,7 +57,8 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
       "Organise le dossier par année, classe puis matière, avec des fichiers Markdown (.md) et des images, compresse-le en archive et dépose-la. Pas de PDF.",
       "Un nom de fichier contenant « corrige » est un corrigé, sinon un sujet ; la série est extraite du nom (« série D », « bac-D »…).",
       "Les doublons (contenu identique) sont détectés par empreinte SHA-256 et ignorés ; les fichiers aux métadonnées insuffisantes (année, classe, matière) sont signalés.",
-      "Les épreuves importées arrivent en brouillon : relis-les, vérifie les figures, puis publie. Les « Imports précédents » gardent un journal d'exécution.",
+      "Les épreuves importées arrivent en brouillon : relis-les, vérifie les figures, puis publie. Les « Imports précédents » gardent un journal d'exécution et la durée de chaque import.",
+      "L'import continue côté serveur même si tu changes d'onglet ou fermes la page : en revenant, l'import actif est retrouvé automatiquement et son journal reprend. La durée affichée est celle mesurée par le serveur, de la prise en charge à la fin.",
     ],
   },
   {
@@ -75,13 +76,18 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     titre: "Exercices types (gabarits)",
     intro: "Un gabarit fabrique des exercices dont les valeurs changent à chaque tirage.",
     points: [
+      "Parcours de relecture : « Voir une variante » tire un exemple au hasard avec sa correction ; « Autre variante » en tire un nouveau. Relis au moins trois variantes, dont une avec des valeurs limites, avant de valider.",
       "Chaque ligne affiche la matière, le chapitre, les classes, la difficulté, le total de points et le résultat du contrôle automatique (nombre de variantes tirées, d'énoncés distincts, défauts éventuels).",
-      "« Voir une variante » affiche un énoncé complet avec sa correction et sa méthode ; « Autre variante » en tire une nouvelle. C'est le geste à faire avant de valider.",
-      "« Valider » rend l'exercice visible sur la page Entraînement ; « Retirer » l'en retire. Un gabarit modifié depuis sa validation repasse en « À valider » et demande une revalidation.",
-      "Un contrôle automatique en échec bloque la validation. « Peu de variété » signale un gabarit qui produit trop peu d'énoncés différents.",
+      "Une variante est une version concrète du gabarit ; sa graine est le nombre qui l'a produite. La même graine redonne exactement la même variante, ce qui permet de retrouver une version signalée par un élève.",
+      "L'énoncé est ce que lit l'élève, la réponse le résultat attendu, la méthode la démarche détaillée. Les trois sont relus : une réponse juste avec une méthode fausse apprend une erreur.",
+      "Le contrôle automatique tire plusieurs variantes et vérifie qu'elles se génèrent et se corrigent ; il compte aussi les énoncés distincts. Un échec ou une variante incomplète désactive « Valider » : publier un exercice qui ne se génère pas exposerait les élèves à une page vide.",
+      "Les statuts sont « À valider » (invisible des élèves), « Validé » (publié sur la page Entraînement) et « Modifié depuis la validation » (le fichier a changé après publication : revalide après vérification).",
+      "« Retirer » dépublie immédiatement un exercice validé dès qu'un défaut est confirmé. « Revalider » republie un gabarit modifié après une nouvelle relecture.",
       "La section « Signalements d'exercices » liste les variantes signalées par les élèves, avec leur numéro de graine ; « Voir la variante signalée » la retrouve exactement, puis « Marquer comme résolu ».",
+      "Un fichier de gabarit illisible est ignoré et listé en haut du panneau avec son motif : il ne peut ni être relu ni être validé. Corrige le fichier source puis recharge la page ; les autres gabarits gardent leur validation.",
     ],
-    astuce: "Un fichier de gabarit illisible est ignoré et listé en haut du panneau : corrige-le sur le serveur plutôt que de valider à l'aveugle.",
+    astuce:
+      "Exemple de signalement : un élève signale « variante n° 4821 » avec le message « l'unité est fausse ». Ouvre la variante signalée, vérifie le calcul, corrige le fichier du gabarit, recharge la page, revalide, puis marque le signalement comme résolu. Si le défaut est confirmé, « Retirer » d'abord pour cesser de servir la version fautive.",
   },
   {
     id: "entrainement",
@@ -98,13 +104,20 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     id: "banque",
     onglet: "banque",
     titre: "Banque d'exercices",
-    intro: "L'onglet Banque sert à composer des épreuves personnalisées à partir d'exercices réutilisables.",
+    intro:
+      "L'onglet Banque compose des épreuves personnalisées à partir d'exercices réutilisables, rangés en parties.",
     points: [
-      "Crée des parties par matière, puis ajoute les exercices avec leur sujet, leur corrigé, leur difficulté, leurs classes, leurs spécialités et leurs critères de séquence ou d'examen.",
+      "Une partie porte une matière et un nom lisible, unique dans cette matière. L'ordre range les parties à l'écran, du plus petit au plus grand : ce n'est pas une priorité de tirage, un exercice d'ordre 1 n'est pas plus souvent choisi qu'un autre.",
+      "Un exercice appartient à une partie et porte un sujet, un corrigé et une difficulté (Facile, Moyen, Difficile). La difficulté sert au générateur à équilibrer le sujet, pas à noter l'élève.",
+      "Les classes indiquent les niveaux pour lesquels l'exercice est valable : sans classe cochée, il n'est proposé à personne. Les spécialités restreignent le tirage aux séries choisies ; « Aucune spécialité (toutes les séries) » l'ouvre à toutes, y compris aux classes sans spécialité.",
+      "La session rattache l'exercice à une progression pédagogique ; laisse-la vide pour une révision ou une annale. Le tag « Épreuve d'examen » marque un exercice déjà tombé à un examen et n'est disponible que si une session est choisie.",
+      "Un exercice doit être actif pour être tiré. Inactif, il reste dans la banque et garde son historique, mais le générateur ne le choisit plus.",
       "Les métadonnées de classe indiquent les classes d'examen et celles où une spécialité est obligatoire ; vérifie-les avant de proposer la composition aux élèves.",
-      "Le journal conserve les générations récentes. L'export télécharge la banque et son référentiel ; l'import permet de fusionner les données ou de remplacer la banque après confirmation.",
+      "Le journal conserve les générations récentes. L'export télécharge un JSON contenant les parties, les exercices, le référentiel et les métadonnées de classe.",
+      "À l'import, « Fusionner » ajoute et met à jour les éléments du fichier sans supprimer ce qui n'y figure pas ; « Remplacer » efface la banque actuelle puis écrit le fichier, après une confirmation explicite.",
     ],
-    astuce: "Un exercice doit être actif et correspondre aux critères choisis par l'élève pour être retenu dans son épreuve.",
+    astuce:
+      "Exemple : pour les suites en Terminale D, crée une partie « Suites » (Mathématiques, ordre 3), puis un exercice (Moyen, classe Terminale, spécialité D, session « Suites et récurrence », actif). Il devient tirable dès qu'il est enregistré avec au moins une classe.",
   },
   {
     id: "calendrier",
@@ -161,13 +174,17 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     titre: "Sauvegardes",
     points: [
       "Une sauvegarde contient le catalogue entier : épreuves, sujets, corrigés, images et identifiants.",
-      "L'export se déclenche à la main depuis l'onglet. Avant la restauration, l'inventaire affiche le contenu détecté et te laisse choisir un mode.",
+      "L'export se déclenche à la main depuis l'onglet. Pendant l'exécution, l'écran affiche la phase en cours (préparation, lecture, envoi, index, finalisation), les compteurs de fichiers et la durée écoulée ; à la fin, la durée mesurée par le serveur reste dans « Dernières opérations ».",
+      "L'export continue côté serveur même si tu changes d'onglet ou fermes la page. En revenant, le job actif est retrouvé automatiquement et le suivi reprend ; l'inventaire n'est jamais celui d'une sauvegarde encore en écriture.",
+      "Une sauvegarde n'apparaît dans l'inventaire qu'une fois complète. Un dossier encore en cours, interrompu ou illisible est signalé séparément avec sa raison, sans faire échouer tout l'inventaire.",
+      "Avant la restauration, l'inventaire affiche le contenu détecté et te laisse choisir un mode.",
       "Commence toujours par l'essai à blanc : il n'écrit rien. L'écriture n'est proposée qu'après un essai terminé sans anomalie et une confirmation explicite.",
       "« Recharge du stockage » ne modifie pas les lignes de la base ; « Restauration complète » recrée aussi les métadonnées et n'est acceptée que si la base ne contient aucune épreuve.",
       "Si l'essai signale une anomalie, ne lance pas l'écriture : examine le rapport et choisis une autre sauvegarde ou demande une vérification technique.",
       "La suppression d'une sauvegarde est distincte de la restauration et demande une confirmation.",
     ],
-    astuce: "Fais une sauvegarde avant toute opération lourde (import massif, suppression en série).",
+    astuce:
+      "Fais une sauvegarde avant toute opération lourde (import massif, suppression en série). Si l'inventaire affiche un message d'erreur, lis-le en entier : « stockage injoignable » et « index illisible » n'appellent pas la même réaction.",
   },
   {
     id: "journal",

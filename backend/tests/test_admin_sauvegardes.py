@@ -476,13 +476,21 @@ def test_sauvegarde_corrompue_absente_de_l_inventaire(admin, epreuve_gratuite) -
     """Une sauvegarde dont l'index est cassé n'est PAS listée comme valide.
 
     L'afficher laisserait croire qu'on peut la restaurer ; c'est pire que de
-    ne pas la montrer.
+    ne pas la montrer. Elle est en revanche SIGNALÉE dans `ignorees`, avec sa
+    raison : sans cela, elle disparaîtrait silencieusement et l'administrateur
+    croirait à une perte de données.
     """
     r = admin.post("/api/admin/sauvegardes/export", json={})
     _attendre(admin, r.json()["id"])
-    cle = admin.get("/api/admin/sauvegardes").json()["sauvegardes"][0]["cle"]
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    cle = inventaire["sauvegardes"][0]["cle"]
     get_storage().put_bytes(f"{cle}/{NOM_INDEX}", b"{ ceci n'est pas du json")
-    assert admin.get("/api/admin/sauvegardes").json()["sauvegardes"] == []
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    assert inventaire["sauvegardes"] == []
+    ignorees = inventaire.get("ignorees") or []
+    assert len(ignorees) == 1, ignorees
+    assert ignorees[0]["cle"] == cle
+    assert "illisible" in ignorees[0]["raison"].lower()
 
 
 # --------------------------------------------------------------------------
@@ -618,3 +626,196 @@ def test_journal_du_job_conserve(admin, epreuve_gratuite) -> None:
     assert job["logs"], "le journal doit raconter ce qui s'est passé"
     assert any(isinstance(ligne, str) for ligne in job["logs"])
     assert isinstance(json.loads(json.dumps(job["report"])), dict)
+
+
+# --------------------------------------------------------------------------
+# Durée, phase et complétude
+# --------------------------------------------------------------------------
+
+
+def test_export_expose_duree_et_phase(admin, epreuve_gratuite) -> None:
+    """Un job terminé porte sa durée et sa phase finale.
+
+    Sans `duration_ms`, l'écran ne peut afficher que l'heure de la demande :
+    elle ne dit rien du temps de travail réel et donne une durée fausse dès
+    qu'un job a attendu son tour.
+    """
+    r = admin.post("/api/admin/sauvegardes/export", json={})
+    job = _attendre(admin, r.json()["id"])
+    assert job["status"] == "done", job
+    assert job["started_at"], "la prise en charge doit être datée"
+    assert job["finished_at"], "la fin doit être datée"
+    assert isinstance(job["duration_ms"], int)
+    assert job["duration_ms"] >= 0
+    assert job["phase"], "la phase finale doit être exposée"
+    assert job["heartbeat_at"], "le dernier battement doit être exposé"
+
+
+def test_restauration_expose_duree_et_phase(admin, sauvegarde) -> None:
+    r = admin.post(
+        "/api/admin/sauvegardes/restore",
+        json={"source": sauvegarde["cle"], "mode": "bucket"},
+    )
+    assert r.status_code == 200, r.text
+    job = _attendre(admin, r.json()["id"])
+    assert job["status"] == "done", job
+    assert isinstance(job["duration_ms"], int)
+    assert job["phase"], "une restauration doit annoncer sa phase"
+
+
+def test_marqueur_pret_ecrit_apres_index(admin, epreuve_gratuite) -> None:
+    """`_READY` n'existe qu'une fois l'export terminé.
+
+    C'est ce marqueur qui distingue une sauvegarde complète d'une archive
+    interrompue : sa présence prouve que l'index a été écrit avant lui.
+    """
+    from app.core.export_service import NOM_PRET
+
+    r = admin.post("/api/admin/sauvegardes/export", json={})
+    job = _attendre(admin, r.json()["id"])
+    assert job["status"] == "done", job
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    cle = inventaire["sauvegardes"][0]["cle"]
+    assert get_storage().exists(f"{cle}/{NOM_PRET}")
+
+
+def test_export_en_cours_absent_de_l_inventaire(admin, db, epreuve_gratuite) -> None:
+    """Un dossier d'export actif n'est pas proposé à la restauration.
+
+    Le job est simulé `running` : sans cette règle, l'inventaire listerait une
+    archive partielle comme restaurable, et la restauration échouerait sur une
+    partie manquante au lieu de l'empêcher.
+    """
+    from app.core.export_service import NOM_INDEX, NOM_MANIFESTE
+    from app.db_models import SauvegardeJobORM
+
+    prefixe = f"{PREFIXE}/2026-01-01T000000Z"
+    stockage = get_storage()
+    stockage.put_bytes(
+        f"{prefixe}/{NOM_MANIFESTE}",
+        json.dumps({"epreuve_count": 0, "fichier_count": 0}).encode("utf-8"),
+    )
+    stockage.put_bytes(
+        f"{prefixe}/{NOM_INDEX}",
+        json.dumps({"parties": []}).encode("utf-8"),
+    )
+    db.add(
+        SauvegardeJobORM(
+            kind="export",
+            status="running",
+            destination=prefixe,
+        )
+    )
+    db.commit()
+
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    assert all(s["cle"] != prefixe for s in inventaire["sauvegardes"])
+    ignorees = {i["cle"]: i["raison"] for i in inventaire.get("ignorees") or []}
+    assert prefixe in ignorees, ignorees
+    assert "cours" in ignorees[prefixe].lower()
+
+
+def test_ancienne_sauvegarde_sans_marqueur_reste_listee(admin, db, epreuve_gratuite) -> None:
+    """Une sauvegarde antérieure à `_READY` reste restaurable.
+
+    La compatibilité est la raison d'être de la règle : refuser toutes les
+    archives existantes au déploiement de l'instrumentation reviendrait à
+    supprimer les sauvegardes de la veille.
+    """
+    from app.core.export_service import NOM_INDEX, NOM_MANIFESTE
+
+    prefixe = f"{PREFIXE}/2025-12-31T235959Z"
+    stockage = get_storage()
+    stockage.put_bytes(
+        f"{prefixe}/{NOM_MANIFESTE}",
+        json.dumps({"epreuve_count": 1, "fichier_count": 2}).encode("utf-8"),
+    )
+    stockage.put_bytes(
+        f"{prefixe}/{NOM_INDEX}",
+        json.dumps({"parties": [{"nom": "partie-1.zip", "octets": 10, "sha256": "a"}]}).encode(
+            "utf-8"
+        ),
+    )
+
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    assert any(s["cle"] == prefixe for s in inventaire["sauvegardes"]), inventaire
+
+
+def test_manifeste_absent_signale_dans_les_ignorees(admin, epreuve_gratuite) -> None:
+    """Un index seul ne fait pas une sauvegarde : le manifeste est requis.
+
+    C'est le cas exact d'un export interrompu entre l'écriture des parties et
+    celle du manifeste. Le dossier doit être signalé, pas listé comme valide.
+    """
+    from app.core.export_service import NOM_INDEX
+
+    prefixe = f"{PREFIXE}/2026-02-01T000000Z"
+    get_storage().put_bytes(
+        f"{prefixe}/{NOM_INDEX}",
+        json.dumps({"parties": []}).encode("utf-8"),
+    )
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    assert all(s["cle"] != prefixe for s in inventaire["sauvegardes"])
+    ignorees = {i["cle"]: i["raison"] for i in inventaire.get("ignorees") or []}
+    assert prefixe in ignorees, ignorees
+    assert "introuvable" in ignorees[prefixe].lower()
+
+
+def test_index_absent_signale_dans_les_ignorees(admin, epreuve_gratuite) -> None:
+    """Le manifeste seul ne suffit pas : l'index porte les empreintes.
+
+    C'est l'état d'un export interrompu juste avant l'écriture de l'index. La
+    sauvegarde est incomplète et doit être signalée, jamais proposée.
+    """
+    from app.core.export_service import NOM_MANIFESTE
+
+    prefixe = f"{PREFIXE}/2026-02-02T000000Z"
+    get_storage().put_bytes(
+        f"{prefixe}/{NOM_MANIFESTE}",
+        json.dumps({"epreuve_count": 0, "fichier_count": 0}).encode("utf-8"),
+    )
+    inventaire = admin.get("/api/admin/sauvegardes").json()
+    assert all(s["cle"] != prefixe for s in inventaire["sauvegardes"])
+    ignorees = {i["cle"]: i["raison"] for i in inventaire.get("ignorees") or []}
+    assert prefixe in ignorees, ignorees
+    assert "introuvable" in ignorees[prefixe].lower()
+
+
+
+def test_panne_de_stockage_renvoie_503(admin, monkeypatch) -> None:
+    """Un stockage injoignable n'est PAS « aucune sauvegarde ».
+
+    Répondre une liste vide ferait croire à une perte de données et pousserait
+    à relancer un export. Le statut distinct permet à l'écran de dire la vérité.
+    """
+    from app.routers import admin_sauvegardes as route
+
+    class StockageEnPanne:
+        def list_objects(self, _prefixe):
+            raise RuntimeError("S3 injoignable")
+
+    monkeypatch.setattr(route, "get_storage", lambda: StockageEnPanne())
+    r = admin.get("/api/admin/sauvegardes")
+    assert r.status_code == 503, r.text
+    assert "stockage" in r.json()["detail"].lower()
+
+
+def test_echec_export_conserve_duree_et_phase(admin, epreuve_gratuite, monkeypatch) -> None:
+    """Un export en échec garde sa durée et la phase atteinte.
+
+    Sans cela, l'écran afficherait « échec » sans dire combien de temps a été
+    perdu ni à quelle étape — deux informations nécessaires pour décider s'il
+    faut relancer ou changer de stratégie.
+    """
+    from app.routers import admin_sauvegardes as route
+
+    def echec(*_args, **_kwargs):
+        raise RuntimeError("panne simulée")
+
+    monkeypatch.setattr(route, "run_export", echec)
+    r = admin.post("/api/admin/sauvegardes/export", json={})
+    job = _attendre(admin, r.json()["id"])
+    assert job["status"] == "error", job
+    assert isinstance(job["duration_ms"], int)
+    assert job["started_at"] and job["finished_at"]
+    assert job["phase"], "la phase atteinte doit rester lisible après l'échec"

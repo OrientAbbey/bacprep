@@ -33,7 +33,7 @@ from .core import seo, store
 from .core.catalogue import seed_database_if_empty
 from .core.config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
 from .core.logging_config import log_json_actif, get_logger, setup_logging
-from .db import Base, SessionLocal, engine, get_db
+from .db import IS_SQLITE, Base, SessionLocal, engine, get_db
 from .routers import (
     admin_assistant,
     admin_banque,
@@ -252,6 +252,52 @@ def _ensure_epreuve_files_document_unique() -> None:
         )
 
 
+def _ensure_job_tracking_columns() -> None:
+    """Migration minimale et idempotente des colonnes de suivi des jobs.
+
+    `create_all` ne crée QUE les tables absentes et ne modifie jamais une
+    table existante : les bases déjà déployées n'auraient jamais `started_at`,
+    `heartbeat_at`, `phase`, `phase_started_at` ni `duration_ms`. Sans cette
+    migration, la première lecture d'un job lèverait `UndefinedColumn` sur
+    PostgreSQL — c'est-à-dire en production, et seulement là.
+
+    La syntaxe `ALTER TABLE ... ADD COLUMN ...` est acceptée par SQLite et
+    PostgreSQL. Le type d'horodatage diffère : SQLite n'a que `TIMESTAMP`,
+    tandis que PostgreSQL doit conserver le fuseau (`TIMESTAMP WITH TIME
+    ZONE`) pour que `UTCDateTime` relise les valeurs sans décalage.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+
+    horodatage = "TIMESTAMP" if IS_SQLITE else "TIMESTAMP WITH TIME ZONE"
+    ajouts: dict[str, list[tuple[str, str]]] = {
+        "sauvegarde_jobs": [
+            ("started_at", horodatage),
+            ("heartbeat_at", horodatage),
+            ("phase", "VARCHAR(40) NOT NULL DEFAULT ''"),
+            ("phase_started_at", horodatage),
+            ("duration_ms", "INTEGER"),
+        ],
+        "import_jobs": [
+            ("started_at", horodatage),
+            ("heartbeat_at", horodatage),
+            ("duration_ms", "INTEGER"),
+        ],
+    }
+    for table, colonnes in ajouts.items():
+        try:
+            existantes = {c["name"] for c in sa_inspect(engine).get_columns(table)}
+        except Exception:
+            # Table absente (premier démarrage) : `create_all` vient de la
+            # créer avec toutes les colonnes, rien à migrer.
+            continue
+        for nom, type_sql in colonnes:
+            if nom in existantes:
+                continue
+            with engine.begin() as conn:
+                conn.execute(sa_text(f"ALTER TABLE {table} ADD COLUMN {nom} {type_sql}"))
+
+
 def _check_prod_config() -> None:
     """Refuse de démarrer en production si une variable de sécurité est
     absente ou faible.
@@ -315,6 +361,9 @@ async def lifespan(app: FastAPI):
     # chantier « matricule + monnaie AK » (colonnes `plans.prix_ak`,
     # `users.solde_ak`…), sans quoi l'ORM échoue sur ces colonnes.
     _migrer_schema()
+    # Ajoute les colonnes de suivi des jobs aux installations antérieures à la
+    # file persistée. L'opération est idempotente sur SQLite et PostgreSQL.
+    _ensure_job_tracking_columns()
     db = SessionLocal()
     try:
         from .core.referentiel_options import seed_referentiel_options

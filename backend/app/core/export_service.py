@@ -57,9 +57,23 @@ NOM_SAUVEGARDE = "sauvegarde.zip"
 # ne sait pas la relire n'est qu'un fichier .zip : la procédure doit voyager
 # AVEC les données, pas rester dans la documentation du dépôt.
 NOM_LISEZMOI = "LISEZMOI.txt"
+# Marqueur final : il n'est écrit qu'APRÈS `index.json`, donc sa présence
+# prouve qu'une sauvegarde est complète. Sans lui, une archive interrompue
+# ressemble à une archive valide — et l'inventaire la proposait à la
+# restauration alors que sa dernière partie manquait.
+NOM_PRET = "_READY"
 TMOIS = 1024 * 1024 * 1024  # 1 Gio
 PARTIE = 256 * 1024 * 1024  # 256 Mio
 _BLOC = 1024 * 1024
+
+# Phases exposées à l'écran. Ce sont des constantes, pas des libellés : le
+# frontend les traduit, et un renommage accidentel ne doit pas faire
+# disparaître silencieusement l'étape courante.
+PHASE_MANIFESTE = "manifeste"
+PHASE_LECTURE = "lecture"
+PHASE_UPLOAD = "upload"
+PHASE_INDEX = "index"
+PHASE_FINALISATION = "finalisation"
 
 
 def seuil_partie_octets() -> int:
@@ -211,6 +225,7 @@ def _ecrire_partie(
     report: dict,
     on_progress=None,
     on_fichier=None,
+    on_phase=None,
 ) -> dict:
     """Écrit une partie ZIP autonome et la téléverse. Retourne sa fiche index.
 
@@ -227,6 +242,8 @@ def _ecrire_partie(
     ecrits = 0
     traites = 0
     octets_vus = 0
+    if on_phase:
+        on_phase(PHASE_LECTURE)
     with chemin_tmp.open("wb") as fh:
         with zipfile.ZipFile(fh, "w", zipfile.ZIP_DEFLATED) as zf:
             for fichier in fichiers:
@@ -285,6 +302,8 @@ def _ecrire_partie(
 
     # Le ZipFile est fermé : le répertoire central est écrit. On téléverse
     # ensuite la partie, puis on libère le disque.
+    if on_phase:
+        on_phase(PHASE_UPLOAD)
     try:
         sha, octets = _televerser_et_hacher(
             stockage, destination + nom, chemin_tmp, "application/zip"
@@ -314,6 +333,7 @@ def run_export(
     dossier_tmp: Optional[Path] = None,
     progression=None,
     periode_progression: float = 0.4,
+    on_phase=None,
 ) -> dict:
     """Exporte tout le catalogue. `destination` est le préfixe de stockage,
     sans slash final (ex. `_sauvegardes/2026-09-27T2240Z`).
@@ -333,8 +353,19 @@ def run_export(
     d'attendre quatre dixièmes de seconde et d'espérer que l'export dure
     assez longtemps — un test dont le résultat dépend de la vitesse de la
     machine n'est pas un test.
+
+    `on_phase(nom)` est appelé à chaque changement de phase
+    (`manifeste`, `lecture`, `upload`, `index`, `finalisation`). Il permet à
+    l'écran de dire CE QUI est lent, au lieu d'afficher une durée totale qui
+    ne distingue pas une lecture S3 lente d'une compression locale.
     """
     from ..db import utc_now
+
+    def _phase(nom: str) -> None:
+        if on_phase:
+            on_phase(nom)
+
+    _phase(PHASE_MANIFESTE)
 
     stockage = get_storage()
     if dossier_tmp is None:
@@ -404,6 +435,7 @@ def run_export(
             lots.append(courant)
         nom_commun = "part-{numero:04d}.zip"
 
+    _phase(PHASE_LECTURE)
     if progression:
         progression(0, manifest["fichier_count"], 0, len(lots), 0)
 
@@ -454,6 +486,7 @@ def run_export(
             report,
             on_progress,
             on_fichier=_sur_fichier,
+            on_phase=on_phase,
         )
         # Le cumul est aligné sur ce que la fiche dit RÉELLEMENT écrit, pas sur
         # le nombre d'entrées traversées : un objet absent ne doit pas faire
@@ -470,6 +503,7 @@ def run_export(
                 cumules["octets"],
             )
 
+    _phase(PHASE_INDEX)
     index = {
         "manifeste": NOM_MANIFESTE,
         "manifeste_sha256": hashlib.sha256(
@@ -483,7 +517,15 @@ def run_export(
         [json.dumps(index, ensure_ascii=False, indent=1).encode("utf-8")],
         mime_type="application/json",
     )
+    # Dernière écriture, APRÈS l'index : sa présence est la preuve que la
+    # sauvegarde est complète. L'écrire plus tôt ne prouverait rien.
+    stockage.put_stream(
+        prefixe + NOM_PRET,
+        [b"ok\n"],
+        mime_type="text/plain; charset=utf-8",
+    )
     report["index"] = index
+    _phase(PHASE_FINALISATION)
     log.info(
         "Export terminé : %s partie(s), %s fichier(s), %s octets",
         len(report["parties"]),

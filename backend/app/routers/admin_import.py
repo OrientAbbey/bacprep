@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import shutil
 import zipfile
+from datetime import timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
@@ -48,7 +49,10 @@ def _job_to_dict(job: ImportJobORM) -> dict:
         "filename": job.filename,
         "status": job.status,
         "created_at": job.created_at,
+        "started_at": job.started_at,
+        "heartbeat_at": job.heartbeat_at,
         "finished_at": job.finished_at,
+        "duration_ms": job.duration_ms,
         "report": report,
         "logs": logs,
     }
@@ -84,6 +88,7 @@ def _run_import_job(job_id: str, extract_dir: str) -> None:
             job = session.query(ImportJobORM).filter(ImportJobORM.id == job_id).one_or_none()
             if job:
                 job.logs_json = json.dumps(logs, ensure_ascii=False)
+                job.heartbeat_at = utc_now()
                 session.commit()
         finally:
             session.close()
@@ -105,18 +110,37 @@ def _run_import_job(job_id: str, extract_dir: str) -> None:
         job = db.query(ImportJobORM).filter(ImportJobORM.id == job_id).one_or_none()
         if not job:
             return
+        # `started_at` date la prise en charge réelle, pas la demande.
+        job.started_at = utc_now()
+        job.heartbeat_at = job.started_at
+        db.commit()
         try:
             report = run_import(db, Path(extract_dir), dry_run=False, on_progress=persist_log)
             job.report_json = json.dumps(report, ensure_ascii=False)
             job.status = "done"
         except Exception as exc:
             db.rollback()
+            job = db.query(ImportJobORM).filter(ImportJobORM.id == job_id).one()
             job.report_json = json.dumps({"erreurs": [{"fichier": "", "erreur": str(exc)}]}, ensure_ascii=False)
             job.status = "error"
             log.exception("Job d'import %s en erreur", job_id)
         job.finished_at = utc_now()
+        job.heartbeat_at = job.finished_at
+        if job.started_at is not None:
+            debut = job.started_at
+            fin = job.finished_at
+            if getattr(debut, "tzinfo", None) is not None:
+                debut = debut.astimezone(timezone.utc).replace(tzinfo=None)
+            if getattr(fin, "tzinfo", None) is not None:
+                fin = fin.astimezone(timezone.utc).replace(tzinfo=None)
+            job.duration_ms = max(0, int((fin - debut).total_seconds() * 1000))
         db.commit()
-        log.info("Job d'import %s terminé (%s)", job_id, job.status)
+        log.info(
+            "Job d'import %s terminé (%s) en %s ms",
+            job_id,
+            job.status,
+            job.duration_ms,
+        )
     finally:
         db.close()
         # Purge du contenu extrait une fois le traitement fini (succès ou

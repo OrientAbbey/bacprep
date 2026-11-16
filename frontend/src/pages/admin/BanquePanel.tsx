@@ -299,6 +299,74 @@ export function BanquePanel({ token }: { token: string }) {
         <button type="button" onClick={() => void charger()} className={bouton}><RefreshCw size={14} aria-hidden="true" /> Actualiser</button>
       </header>
 
+      <details className="rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
+        <summary className="cursor-pointer font-serif-brand text-lg">
+          Comprendre la banque d&apos;exercices
+        </summary>
+        <div className="mt-3 space-y-2 text-sm text-ink-soft">
+          <p>
+            <strong>Partie</strong> — groupe logique auquel appartiennent des exercices
+            (par exemple « Fonctions » en Mathématiques). Une partie porte une seule
+            matière ; c&apos;est elle que le générateur choisit avant de tirer un exercice.
+          </p>
+          <p>
+            <strong>Matière</strong> — matière de rattachement de la partie. Elle doit
+            correspondre au référentiel : elle détermine dans quelles épreuves la partie
+            peut apparaître.
+          </p>
+          <p>
+            <strong>Nom</strong> — nom lisible et unique dans une matière. Deux parties de
+            la même matière ne peuvent pas porter le même nom. C&apos;est ce libellé que
+            l&apos;administrateur voit partout ensuite.
+          </p>
+          <p>
+            <strong>Ordre</strong> — ordre d&apos;affichage, du plus petit au plus grand.
+            Ce n&apos;est <em>pas</em> une priorité de tirage : un exercice d&apos;ordre 1
+            n&apos;est pas plus souvent choisi qu&apos;un exercice d&apos;ordre 9. Il sert
+            seulement à ranger les parties dans un ordre stable et prévisible.
+          </p>
+          <p>
+            <strong>Difficulté</strong> — niveau intrinsèque de l&apos;exercice (Facile,
+            Moyen, Difficile). Il sert au générateur à équilibrer un sujet ; il ne change
+            pas la difficulté de l&apos;épreuve elle-même.
+          </p>
+          <p>
+            <strong>Classes</strong> — niveaux pour lesquels l&apos;exercice est valable.
+            Laisser vide revient à ne le rendre disponible pour aucune classe : coche au
+            moins une classe pour qu&apos;il puisse être tiré.
+          </p>
+          <p>
+            <strong>Spécialités</strong> — séries concernées (A, C, D…). « Aucune
+            spécialité (toutes les séries) » rend l&apos;exercice disponible pour toutes
+            les séries, y compris les classes qui n&apos;en ont pas. Choisir une série
+            précise le réserve aux élèves de cette série.
+          </p>
+          <p>
+            <strong>Session</strong> — séquence pédagogique à laquelle l&apos;exercice
+            appartient. Laisser vide si l&apos;exercice ne dépend pas d&apos;une
+            progression (révision, annales).
+          </p>
+          <p>
+            <strong>Épreuve d&apos;examen</strong> — marque l&apos;exercice comme déjà
+            tombé à un examen. La case n&apos;est disponible que si une session est
+            choisie : un exercice hors progression ne peut pas porter ce tag.
+          </p>
+          <p>
+            <strong>Actif</strong> — l&apos;exercice est éligible au tirage. Un exercice
+            inactif reste dans la banque et garde son historique, mais le générateur ne
+            le choisit plus.
+          </p>
+          <p className="rounded border border-ink-soft/15 bg-paper p-3">
+            <strong>Exemple complet.</strong> Pour ajouter les suites en Terminale D :
+            crée une partie « Suites » (matière Mathématiques, ordre 3), puis un exercice
+            dans cette partie (difficulté Moyen, classes Terminale, spécialité D, session
+            « Suites et récurrence », actif). Renseigne le sujet et le corrigé, enregistre.
+            L&apos;exercice devient tirable dès qu&apos;il est actif et qu&apos;au moins
+            une classe le couvre.
+          </p>
+        </div>
+      </details>
+
       <section aria-labelledby="banque-parties" className="space-y-3 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="banque-parties" className="font-serif-brand">Parties</h3>
@@ -320,11 +388,12 @@ export function BanquePanel({ token }: { token: string }) {
         )}
         {partieForm && (
           <form className="grid gap-3 border-t border-ink-soft/10 pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_7rem_auto_auto]" onSubmit={(e) => void enregistrerPartie(e)}>
-            <label className="text-xs">Matière<select required value={partieForm.matiere} onChange={(e) => setPartieForm({ ...partieForm, matiere: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{data.referentiel.matiere.map((v) => <option key={v}>{v}</option>)}</select></label>
-            <label className="text-xs">Nom<input required maxLength={160} value={partieForm.nom} onChange={(e) => setPartieForm({ ...partieForm, nom: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm" /></label>
-            <label className="text-xs">Ordre<input type="number" min={0} max={10000} value={partieForm.ordre} onChange={(e) => setPartieForm({ ...partieForm, ordre: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm" /></label>
+            <label className="text-xs">Matière<select required title="Matière de rattachement de la partie" value={partieForm.matiere} onChange={(e) => setPartieForm({ ...partieForm, matiere: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{data.referentiel.matiere.map((v) => <option key={v}>{v}</option>)}</select></label>
+            <label className="text-xs">Nom<input required maxLength={160} title="Nom lisible, unique dans la matière" value={partieForm.nom} onChange={(e) => setPartieForm({ ...partieForm, nom: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm" /></label>
+            <label className="text-xs">Ordre<input type="number" min={0} max={10000} title="Ordre d'affichage, du plus petit au plus grand — pas une priorité de tirage" value={partieForm.ordre} onChange={(e) => setPartieForm({ ...partieForm, ordre: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm" /></label>
             <button disabled={operation} className={`${bouton} self-end bg-ink text-paper`}><Save size={14} aria-hidden="true" /> Enregistrer</button>
             <button type="button" onClick={() => { setPartieForm(null); setPartieEnEdition(null); }} className={`${bouton} self-end`}>Annuler</button>
+            <p className="text-[10px] text-slate sm:col-span-5">L&apos;ordre range les parties à l&apos;écran ; il ne change pas la fréquence de tirage des exercices.</p>
           </form>
         )}
       </section>
@@ -359,12 +428,12 @@ export function BanquePanel({ token }: { token: string }) {
           <form className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-4" onSubmit={(e) => void enregistrerExercice(e)}>
             <h4 className="font-serif-brand">{exerciceEnEdition ? "Modifier l'exercice" : "Nouvel exercice"}</h4>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs">Partie *<select required value={exerciceForm.partie_id} onChange={(e) => setExerciceForm({ ...exerciceForm, partie_id: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{parties.map((p) => <option key={p.id} value={p.id}>{p.matiere} — {p.nom}</option>)}</select></label>
-              <label className="text-xs">Difficulté<select value={exerciceForm.niveau_intrinseque} onChange={(e) => setExerciceForm({ ...exerciceForm, niveau_intrinseque: e.target.value as ExerciceForm["niveau_intrinseque"] })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{["Facile", "Moyen", "Difficile"].map((v) => <option key={v}>{v}</option>)}</select></label>
-              <label className="text-xs">Séquence (laisser vide si non applicable)<select value={exerciceForm.session} onChange={(e) => setExerciceForm({ ...exerciceForm, session: e.target.value, tag_examen: e.target.value ? exerciceForm.tag_examen : false })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm"><option value="">Aucune</option>{data.referentiel.sequences.map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+              <label className="text-xs">Partie *<select required title="Partie qui contient l'exercice" value={exerciceForm.partie_id} onChange={(e) => setExerciceForm({ ...exerciceForm, partie_id: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{parties.map((p) => <option key={p.id} value={p.id}>{p.matiere} — {p.nom}</option>)}</select></label>
+              <label className="text-xs">Difficulté<select title="Niveau intrinsèque de l'exercice" value={exerciceForm.niveau_intrinseque} onChange={(e) => setExerciceForm({ ...exerciceForm, niveau_intrinseque: e.target.value as ExerciceForm["niveau_intrinseque"] })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{["Facile", "Moyen", "Difficile"].map((v) => <option key={v}>{v}</option>)}</select></label>
+              <label className="text-xs">Séquence (laisser vide si non applicable)<select title="Progression pédagogique ; vide = exercice hors séquence" value={exerciceForm.session} onChange={(e) => setExerciceForm({ ...exerciceForm, session: e.target.value, tag_examen: e.target.value ? exerciceForm.tag_examen : false })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm"><option value="">Aucune</option>{data.referentiel.sequences.map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
               <div className="flex flex-wrap items-end gap-4 pb-2 text-sm">
-                <label className="flex items-center gap-2"><input type="checkbox" checked={exerciceForm.tag_examen} disabled={!exerciceForm.session} onChange={(e) => setExerciceForm({ ...exerciceForm, tag_examen: e.target.checked })} /> Épreuve d'examen</label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={exerciceForm.actif} onChange={(e) => setExerciceForm({ ...exerciceForm, actif: e.target.checked })} /> Exercice actif</label>
+                <label className="flex items-center gap-2" title="Nécessite une séquence choisie"><input type="checkbox" checked={exerciceForm.tag_examen} disabled={!exerciceForm.session} onChange={(e) => setExerciceForm({ ...exerciceForm, tag_examen: e.target.checked })} /> Épreuve d'examen</label>
+                <label className="flex items-center gap-2" title="Un exercice inactif n'est jamais tiré"><input type="checkbox" checked={exerciceForm.actif} onChange={(e) => setExerciceForm({ ...exerciceForm, actif: e.target.checked })} /> Exercice actif</label>
               </div>
             </div>
             {cases("Matières", data.referentiel.matiere, exerciceForm.matieres, (matieres) => setExerciceForm({ ...exerciceForm, matieres }))}
@@ -385,6 +454,7 @@ export function BanquePanel({ token }: { token: string }) {
               </div>
               <p className="text-[10px] text-ink-soft">Cette option inclut aussi les classes sans spécialité.</p>
             </fieldset>
+            <p className="text-[10px] text-slate">Coche au moins une classe : sans classe, l&apos;exercice n&apos;est proposé à aucun élève. Les spécialités restreignent le tirage aux séries cochées ; « Aucune spécialité » l&apos;ouvre à toutes.</p>
             <label className="block text-xs">Sujet *<textarea required maxLength={100000} rows={7} value={exerciceForm.sujet} onChange={(e) => setExerciceForm({ ...exerciceForm, sujet: e.target.value })} className="mt-1 w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" /></label>
             <label className="block text-xs">Corrigé *<textarea required maxLength={100000} rows={7} value={exerciceForm.corrige} onChange={(e) => setExerciceForm({ ...exerciceForm, corrige: e.target.value })} className="mt-1 w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" /></label>
             <div className="flex flex-wrap gap-2">
@@ -412,7 +482,7 @@ export function BanquePanel({ token }: { token: string }) {
 
       <section aria-labelledby="banque-transfert" className="space-y-3 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">
         <h3 id="banque-transfert" className="font-serif-brand">Import et export</h3>
-        <p className="text-sm text-ink-soft">L'export contient la banque et son référentiel associé. Un import « remplacer » écrase le contenu existant.</p>
+        <p className="text-sm text-ink-soft">L&apos;export produit un fichier JSON unique contenant les parties, les exercices, le référentiel (matières, classes, séries, séquences) et les métadonnées de classe. Il sert de sauvegarde ou de transfert entre environnements.</p>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => void exporter()} className={bouton}><Download size={14} aria-hidden="true" /> Exporter en JSON</button>
           <label className="flex min-h-[40px] items-center gap-2 rounded-full border border-ink-soft/25 px-3 text-sm">
@@ -421,7 +491,11 @@ export function BanquePanel({ token }: { token: string }) {
           </label>
           <button type="button" onClick={() => { modeImportRef.current = "remplacer"; fichierRef.current?.click(); }} className={`${bouton} border-correction/40 text-correction`}>Importer en remplaçant…</button>
         </div>
-        <p className="text-xs text-slate">L'import en fusion conserve les éléments non présents dans le fichier. Le remplacement écrase le contenu existant après confirmation.</p>
+        <div className="space-y-1 text-xs text-slate">
+          <p><strong>Fusionner</strong> — ajoute les éléments du fichier et met à jour ceux qui portent le même identifiant. Les parties, exercices et métadonnées absents du fichier sont conservés.</p>
+          <p><strong>Remplacer</strong> — efface la banque actuelle (exercices, parties, métadonnées) puis écrit le contenu du fichier. Aucun retour en arrière automatique : une confirmation explicite est demandée avant l&apos;écriture.</p>
+          <p>Les deux imports sont précédés d&apos;un aperçu du contenu. Un import volumineux reste traité en une seule requête : ne ferme pas l&apos;onglet avant le message de fin.</p>
+        </div>
       </section>
 
       <section aria-labelledby="banque-journal" className="space-y-3 rounded-lg border border-ink-soft/15 bg-paper-raised p-4">

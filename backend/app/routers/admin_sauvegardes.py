@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from ..core.export_service import (
     NOM_INDEX,
     NOM_MANIFESTE,
+    NOM_PRET,
     PREFIXE,
     run_export,
 )
@@ -84,7 +85,11 @@ def _job_to_dict(job: SauvegardeJobORM) -> dict:
         "parties_total": job.parties_total or 0,
         "report": charge(job.report_json, {}),
         "logs": charge(job.logs_json, []),
+        "phase": job.phase or "",
+        "duration_ms": job.duration_ms,
         "created_at": job.created_at.isoformat() if job.created_at else None,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
     }
 
@@ -100,7 +105,16 @@ def _iso(valeur) -> Optional[str]:
     return valeur.isoformat() if hasattr(valeur, "isoformat") else str(valeur)
 
 
-def _resume(prefixe: str, stockage) -> Optional[SauvegardeResume]:
+class SauvegardeIgnoree(Exception):
+    """Une sauvegarde présente dans le stockage n'est pas exploitable.
+
+    Lever plutôt que retourner `None` permet de dire POURQUOI elle est
+    ignorée : « en cours d'écriture », « export interrompu » ou « index
+    illisible » n'appellent pas la même réaction de l'administrateur.
+    """
+
+
+def _resume(prefixe: str, stockage) -> SauvegardeResume:
     """Construit le récapitulatif d'une sauvegarde depuis son index.
 
     L'index est la source de vérité : il donne le nombre de parties, leurs
@@ -114,36 +128,64 @@ def _resume(prefixe: str, stockage) -> Optional[SauvegardeResume]:
         manifest = json.loads(
             stockage.get_bytes(f"{prefixe}/{NOM_MANIFESTE}").decode("utf-8")
         )
-    except (StorageError, ValueError, KeyError):
-        log.warning("Sauvegarde ignorée (index ou manifeste illisible) : %s", prefixe)
-        return None
-    parties = index.get("parties") or []
+    except StorageError as exc:
+        raise SauvegardeIgnoree("index ou manifeste introuvable") from exc
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise SauvegardeIgnoree("index ou manifeste illisible") from exc
+
+    if not isinstance(index, dict) or not isinstance(manifest, dict):
+        raise SauvegardeIgnoree("structure de sauvegarde inattendue")
+    parties = index.get("parties")
+    if not isinstance(parties, list):
+        raise SauvegardeIgnoree("index sans liste de parties")
+
+    fiches = []
+    for partie in parties:
+        if not isinstance(partie, dict) or not partie.get("nom"):
+            raise SauvegardeIgnoree("partie décrite sans nom")
+        fiches.append(
+            {
+                "nom": str(partie["nom"]),
+                "octets": int(partie.get("octets") or 0),
+                "sha256": partie.get("sha256"),
+                "nb_fichiers": int(partie.get("nb_fichiers") or 0),
+            }
+        )
     return SauvegardeResume(
         cle=prefixe,
         nom=prefixe.rsplit("/", 1)[-1],
         taille_octets=0,
         modifie_le=None,
-        parties=[
-            {
-                "nom": p.get("nom"),
-                "octets": int(p.get("octets") or 0),
-                "sha256": p.get("sha256"),
-                "nb_fichiers": int(p.get("nb_fichiers") or 0),
-            }
-            for p in parties
-        ],
+        parties=fiches,
         epreuves=int(manifest.get("epreuve_count") or 0),
         fichiers=int(manifest.get("fichier_count") or 0),
     )
 
 
-def _lister_sauvegardes() -> list[dict]:
+def _lister_sauvegardes(db: Session) -> tuple[list[dict], list[dict]]:
+    """Inventaire des sauvegardes réellement restaurables.
+
+    Retourne `(sauvegardes, ignorees)`. Les ignorées portent leur raison :
+    l'écran peut alors distinguer une sauvegarde en cours d'écriture d'une
+    archive corrompue, au lieu d'afficher un message unique et faux.
+    """
     stockage = get_storage()
     try:
         objets = stockage.list_objects(PREFIXE)
     except NotImplementedError:
         log.warning("Le backend de stockage ne sait pas énumérer les clés")
-        return []
+        return [], []
+    except Exception as exc:
+        # S3 indisponible, identifiants expirés, réseau coupé : ce n'est PAS
+        # « aucune sauvegarde ». Le dire clairement évite de faire croire à
+        # une perte de données.
+        log.exception("Inventaire impossible : stockage injoignable")
+        raise HTTPException(
+            503,
+            "Stockage momentanément indisponible — l'inventaire ne peut pas "
+            f"être lu ({type(exc).__name__}). Réessaie dans quelques instants.",
+        ) from exc
+
     # Regroupement par dossier de sauvegarde : les clés sont
     # `_sauvegardes/<horodatage>/<pièce>`.
     groupes: dict[str, list[dict]] = {}
@@ -155,11 +197,57 @@ def _lister_sauvegardes() -> list[dict]:
             continue
         groupes.setdefault(f"{PREFIXE}/{dossier}", []).append(objet)
 
+    # État des exports connus, par destination. Un export écrit le manifeste,
+    # puis les parties, puis l'index : tant qu'il tourne, son dossier est
+    # partiel. `_READY` est la preuve de complétude, mais les sauvegardes
+    # antérieures à ce marqueur n'en ont pas — l'état du job permet alors de
+    # distinguer « ancienne sauvegarde » de « travail en cours ».
+    etats: dict[str, str] = {}
+    destinations = list(groupes)
+    if destinations:
+        for job in (
+            db.query(SauvegardeJobORM)
+            .filter(
+                SauvegardeJobORM.kind == "export",
+                SauvegardeJobORM.destination.in_(destinations),
+            )
+            .order_by(SauvegardeJobORM.created_at.desc())
+            .all()
+        ):
+            etats.setdefault(job.destination, job.status)
+
     resumes: list[dict] = []
+    ignorees: list[dict] = []
     # Antichronologique : la sauvegarde la plus récente en premier.
     for prefixe in sorted(groupes, reverse=True):
-        resume = _resume(prefixe, stockage)
-        if resume is None:
+        etat = etats.get(prefixe)
+        pret = False
+        try:
+            pret = stockage.exists(f"{prefixe}/{NOM_PRET}")
+        except Exception:
+            # `exists` peut échouer indépendamment : on laisse alors la
+            # décision au couple index/manifeste ci-dessous.
+            pret = False
+        if not pret:
+            if etat in ("pending", "running"):
+                ignorees.append({"cle": prefixe, "raison": "sauvegarde en cours d'écriture"})
+                continue
+            if etat == "error":
+                ignorees.append({"cle": prefixe, "raison": "export interrompu ou incomplet"})
+                continue
+            # Aucun job connu : sauvegarde antérieure au marqueur `_READY`.
+            # On l'accepte si son index et son manifeste sont lisibles.
+        try:
+            resume = _resume(prefixe, stockage)
+        except SauvegardeIgnoree as exc:
+            log.warning("Sauvegarde ignorée (%s) : %s", exc, prefixe)
+            ignorees.append({"cle": prefixe, "raison": str(exc)})
+            continue
+        except Exception as exc:  # structure inattendue, valeur non convertible…
+            log.exception("Sauvegarde ignorée (erreur inattendue) : %s", prefixe)
+            ignorees.append(
+                {"cle": prefixe, "raison": f"sauvegarde illisible ({type(exc).__name__})"}
+            )
             continue
         # Volume RÉELLEMENT occupé (parties + index + manifeste) et date de
         # dernière écriture : c'est ce que l'écran annonce à l'administrateur.
@@ -170,21 +258,26 @@ def _lister_sauvegardes() -> list[dict]:
             # `list_objects` le garantit), donc le maximum est direct.
             resume.modifie_le = _iso(max(dates))
         resumes.append(resume.model_dump())
-    return resumes
+    return resumes, ignorees
 
 
 @router.get("/sauvegardes")
-def lister(client=Depends(require_admin)) -> dict:
-    """Inventaire des sauvegardes : la liste, plus le volume total occupé.
+def lister(
+    db: Session = Depends(get_db),
+    client=Depends(require_admin),
+) -> dict:
+    """Inventaire des sauvegardes : la liste, le volume total occupé et les
+    sauvegardes ignorées avec leur raison.
 
     Le volume est affiché sans aucune purge automatique : la suppression reste
     une décision de l'administrateur. Une politique de rétention décidée par
     le système finit toujours par effacer la bonne sauvegarde au mauvais moment.
     """
-    sauvegardes = _lister_sauvegardes()
+    sauvegardes, ignorees = _lister_sauvegardes(db)
     return {
         "sauvegardes": sauvegardes,
         "total_octets": sum(s["taille_octets"] for s in sauvegardes),
+        "ignorees": ignorees,
     }
 
 
@@ -247,6 +340,18 @@ def _marquer_orphelin_si_besoin(db, job: SauvegardeJobORM) -> None:
     log.warning("Job de sauvegarde %s orphelin marqué en erreur", job.id)
 
 
+def _duree_ms(debut, fin) -> Optional[int]:
+    """Durée d'exécution en millisecondes, ou None si le job n'a pas commencé.
+
+    Les deux côtés sont ramenés en UTC naïf : `started_at` est aware sur
+    PostgreSQL et naïf sur SQLite, et les soustraire directement lèverait
+    `TypeError` sur l'un des deux moteurs seulement.
+    """
+    if debut is None or fin is None:
+        return None
+    return max(0, int((_naive(fin) - _naive(debut)).total_seconds() * 1000))
+
+
 def _naive(moment) -> "datetime":
     """`created_at` selon le moteur : aware sur PostgreSQL, naive sur SQLite.
 
@@ -282,10 +387,20 @@ def _run_export_job(job_id: str, destination: str) -> None:
         job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one_or_none()
         if not job:
             return
+        # `started_at` date la PRISE EN CHARGE, pas la demande : un job resté
+        # en attente derrière un déploiement ne doit pas compter ce temps
+        # d'attente dans sa durée d'exécution.
+        maintenant = utc_now()
+        job.started_at = maintenant
+        job.heartbeat_at = maintenant
+        job.phase = "manifeste"
+        job.phase_started_at = maintenant
+        db.commit()
 
         def noter(message: str) -> None:
             logs.append(message)
             job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
+            job.heartbeat_at = utc_now()
             db.commit()
 
         def progresser(fichiers, total, parties, parties_total, octets) -> None:
@@ -294,7 +409,16 @@ def _run_export_job(job_id: str, destination: str) -> None:
             job.partie_courante = parties
             job.parties_total = parties_total
             job.octets_faits = octets
+            job.heartbeat_at = utc_now()
             db.commit()
+
+        def changer_phase(nom: str) -> None:
+            maintenant = utc_now()
+            job.phase = nom
+            job.phase_started_at = maintenant
+            job.heartbeat_at = maintenant
+            db.commit()
+            log.info("Job d'export %s — phase %s", job_id, nom)
 
         try:
             report = run_export(
@@ -303,6 +427,7 @@ def _run_export_job(job_id: str, destination: str) -> None:
                 on_progress=noter,
                 dossier_tmp=_dossier_tva(job_id),
                 progression=progresser,
+                on_phase=changer_phase,
             )
             job.report_json = json.dumps(report, ensure_ascii=False, default=str)
             job.total_octets = report.get("octets", 0)
@@ -320,8 +445,15 @@ def _run_export_job(job_id: str, destination: str) -> None:
             )
             log.exception("Job d'export %s en erreur", job_id)
         job.finished_at = utc_now()
+        job.heartbeat_at = job.finished_at
+        job.duration_ms = _duree_ms(job.started_at, job.finished_at)
         db.commit()
-        log.info("Job d'export %s terminé (%s)", job_id, job.status)
+        log.info(
+            "Job d'export %s terminé (%s) en %s ms",
+            job_id,
+            job.status,
+            job.duration_ms,
+        )
     finally:
         db.close()
         shutil.rmtree(_dossier_tva(job_id), ignore_errors=True)
@@ -380,10 +512,17 @@ def _run_restore_job(job_id: str, source: str, mode: str, confirmer: bool) -> No
         job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one_or_none()
         if not job:
             return
+        maintenant = utc_now()
+        job.started_at = maintenant
+        job.heartbeat_at = maintenant
+        job.phase = "manifeste"
+        job.phase_started_at = maintenant
+        db.commit()
 
         def noter(message: str) -> None:
             logs.append(message)
             job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
+            job.heartbeat_at = utc_now()
             db.commit()
 
         def progresser(fichiers, total, octets, parties, parties_total) -> None:
@@ -392,7 +531,16 @@ def _run_restore_job(job_id: str, source: str, mode: str, confirmer: bool) -> No
             job.octets_faits = octets
             job.partie_courante = parties
             job.parties_total = parties_total
+            job.heartbeat_at = utc_now()
             db.commit()
+
+        def changer_phase(nom: str) -> None:
+            maintenant = utc_now()
+            job.phase = nom
+            job.phase_started_at = maintenant
+            job.heartbeat_at = maintenant
+            db.commit()
+            log.info("Job de restauration %s — phase %s", job_id, nom)
 
         try:
             report = run_restore(
@@ -404,6 +552,7 @@ def _run_restore_job(job_id: str, source: str, mode: str, confirmer: bool) -> No
                 dossier_tmp=_dossier_tva(job_id),
                 confirmation_recue=confirmer,
                 progression=progresser,
+                on_phase=changer_phase,
             )
             job.report_json = json.dumps(report, ensure_ascii=False, default=str)
             job.total_fichiers = report.get("fichiers", 0)
@@ -440,7 +589,15 @@ def _run_restore_job(job_id: str, source: str, mode: str, confirmer: bool) -> No
             )
             log.exception("Job de restauration %s en erreur", job_id)
         job.finished_at = utc_now()
+        job.heartbeat_at = job.finished_at
+        job.duration_ms = _duree_ms(job.started_at, job.finished_at)
         db.commit()
+        log.info(
+            "Job de restauration %s terminé (%s) en %s ms",
+            job_id,
+            job.status,
+            job.duration_ms,
+        )
     finally:
         db.close()
         shutil.rmtree(_dossier_tva(job_id), ignore_errors=True)

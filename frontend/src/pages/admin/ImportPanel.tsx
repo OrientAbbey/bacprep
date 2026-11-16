@@ -3,12 +3,14 @@ import { FileUp } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { ImportJob } from "../../api/types";
 import { useToast } from "../../components/Toast";
+import { choisirJobASuivre, dureeJob, dureeLisible, estActif } from "../../lib/jobs";
+import { formatRelativeTime } from "../../lib/time";
 import { Stat } from "./StatsPanel";
 import { authHeaders } from "./shared";
 
 /** Zone d'import massif : upload d'un dossier compressé (.zip) organisé
  * {annee}/{classe}/{matiere}/*.md, traitement en tâche de fond par le même
- * moteur que le script CLI `python -m app.scripts.importer`, puis rapport
+ * moteur que le script CLI `python -m scripts.importer`, puis rapport
  * détaillé (créées, doublons, métadonnées manquantes, erreurs). */
 export function ImportPanel({ token }: { token: string }) {
   const { showToast } = useToast();
@@ -17,6 +19,10 @@ export function ImportPanel({ token }: { token: string }) {
   const [job, setJob] = useState<ImportJob | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const logsRef = useRef<HTMLPreElement>(null);
+  // La reprise au montage ne doit se produire qu'une fois : sinon chaque
+  // rafraîchissement de l'historique remplacerait le job que l'on suit par un
+  // ancien.
+  const repriseFaite = useRef(false);
 
   // Défilement automatique de la console de logs vers la dernière ligne
   // tant que le job est en cours.
@@ -30,6 +36,15 @@ export function ImportPanel({ token }: { token: string }) {
     try {
       const list = await api.get<ImportJob[]>("/api/admin/import/jobs", authHeaders(token));
       setJobs(list);
+      // Reprise après navigation : l'état React est perdu au démontage, mais
+      // le serveur sait quel import tourne encore. Sans ce rattachement, un
+      // import lancé puis quitté restait invisible au retour, et l'on croyait
+      // à tort qu'il avait échoué.
+      if (!repriseFaite.current) {
+        repriseFaite.current = true;
+        const actif = choisirJobASuivre(list);
+        if (actif) setJob(actif);
+      }
     } catch {
       /* silencieux : la liste est un confort, pas un besoin critique */
     }
@@ -161,6 +176,27 @@ export function ImportPanel({ token }: { token: string }) {
             </span>
           </div>
 
+          {/* Durée mesurée par le serveur (`duration_ms`), sinon calculée
+              depuis la prise en charge. Pour un job encore actif, le temps
+              écoulé avance au rythme du polling. */}
+          {(() => {
+            const duree = dureeLisible(dureeJob(job));
+            if (!duree) return null;
+            return (
+              <p className="mt-2 text-xs text-ink-soft">
+                {estActif(job) ? "Écoulé" : "Durée"} : <strong>{duree}</strong>
+                {job.status === "pending" && !job.started_at && (
+                  <span className="ml-2 text-slate">— en attente de prise en charge</span>
+                )}
+                {job.heartbeat_at && (
+                  <span className="ml-2 text-slate">
+                    — dernière activité {formatRelativeTime(job.heartbeat_at)}
+                  </span>
+                )}
+              </p>
+            );
+          })()}
+
           {report && (job.status === "done" || job.status === "error") && (
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat label="Fichiers analysés" value={String(report.analyses ?? 0)} />
@@ -271,23 +307,41 @@ export function ImportPanel({ token }: { token: string }) {
         <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
           <h3 className="font-serif-brand text-lg">Imports précédents</h3>
           <ul className="mt-2 divide-y divide-ink-soft/10 text-sm">
-            {jobs.map((j) => (
-              <li key={j.id} className="flex items-center justify-between py-2">
-                <span>
-                  {j.filename || j.id.slice(0, 8)}{" "}
-                  <span className="font-mono-tag text-[10px] text-slate">
-                    {new Date(j.created_at).toLocaleString("fr-FR")}
+            {jobs.map((j) => {
+              const duree = dureeLisible(dureeJob(j));
+              return (
+                <li key={j.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span>
+                    {j.filename || j.id.slice(0, 8)}{" "}
+                    <span className="font-mono-tag text-[10px] text-slate">
+                      {new Date(j.created_at).toLocaleString("fr-FR")}
+                    </span>
                   </span>
-                </span>
-                <span
-                  className={`font-mono-tag text-[10px] ${
-                    j.status === "done" ? "text-valide" : j.status === "error" ? "text-correction" : "text-slate"
-                  }`}
-                >
-                  {j.status}
-                </span>
-              </li>
-            ))}
+                  <span className="flex items-center gap-3">
+                    {duree && <span className="text-xs text-slate">{duree}</span>}
+                    <span
+                      className={`font-mono-tag text-[10px] ${
+                        j.status === "done"
+                          ? "text-valide"
+                          : j.status === "error"
+                          ? "text-correction"
+                          : "text-slate"
+                      }`}
+                    >
+                      {j.status === "pending"
+                        ? "en attente"
+                        : j.status === "running"
+                        ? "en cours"
+                        : j.status === "done"
+                        ? "terminé"
+                        : j.status === "error"
+                        ? "échec"
+                        : j.status}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

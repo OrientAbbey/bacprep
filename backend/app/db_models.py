@@ -312,6 +312,15 @@ class SauvegardeJobORM(Base):
     octets_faits = Column(Integer, nullable=False, default=0)
     partie_courante = Column(Integer, nullable=False, default=0)
     parties_total = Column(Integer, nullable=False, default=0)
+    # Suivi d'exécution : quand le worker a RÉELLEMENT pris le job, ce qu'il
+    # fait maintenant, et depuis combien de temps. `created_at` date la
+    # demande, pas le travail — les confondre affichait une durée fausse
+    # lorsqu'un job attendait son tour.
+    started_at = Column(UTCDateTime, nullable=True)
+    heartbeat_at = Column(UTCDateTime, nullable=True)
+    phase = Column(String(40), nullable=False, default="")
+    phase_started_at = Column(UTCDateTime, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
     report_json = Column(Text, nullable=False, default="{}")
     logs_json = Column(Text, nullable=False, default="[]")
     created_at = Column(UTCDateTime, default=utc_now)
@@ -328,6 +337,11 @@ class ImportJobORM(Base):
     id = Column(String, primary_key=True, default=_uid)
     filename = Column(String, nullable=False, default="")
     status = Column(String, nullable=False, default="pending")  # pending|running|done|error
+    # Même suivi d'exécution que les sauvegardes : la date de demande ne dit
+    # pas quand le traitement a commencé ni combien de temps il a duré.
+    started_at = Column(UTCDateTime, nullable=True)
+    heartbeat_at = Column(UTCDateTime, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
     report_json = Column(Text, nullable=False, default="{}")
     # Lignes de journal accumulées pendant l'exécution (affichées en direct
     # par l'interface admin via polling) — liste JSON de chaînes.

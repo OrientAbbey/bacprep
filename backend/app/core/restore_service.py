@@ -299,6 +299,7 @@ def run_restore(
     dossier_tmp: Optional[Path] = None,
     confirmation_recue: bool = False,
     progression=None,
+    on_phase=None,
 ) -> dict:
     """Restaure une sauvegarde. `dry_run` est le DÉFAUT : rien n'est écrit.
 
@@ -312,6 +313,11 @@ def run_restore(
     compteur, distinct du journal `on_progress` : une restauration de plusieurs
     Go doit pouvoir afficher « 400 / 1 200 fichiers » et non faire deviner
     l'avancement à partir de lignes de log. Même signature que l'export.
+
+    `on_phase(nom)` distingue la lecture du manifeste, le téléchargement et
+    la vérification des parties, l'écriture réelle et la finalisation. Une
+    restauration lente n'a pas la même cause selon la phase : la confondre
+    avec un simple « en cours » ne dit rien à l'administrateur.
     """
     if mode not in MODES:
         raise ManifesteInvalide(f"mode inconnu: {mode!r} (attendu: {', '.join(MODES)})")
@@ -341,6 +347,8 @@ def run_restore(
         "erreurs": [],
     }
 
+    if on_phase:
+        on_phase("manifeste")
     manifest = _lire_manifeste(source, stockage)
     index = _charger_index(source, stockage)
     report["epreuves"] = len(manifest["epreuves"])
@@ -383,6 +391,8 @@ def run_restore(
         progression(0, len(attendus), 0, 0, len(index))
 
     for nom, chemin in _iter_parties(source, stockage, dossier_tmp, list(index)):
+        if on_phase:
+            on_phase("lecture")
         if on_progress:
             on_progress(f"Partie {nom}")
         ok, sha, octets = verifier_partie(chemin, index[nom])
@@ -407,6 +417,8 @@ def run_restore(
                         for probleme in problemes:
                             on_progress(f"  {probleme}")
                     continue
+                if on_phase:
+                    on_phase("ecriture" if not dry_run else "verification")
                 for info in zf.infolist():
                     if info.is_dir():
                         continue
@@ -449,6 +461,8 @@ def run_restore(
             }
         )
 
+    if on_phase:
+        on_phase("finalisation")
     if not dry_run:
         if mode == MODE_DISASTER and not incomplete:
             _ecrire_base(db, manifest, report)

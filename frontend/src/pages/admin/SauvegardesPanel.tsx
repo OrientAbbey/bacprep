@@ -4,6 +4,14 @@ import { api, resolveMediaUrl } from "../../api/client";
 import { SauvegardeInventaire, SauvegardeJob, SauvegardeResume } from "../../api/types";
 import { useToast } from "../../components/Toast";
 import { formatBytes } from "../../lib/format";
+import {
+  choisirJobASuivre,
+  dureeJob,
+  dureeLisible,
+  estActif,
+  libellePhase,
+} from "../../lib/jobs";
+import { formatRelativeTime } from "../../lib/time";
 import { ecritureAutorisee, essaiConcerne, nombreAnomalies, pourcentage } from "../../lib/sauvegardes";
 import { authHeaders, erreurDetail, purgerSessionExpiree } from "./shared";
 
@@ -153,6 +161,11 @@ export function SauvegardesPanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const [inventaire, setInventaire] = useState<SauvegardeInventaire | null>(null);
   const [statut, setStatut] = useState<Statut>("chargement");
+  // Message d'erreur RÉEL de l'inventaire. « Inventaire illisible » seul ne
+  // distingue pas un stockage injoignable d'un index corrompu, et pousse à
+  // relancer une sauvegarde alors que rien n'est perdu.
+  const [erreurInventaire, setErreurInventaire] = useState<string | null>(null);
+  const [jobsRecents, setJobsRecents] = useState<SauvegardeJob[]>([]);
   const [selection, setSelection] = useState<string>("");
   const [mode, setMode] = useState<"bucket" | "disaster">("bucket");
   const [phase, setPhase] = useState<Phase>({ etape: "repos" });
@@ -167,6 +180,10 @@ export function SauvegardesPanel({ token }: { token: string }) {
   // Incrémenté par la relecture manuelle pour recréer le minuteur.
   const [nonceSuivi, setNonceSuivi] = useState(0);
   const refSuppression = useRef<HTMLDialogElement>(null);
+  // La reprise du suivi ne doit se produire qu'UNE fois au montage : sinon,
+  // chaque rafraîchissement de la liste des jobs réécraserait l'étape que
+  // l'administrateur est en train de lire.
+  const repriseFaite = useRef(false);
 
   // La boîte de confirmation est un `<dialog>` monté en permanence et ouvert
   // par `showModal()` : c'est la seule façon d'obtenir le piège de focus et
@@ -180,19 +197,50 @@ export function SauvegardesPanel({ token }: { token: string }) {
 
   const chargerInventaire = useCallback(async () => {
     setStatut("chargement");
+    setErreurInventaire(null);
     try {
-      setInventaire(await api.get<SauvegardeInventaire>("/api/admin/sauvegardes", authHeaders(token)));
+      const data = await api.get<SauvegardeInventaire>("/api/admin/sauvegardes", authHeaders(token));
+      setInventaire(data);
       setStatut("pret");
     } catch (err) {
       if (purgerSessionExpiree(err)) return;
+      const message = erreurDetail(err, "Inventaire des sauvegardes illisible.");
       setStatut("erreur");
-      showToast(erreurDetail(err, "Inventaire des sauvegardes illisible."), "error");
+      setErreurInventaire(message);
+      showToast(message, "error");
     }
   }, [token, showToast]);
 
+  /** Recharge l'historique et rattache le job actif au montage.
+   *
+   *  C'est la correction du bug « Inventaire illisible » après un changement
+   *  d'onglet : l'état React du panneau est détruit au démontage, mais le job
+   *  continue côté serveur. La liste des jobs est la source de vérité ; elle
+   *  permet de reprendre le polling sans que l'administrateur relance quoi que
+   *  ce soit. */
+  const chargerJobs = useCallback(async () => {
+    try {
+      const data = await api.get<{ jobs: SauvegardeJob[] }>(
+        "/api/admin/sauvegardes/jobs",
+        authHeaders(token)
+      );
+      setJobsRecents(data.jobs);
+      if (repriseFaite.current) return;
+      repriseFaite.current = true;
+      const actif = choisirJobASuivre(data.jobs);
+      if (actif) {
+        setPhase({ etape: "essai", job: actif });
+      }
+    } catch (err) {
+      if (purgerSessionExpiree(err)) return;
+      /* l'historique est un confort : l'inventaire reste la priorité */
+    }
+  }, [token]);
+
   useEffect(() => {
     void chargerInventaire();
-  }, [chargerInventaire]);
+    void chargerJobs();
+  }, [chargerInventaire, chargerJobs]);
 
   // Suivi du job en cours : le même polling que l'import. La session peut
   // expirer entre le lancement et la fin (plusieurs minutes pour une
@@ -239,6 +287,7 @@ export function SauvegardesPanel({ token }: { token: string }) {
           setSuiviFige(false);
           setPhase({ etape: "lecture", job });
           void chargerInventaire();
+          void chargerJobs();
         } else {
           setPhase({ etape: "essai", job });
         }
@@ -248,7 +297,7 @@ export function SauvegardesPanel({ token }: { token: string }) {
       }
     }, 1500);
     return () => clearInterval(timer);
-  }, [jobSuivi, token, chargerInventaire, nonceSuivi]);
+  }, [jobSuivi, token, chargerInventaire, chargerJobs, nonceSuivi]);
 
   // Fin du suivi automatique : dernier état connu, rafraîchi à la demande.
   async function relireJob() {
@@ -262,6 +311,7 @@ export function SauvegardesPanel({ token }: { token: string }) {
         setSuiviFige(false);
         setPhase({ etape: "lecture", job: frais });
         void chargerInventaire();
+        void chargerJobs();
       } else {
         // Le job n'est pas terminal : on ne se contente pas de lire, on
         // repart pour une nouvelle fenêtre de surveillance.
@@ -360,6 +410,11 @@ export function SauvegardesPanel({ token }: { token: string }) {
   const enCours = phase.etape === "essai";
   const job = phase.etape === "repos" ? null : phase.job;
   const rapport = job?.report ?? null;
+  // Durée et phase sont calculées à chaque rendu : le polling (1,5 s)
+  // fournit la cadence, donc le temps écoulé avance sans minuteur
+  // supplémentaire.
+  const dureeAffichee = job ? dureeLisible(dureeJob(job)) : null;
+  const phaseAffichee = job && estActif(job) ? libellePhase(job.phase) : null;
   const anomaliees = nombreAnomalies(rapport);
   // Règle de sécurité, testée dans `lib/sauvegardes.test.ts` : le bouton
   // d'écriture n'existe que si l'essai s'est terminé sans anomalie.
@@ -544,6 +599,32 @@ export function SauvegardesPanel({ token }: { token: string }) {
               </p>
             )}
 
+            {/* Ce qui est lent, et depuis combien de temps. Une durée seule ne
+                distingue pas une lecture S3 lente d'une compression locale ;
+                la phase le dit. */}
+            {(phaseAffichee || dureeAffichee) && (
+              <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-soft">
+                {phaseAffichee && (
+                  <span>
+                    Phase : <strong>{phaseAffichee}</strong>
+                  </span>
+                )}
+                {dureeAffichee && (
+                  <span>
+                    {enCours ? "Écoulé" : "Durée"} : <strong>{dureeAffichee}</strong>
+                  </span>
+                )}
+                {job.status === "pending" && !job.started_at && (
+                  <span className="text-slate">En attente de prise en charge</span>
+                )}
+                {job.heartbeat_at && (
+                  <span className="text-slate">
+                    Dernière activité : {formatRelativeTime(job.heartbeat_at)}
+                  </span>
+                )}
+              </p>
+            )}
+
             {/* Compteurs, pas journal : une barre qui n'avance que grâce à des
                 lignes de log est une barre qu'on ne peut pas lire. */}
             {enCours && !suiviFige && job.total_fichiers > 0 && (
@@ -721,8 +802,16 @@ export function SauvegardesPanel({ token }: { token: string }) {
         )}
         {statut === "erreur" && (
           <div className="mt-2">
+            {/* Le message du serveur, pas un libellé générique : « stockage
+                injoignable » et « index corrompu » n'appellent pas la même
+                réaction. Un message unique poussait à relancer un export
+                alors qu'aucune donnée n'était perdue. */}
             <p role="alert" className="text-sm text-correction">
-              Inventaire illisible.
+              {erreurInventaire ?? "Inventaire des sauvegardes indisponible."}
+            </p>
+            <p className="mt-1 text-xs text-slate">
+              Une sauvegarde en cours d&apos;écriture n&apos;apparaît qu&apos;une fois terminée.
+              Si le message persiste, vérifie la configuration du stockage (S3) côté serveur.
             </p>
             <button
               type="button"
@@ -770,7 +859,81 @@ export function SauvegardesPanel({ token }: { token: string }) {
             <ul className="mt-4 space-y-3">{sauvegardes.map(ficheResume)}</ul>
           </>
         )}
+        {statut === "pret" && (inventaire?.ignorees?.length ?? 0) > 0 && (
+          <details className="mt-4 rounded-lg border border-ink-soft/15 bg-paper p-4">
+            <summary className="cursor-pointer text-sm text-ink-soft">
+              {inventaire!.ignorees!.length} dossier
+              {inventaire!.ignorees!.length > 1 ? "s" : ""} présent
+              {inventaire!.ignorees!.length > 1 ? "s" : ""} dans le stockage mais non
+              restaurable{inventaire!.ignorees!.length > 1 ? "s" : ""}
+            </summary>
+            <p className="mt-2 text-xs text-slate">
+              Rien n&apos;est perdu : ces dossiers ne sont simplement pas proposés à la
+              restauration. Un export encore en cours apparaîtra ici jusqu&apos;à sa
+              finalisation.
+            </p>
+            <ul className="mt-2 space-y-1 text-xs">
+              {inventaire!.ignorees!.map((i) => (
+                <li key={i.cle} className="flex flex-wrap items-baseline gap-x-2">
+                  <code className="break-all font-mono-tag text-[10px]">{i.cle}</code>
+                  <span className="text-slate">— {i.raison}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
+
+      {/* Historique des opérations : la durée est ce que l'administrateur
+          venait chercher. Elle est calculée côté serveur (`duration_ms`) et
+          non à partir de l'heure d'affichage, qui ne dit rien du temps de
+          travail réel. Les jobs encore actifs affichent leur phase. */}
+      {jobsRecents.length > 0 && (
+        <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
+          <h2 className="font-serif-brand text-lg">Dernières opérations</h2>
+          <p className="mt-1 text-xs text-slate">
+            Export et restauration confondus, du plus récent au plus ancien.
+          </p>
+          <ul className="mt-3 divide-y divide-ink-soft/10">
+            {jobsRecents.slice(0, 8).map((j) => {
+              const duree = dureeLisible(dureeJob(j));
+              const actif = estActif(j);
+              return (
+                <li key={j.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm">
+                  <span className="font-medium">
+                    {j.kind === "restore" ? "Restauration" : "Export"}
+                  </span>
+                  <span className="text-ink-soft">{libelleStatut(j.status)}</span>
+                  {actif && libellePhase(j.phase) && (
+                    <span className="text-xs text-ink-soft">{libellePhase(j.phase)}</span>
+                  )}
+                  <span className="text-xs text-slate">
+                    {j.created_at
+                      ? `Lancé ${new Date(j.created_at).toLocaleString("fr-FR")}`
+                      : "date inconnue"}
+                    {j.finished_at
+                      ? ` · fini ${new Date(j.finished_at).toLocaleString("fr-FR")}`
+                      : ""}
+                  </span>
+                  <span className="text-xs text-slate">
+                    {j.total_fichiers.toLocaleString("fr-FR")} fichier
+                    {j.total_fichiers > 1 ? "s" : ""} · {formatBytes(j.total_octets)}
+                  </span>
+                  <span className="ml-auto text-xs">
+                    {duree ? (
+                      <>
+                        {actif ? "Écoulé" : "Durée"} : <strong>{duree}</strong>
+                      </>
+                    ) : (
+                      <span className="text-slate">durée inconnue</span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Confirmation de suppression. Implémentée en `<dialog>` NATIF
           (`showModal`) plutôt qu'en div : le piège de focus, l'inertie du fond

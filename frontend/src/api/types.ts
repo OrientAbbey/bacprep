@@ -125,7 +125,12 @@ export interface ImportJob {
   filename: string;
   status: "pending" | "running" | "done" | "error";
   created_at: string;
+  /** Prise en charge RÉELLE par le worker (la demande peut attendre). */
+  started_at?: string | null;
+  heartbeat_at?: string | null;
   finished_at: string | null;
+  /** Durée d'exécution calculée par le serveur, en millisecondes. */
+  duration_ms?: number | null;
   report: ImportJobReport;
   logs: string[];
 }
@@ -432,9 +437,18 @@ export interface SauvegardeResume {
 /** GET /api/admin/sauvegardes : l'inventaire et le volume total occupé. Aucun
  *  indicateur de santé ni de saturation : la suppression reste une décision
  *  humaine. */
+export interface SauvegardeIgnoree {
+  cle: string;
+  raison: string;
+}
+
 export interface SauvegardeInventaire {
   sauvegardes: SauvegardeResume[];
   total_octets: number;
+  /** Sauvegardes présentes dans le stockage mais non restaurables : export
+   *  encore en cours, interrompu, ou index illisible. Les lister évite de
+   *  faire croire à une perte de données. */
+  ignorees?: SauvegardeIgnoree[];
 }
 
 /** Rapport d'un export ou d'une restauration. Les compteurs sont optionnels
@@ -488,7 +502,14 @@ export interface SauvegardeJob {
   parties_total: number;
   report: SauvegardeRapport;
   logs: string[];
+  /** Étape courante côté serveur (`manifeste`, `lecture`, `upload`, `index`,
+   *  `finalisation`). Vide sur les jobs antérieurs à l'instrumentation. */
+  phase?: string;
+  /** Durée d'exécution calculée par le serveur, en millisecondes. */
+  duration_ms?: number | null;
   created_at: string | null;
+  started_at?: string | null;
+  heartbeat_at?: string | null;
   finished_at: string | null;
 }
 
