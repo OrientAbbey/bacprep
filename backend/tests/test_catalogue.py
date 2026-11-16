@@ -3,6 +3,8 @@ répondre 200 (le NameError historique — sqlalchemy.false() — renvoyait
 un 500), et les épreuves gratuites/payantes se comportent correctement."""
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -42,12 +44,42 @@ def test_acces_type_ouvert_connecte(eleve, admin, epreuve_payante):
     assert epreuve_payante in [e["id"] for e in r.json()]
 
 
-def test_acces_type_gratuit(client, epreuve_gratuite, epreuve_payante):
-    r = client.get("/api/epreuves?acces_type=gratuit")
-    assert r.status_code == 200
+def test_acces_type_gratuit(client, admin):
+    """Le filtre `gratuit` renvoie les gratuites et exclut les payantes.
+
+    On isole le scénario avec une matière unique : la base de test est
+    partagée et la page par défaut (24 épreuves, triées par année puis
+    matière) peut ne pas contenir l'épreuve du fixture — l'échec dépendait
+    alors de l'ordre d'exécution, pas du filtre.
+    """
+    matiere = f"AccesGratuit-{uuid.uuid4().hex}"
+
+    def creer(gratuit: bool) -> str:
+        r = admin.post(
+            "/api/admin/epreuves",
+            json={
+                "niveau": "SECONDAIRE",
+                "classe": "terminale",
+                "evaluation": "BAC",
+                "matiere": matiere,
+                "annee": "2024",
+                "gratuit": gratuit,
+                "filieres": ["C"],
+                "contenu_markdown": "# Sujet test\n\nQuestion 1 : 2+2 ?",
+            },
+        )
+        assert r.status_code == 200, r.text
+        eid = r.json()["id"]
+        assert admin.post(f"/api/admin/epreuves/{eid}/publish").status_code == 200
+        return eid
+
+    gratuite = creer(True)
+    payante = creer(False)
+    r = client.get("/api/epreuves", params={"acces_type": "gratuit", "matiere": matiere})
+    assert r.status_code == 200, r.text
     ids = [e["id"] for e in r.json()]
-    assert epreuve_gratuite in ids
-    assert epreuve_payante not in ids
+    assert gratuite in ids
+    assert payante not in ids
 
 
 def test_catalogue_public_ne_montre_que_publie(client, admin):
