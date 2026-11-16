@@ -16,11 +16,11 @@
 - [x] Les tests frontend passent
 - [x] Les tests E2E passent
 - [x] Une vérification manuelle en production a été effectuée
-      *(Render + S3 : endpoints admin et inventaire OK, sauvegardes partielles
-      correctement ignorées, job d'export suivi en direct jusqu'à la phase
-      `upload` avec heartbeat actif. La fin du job n'a pas été observée dans la
-      session — latence Render + reset réseau côté client — ; le suivi reste
-      disponible via `/api/admin/sauvegardes/jobs/<id>`. Procédure détaillée :
+      *(Render + S3 : endpoints admin et inventaire OK ; le job d'export suivi
+      en direct a franchi `lecture` → `upload` avec heartbeat actif, puis a été
+      finalisé par le worker — il est apparu comme sauvegarde valide dans
+      l'inventaire. La sauvegarde partielle de la première tentative, restée
+      « ignorée », a été supprimée via `--purge-ignored --yes`. Procédure :
       `VERIFICATION_PROD_ADMIN.md`.)*
 
 > **Dernière validation locale ciblée :** suite backend complète 842 passés /
@@ -34,10 +34,10 @@
 > reprise après navigation, import suivi après rechargement et aides intégrées).
 >
 > **Reste à faire en priorité :** aucun point bloquant. La vérification
-> production est consignée dans `VERIFICATION_PROD_ADMIN.md`. La CI `refonte`
-> est verte sur les quatre jobs (backend SQLite, backend PostgreSQL, frontend,
-> E2E). Seul le suivi du job d'export jusqu'à son état terminal reste à
-> observer si le besoin s'en fait sentir.
+> production est consignée dans `VERIFICATION_PROD_ADMIN.md` : export suivi
+> jusqu'à sa finalisation, sauvegarde partielle purgée, inventaire revenu à un
+> état sain. La CI `refonte` est verte sur les quatre jobs (backend SQLite,
+> backend PostgreSQL, frontend, E2E).
 
 ## 1. Diagnostic et mesure des performances
 
@@ -378,9 +378,9 @@
   stockage local ; job `running` périmé repris par un processus worker distinct,
   archive source ré-extraite et import terminé.
 - Vérification production (Render + S3) effectuée : endpoints admin et
-  inventaire OK, deux sauvegardes partielles correctement signalées comme
-  ignorées, job d'export suivi en direct (`lecture` → `upload`, heartbeat actif).
-  La fin du job n'a pas été observée dans la session (latence Render + reset
-  réseau client) ; un outil de purge des partielles est fourni dans le script
-  de vérification. Les scénarios navigateur d'import actif et de reprise, comme
-  les migrations PostgreSQL en CI, sont couverts.
+  inventaire OK, sauvegardes partielles correctement signalées comme ignorées,
+  job d'export suivi en direct (`lecture` → `upload`, heartbeat actif) puis
+  finalisé par le worker — la sauvegarde est apparue comme valide dans
+  l'inventaire. La partielle restante de la première tentative a été purgée via
+  `--purge-ignored --yes`. Les scénarios navigateur d'import actif et de reprise,
+  comme les migrations PostgreSQL en CI, sont couverts.
