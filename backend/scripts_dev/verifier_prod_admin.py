@@ -62,7 +62,7 @@ class Verif:
             self.ok += 1
             print(f"  OK   {nom}")
             return True
-        self._echecs += 1
+        self.echecs += 1
         print(f"  FAIL {nom}" + (f" — {detail}" if detail else ""))
         return False
 
