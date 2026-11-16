@@ -242,6 +242,7 @@ def _ecrire_partie(
     ecrits = 0
     traites = 0
     octets_vus = 0
+    debut_compression = time.perf_counter()
     if on_phase:
         on_phase(PHASE_LECTURE)
     with chemin_tmp.open("wb") as fh:
@@ -302,14 +303,25 @@ def _ecrire_partie(
 
     # Le ZipFile est fermé : le répertoire central est écrit. On téléverse
     # ensuite la partie, puis on libère le disque.
+    duree_compression = time.perf_counter() - debut_compression
     if on_phase:
         on_phase(PHASE_UPLOAD)
+    debut_envoi = time.perf_counter()
     try:
         sha, octets = _televerser_et_hacher(
             stockage, destination + nom, chemin_tmp, "application/zip"
         )
     finally:
         chemin_tmp.unlink(missing_ok=True)
+    duree_envoi = time.perf_counter() - debut_envoi
+    log.info(
+        "Partie %s : %d fichier(s), %d octet(s) — compression %.1f s, envoi %.1f s",
+        nom,
+        ecrits,
+        octets,
+        duree_compression,
+        duree_envoi,
+    )
     return {
         "nom": nom,
         "sha256": sha,

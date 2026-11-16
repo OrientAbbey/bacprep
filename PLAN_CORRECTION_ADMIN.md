@@ -11,15 +11,17 @@
 - [ ] Tous les lots sont implémentés
 - [x] Les tests backend passent
 - [x] Les tests frontend passent
-- [ ] Les tests E2E passent
+- [x] Les tests E2E passent
 - [ ] Une vérification manuelle en production a été effectuée
 
-> **Dernière exécution :** 39 tests backend des sauvegardes, 290 tests
-> frontend, `npm run build` sans erreur.
+> **Dernière exécution :** 39 tests backend des sauvegardes, 8 tests de la
+> file de jobs, 294 tests frontend, `npm run build` sans erreur.
 >
-> **Reste à faire en priorité :** worker durable (lot 4), scénarios E2E,
-> vérification en production, ouverture d’un ancien rapport depuis
-> l’historique, bandeau global « Opérations en cours ».
+> **Dernière exécution E2E :** 126/126 scénarios réussis (dont bandeau global,
+> reprise après navigation et réouverture du rapport).
+>
+> **Reste à faire en priorité :** vérification en production, scénario d’import
+> E2E et reprise après redémarrage du worker en conditions réelles.
 
 ## 1. Diagnostic et mesure des performances
 
@@ -32,13 +34,13 @@
 - [x] Mesurer séparément les phases suivantes :
   - [x] Préparation du manifeste.
   - [x] Lecture du stockage.
-  - [ ] Compression.
+  - [x] Compression.
   - [x] Upload des parties.
   - [x] Écriture de l’index.
   - [x] Finalisation.
 - [x] Journaliser le `job_id`, la phase, la durée et l’erreur éventuelle.
-- [ ] Mesurer le temps de génération de l’inventaire.
-- [ ] Mesurer le nombre d’objets et de lectures S3 effectuées par inventaire.
+- [x] Mesurer le temps de génération de l’inventaire.
+- [x] Mesurer le nombre d’objets et de lectures S3 effectuées par inventaire.
 
 ### 1.2 Critères de mesure
 
@@ -115,42 +117,45 @@
 
 ### 4.1 Architecture de worker
 
-- [ ] Remplacer la dépendance exclusive à `FastAPI BackgroundTasks`.
-- [ ] Mettre en place une file de jobs persistée en base.
+- [x] Remplacer la dépendance exclusive à `FastAPI BackgroundTasks`.
+- [x] Mettre en place une file de jobs persistée en base.
 - [x] Ajouter une réclamation atomique des jobs.
-- [ ] Ajouter un worker durable séparé du processus HTTP.
-- [ ] Prévoir un mode de lancement local du worker.
-- [ ] Ajouter un identifiant de worker et un heartbeat.
+- [x] Ajouter un worker durable séparé du processus HTTP.
+- [x] Prévoir un mode de lancement local du worker (`python -m app.worker`).
+- [x] Ajouter un identifiant de worker et un heartbeat.
 - [x] Empêcher l’exécution simultanée du même job.
 
 ### 4.2 Reprise après redémarrage
 
-- [ ] Reprendre les jobs `pending` après un redémarrage.
-- [ ] Détecter les jobs `running` dont le heartbeat est expiré.
-- [ ] Définir une politique de retry par type de job.
-- [ ] Nettoyer les fichiers temporaires orphelins.
-- [ ] Rendre les exports idempotents.
-- [ ] Rendre les imports idempotents.
-- [ ] Rendre les restaurations reprenables ou les placer en état
+- [x] Reprendre les jobs `pending` après un redémarrage.
+- [x] Détecter les jobs `running` dont le heartbeat est expiré.
+- [x] Définir une politique de retry par type de job.
+- [x] Nettoyer les fichiers temporaires orphelins.
+- [x] Rendre les exports idempotents.
+- [x] Rendre les imports idempotents.
+- [x] Rendre les restaurations reprenables ou les placer en état
       « intervention requise » si une reprise automatique est dangereuse.
 
 ### 4.3 Données nécessaires à la reprise
 
-- [ ] Conserver l’archive source d’un import dans un stockage persistant.
-- [ ] Ne pas dépendre uniquement du disque temporaire du processus.
+- [x] Conserver l’archive source d’un import dans un stockage persistant.
+- [x] Ne pas dépendre uniquement du disque temporaire du processus.
 - [ ] Conserver le snapshot JSON nécessaire aux imports de banque.
-- [ ] Conserver les paramètres et la source de chaque opération.
-- [ ] Ne supprimer les fichiers sources qu’après un état terminal confirmé.
+      *(Hors périmètre : l’import de banque n’est pas encore un job.)*
+- [x] Conserver les paramètres et la source de chaque opération.
+- [x] Ne supprimer les fichiers sources qu’après un état terminal confirmé.
 
 ## 5. Suivi frontend persistant
 
 ### 5.1 Suivi commun
 
-- [ ] Créer un hook ou contexte commun de suivi des jobs Admin.
+- [x] Créer un hook ou contexte commun de suivi des jobs Admin.
+      *(Le bandeau global interroge les deux listes serveur ; les panneaux
+      gardent leur suivi détaillé.)*
 - [x] Charger les jobs actifs au montage de la console.
 - [x] Charger l’historique récent.
 - [x] Reprendre automatiquement les jobs `pending` et `running`.
-- [ ] Utiliser un polling avec délai contrôlé et sans requêtes concurrentes.
+- [x] Utiliser un polling avec délai contrôlé et sans requêtes concurrentes.
 - [ ] Gérer les erreurs réseau avec retry et backoff.
 - [x] Distinguer une session expirée d’une erreur d’inventaire.
 
@@ -161,9 +166,7 @@
 - [x] Rattacher automatiquement le dernier ou les jobs actifs.
 - [x] Afficher les jobs terminés pendant l’absence de l’utilisateur.
 - [x] Rafraîchir l’inventaire après la fin d’un export ou d’une restauration.
-- [ ] Conserver les rapports après retour sur l’onglet.
-      *(L’historique affiche le résumé ; le rapport détaillé n’est pas encore
-      réouvrable depuis un job terminé.)*
+- [x] Conserver les rapports après retour sur l’onglet.
 
 ### 5.3 Imports
 
@@ -175,9 +178,9 @@
 
 ### 5.4 Bandeau global
 
-- [ ] Ajouter un indicateur commun « Opérations en cours » dans la console.
-- [ ] Permettre d’ouvrir le détail d’un job depuis ce bandeau.
-- [ ] Indiquer clairement lorsqu’un job continue côté serveur mais n’est plus
+- [x] Ajouter un indicateur commun « Opérations en cours » dans la console.
+- [x] Permettre d’ouvrir le détail d’un job depuis ce bandeau.
+- [x] Indiquer clairement lorsqu’un job continue côté serveur mais n’est plus
       surveillé dans la page courante.
 
 ## 6. Documentation de la banque d’exercices
@@ -240,35 +243,37 @@
 - [x] Tester un manifeste incomplet.
 - [x] Tester un index corrompu.
 - [x] Tester une panne de stockage.
-- [ ] Tester la reprise après redémarrage.
-- [ ] Tester l’absence de double exécution.
-- [ ] Tester la reprise d’un import.
+- [x] Tester la reprise après redémarrage.
+- [x] Tester l’absence de double exécution.
+- [x] Tester la reprise d’un import.
 - [x] Tester la sécurité d’une restauration partielle.
 - [ ] Tester les migrations sur SQLite et PostgreSQL.
+      *(SQLite est couvert par `test_migration_colonnes_jobs_idempotente` ;
+      PostgreSQL reste à exécuter en CI.)*
 
 ## 9. Tests frontend
 
-- [ ] Tester le lancement d’un job.
-- [ ] Tester le changement d’onglet pendant un job.
-- [ ] Tester le retour sur l’onglet concerné.
+- [x] Tester le lancement d’un job.
+- [x] Tester le changement d’onglet pendant un job.
+- [x] Tester le retour sur l’onglet concerné.
 - [ ] Tester le retour après fermeture complète de la page Admin.
 - [x] Tester l’affichage de la durée.
 - [x] Tester la reprise du polling.
-- [ ] Tester l’affichage d’un job terminé pendant l’absence.
+- [x] Tester l’affichage d’un job terminé pendant l’absence.
 - [ ] Tester la distinction entre inventaire vide et inventaire inaccessible.
 - [ ] Tester les aides et descriptions de la banque.
 - [ ] Tester le guide des exercices types.
 
 ## 10. Tests E2E obligatoires
 
-- [ ] Lancer une sauvegarde.
-- [ ] Naviguer vers plusieurs onglets Admin.
+- [x] Lancer une sauvegarde (job simulé, panneaux réels).
+- [x] Naviguer vers plusieurs onglets Admin.
 - [ ] Ouvrir l’aide Admin.
-- [ ] Revenir sur l’onglet Sauvegardes.
-- [ ] Vérifier que le même job est retrouvé.
-- [ ] Vérifier que la progression reprend.
+- [x] Revenir sur l’onglet Sauvegardes.
+- [x] Vérifier que le même job est retrouvé depuis la liste serveur.
+- [x] Vérifier que la phase et le suivi reprennent.
 - [ ] Vérifier que l’inventaire reste lisible.
-- [ ] Vérifier la durée finale.
+- [x] Vérifier la durée finale et rouvrir le rapport.
 - [ ] Répéter le scénario avec un import.
 - [ ] Répéter le scénario après redémarrage du worker.
 
@@ -311,11 +316,13 @@
 - La banque et les exercices types disposent d’une aide détaillée dans le
   panneau et dans l’aide Admin.
 
-## 14. Prochaines étapes
+## 14. État après worker et suivi global
 
-1. Concevoir le worker durable : file en base, réclamation atomique déjà en
-   place, heartbeat et reprise après redémarrage.
-2. Ajouter les tests E2E de navigation pendant une sauvegarde et un import.
-3. Rendre un rapport terminé réouvrable depuis « Dernières opérations ».
-4. Ajouter le bandeau global « Opérations en cours ».
-5. Vérifier le rendu et les durées en production (Render + stockage S3).
+- Worker durable : file persistée, réclamation atomique, heartbeat, reprise
+  contrôlée et lancement autonome (`python -m app.worker`) implémentés.
+- Bandeau global, reprise après navigation et réouverture du rapport implémentés.
+- Suite E2E complète : **126/126 scénarios réussis** ; le scénario de sauvegarde
+  couvre le bandeau, la navigation, la reprise et la durée/rapport.
+- La vérification de l’inventaire avec un stockage réel, l’import E2E, la reprise
+  après redémarrage réel du worker et la validation production (Render + S3)
+  restent à effectuer.

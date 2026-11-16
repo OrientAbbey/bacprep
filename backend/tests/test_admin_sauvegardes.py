@@ -807,12 +807,12 @@ def test_echec_export_conserve_duree_et_phase(admin, epreuve_gratuite, monkeypat
     perdu ni à quelle étape — deux informations nécessaires pour décider s'il
     faut relancer ou changer de stratégie.
     """
-    from app.routers import admin_sauvegardes as route
+    from app.core import export_service
 
     def echec(*_args, **_kwargs):
         raise RuntimeError("panne simulée")
 
-    monkeypatch.setattr(route, "run_export", echec)
+    monkeypatch.setattr(export_service, "run_export", echec)
     r = admin.post("/api/admin/sauvegardes/export", json={})
     job = _attendre(admin, r.json()["id"])
     assert job["status"] == "error", job

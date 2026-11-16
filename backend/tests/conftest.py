@@ -23,6 +23,9 @@ os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 # Les tests multiplient les logins admin : pas de rate-limit en test.
 os.environ["LOGIN_RATE_LIMIT"] = "0"
 os.environ["ASSISTANT_RATE_LIMIT"] = "0"
+# Le worker de jobs est testé directement (job_queue), pas via un thread de
+# fond : un thread concurrent rendrait les tests de statut non déterministes.
+os.environ["JOB_WORKER_ENABLED"] = "0"
 
 import pytest
 from fastapi.testclient import TestClient

@@ -326,6 +326,43 @@ export function SauvegardesPanel({ token }: { token: string }) {
     }
   }
 
+  /** Rouvre un job depuis l'historique. Un rapport terminé reste consultable
+   *  après un changement d'onglet ou un rechargement : la liste serveur le
+   *  contient, il n'y a aucune raison de le perdre.
+   *
+   *  Pour une restauration, la sauvegarde et le mode du job sont restaurés dans
+   *  l'écran : un essai à blanc rouvert redonne ainsi accès à l'étape
+   *  d'écriture, sans obliger à relancer l'essai. */
+  async function ouvrirJob(j: SauvegardeJob) {
+    try {
+      const frais = await api.get<SauvegardeJob>(
+        `/api/admin/sauvegardes/jobs/${j.id}`,
+        authHeaders(token)
+      );
+      if (frais.kind === "restore" && frais.source) {
+        setSelection(frais.source);
+        setMode(frais.mode === "disaster" ? "disaster" : "bucket");
+      }
+      setLu(false);
+      setSuiviFige(false);
+      if (estActif(frais)) {
+        setNonceSuivi((n) => n + 1);
+        setPhase({ etape: "essai", job: frais });
+      } else {
+        setPhase({ etape: "lecture", job: frais });
+      }
+      requestAnimationFrame(() => {
+        document.getElementById("job-detail")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    } catch (err) {
+      if (purgerSessionExpiree(err)) return;
+      showToast(erreurDetail(err, "Job illisible."), "error");
+    }
+  }
+
   async function creerSauvegarde() {
     setExportEnCours(true);
     try {
@@ -574,7 +611,10 @@ export function SauvegardesPanel({ token }: { token: string }) {
 
       <div>
         {job && (
-          <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5">
+          <div
+            id="job-detail"
+            className="rounded-lg border border-ink-soft/15 bg-paper-raised p-5"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-serif-brand text-lg">
                 Job <span className="font-mono-tag text-xs">{job.id.slice(0, 8)}</span> —{" "}
@@ -928,6 +968,14 @@ export function SauvegardesPanel({ token }: { token: string }) {
                       <span className="text-slate">durée inconnue</span>
                     )}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => void ouvrirJob(j)}
+                    aria-label={`${actif ? "Suivre" : "Voir le rapport de"} l'opération ${j.id.slice(0, 8)}`}
+                    className="min-h-[36px] rounded-full border border-ink-soft/25 px-3 text-xs hover:bg-highlight-soft"
+                  >
+                    {actif ? "Suivre" : "Voir le rapport"}
+                  </button>
                 </li>
               );
             })}

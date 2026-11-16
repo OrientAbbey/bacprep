@@ -13,14 +13,20 @@ from __future__ import annotations
 
 import json
 import shutil
-import zipfile
-from datetime import timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from ..core.job_runner import (
+    MAX_ZIP_BYTES,
+    MAX_ZIP_ENTRIES,
+    cle_source_import,
+    executer,
+    extraire_archive,
+)
 from ..core.logging_config import get_logger
+from ..core.storage import get_storage
 from ..db import IMPORTS_DIR, get_db, utc_now
 from ..db_models import ImportJobORM
 from .deps import require_admin
@@ -28,8 +34,6 @@ from .deps import require_admin
 router = APIRouter(prefix="/api/admin", tags=["admin-import"])
 log = get_logger("admin_import")
 
-MAX_ZIP_BYTES = 200 * 1024 * 1024  # 200 Mo
-MAX_ZIP_ENTRIES = 500  # plafond du nombre de fichiers dans une archive
 _CHUNK = 1024 * 1024
 
 
@@ -53,6 +57,7 @@ def _job_to_dict(job: ImportJobORM) -> dict:
         "heartbeat_at": job.heartbeat_at,
         "finished_at": job.finished_at,
         "duration_ms": job.duration_ms,
+        "attempts": job.attempts or 0,
         "report": report,
         "logs": logs,
     }
@@ -67,85 +72,6 @@ def _fail_job(db: Session, job: ImportJobORM, message: str) -> None:
     )
     job.finished_at = utc_now()
     db.commit()
-
-
-def _run_import_job(job_id: str, extract_dir: str) -> None:
-    """Tâche de fond : exécute l'import du dossier extrait puis persiste le
-    rapport. Utilise SA propre session (une tâche de fond ne peut pas
-    réutiliser la session de la requête HTTP qui l'a planifiée). Les lignes
-    de journal produites par le moteur sont accumulées dans `logs_json` à
-    chaque étape (via une session dédiée) — l'interface admin les affiche
-    en direct pendant le traitement grâce au polling existant."""
-    from ..core.import_service import run_import
-    from ..db import SessionLocal
-
-    logs: list[str] = []
-
-    def persist_log(message: str) -> None:
-        logs.append(message)
-        session = SessionLocal()
-        try:
-            job = session.query(ImportJobORM).filter(ImportJobORM.id == job_id).one_or_none()
-            if job:
-                job.logs_json = json.dumps(logs, ensure_ascii=False)
-                job.heartbeat_at = utc_now()
-                session.commit()
-        finally:
-            session.close()
-
-    db = SessionLocal()
-    try:
-        # Claim atomique : seul le worker qui réussit cette mise à jour
-        # conditionnelle exécute l'import (les doublons d'exécution
-        # simultanée créaient des épreuves dupliquées et des verrous SQLite).
-        claimed = (
-            db.query(ImportJobORM)
-            .filter(ImportJobORM.id == job_id, ImportJobORM.status == "pending")
-            .update({ImportJobORM.status: "running"})
-        )
-        db.commit()
-        if not claimed:
-            log.warning("Job d'import %s déjà pris en charge — abandon", job_id)
-            return
-        job = db.query(ImportJobORM).filter(ImportJobORM.id == job_id).one_or_none()
-        if not job:
-            return
-        # `started_at` date la prise en charge réelle, pas la demande.
-        job.started_at = utc_now()
-        job.heartbeat_at = job.started_at
-        db.commit()
-        try:
-            report = run_import(db, Path(extract_dir), dry_run=False, on_progress=persist_log)
-            job.report_json = json.dumps(report, ensure_ascii=False)
-            job.status = "done"
-        except Exception as exc:
-            db.rollback()
-            job = db.query(ImportJobORM).filter(ImportJobORM.id == job_id).one()
-            job.report_json = json.dumps({"erreurs": [{"fichier": "", "erreur": str(exc)}]}, ensure_ascii=False)
-            job.status = "error"
-            log.exception("Job d'import %s en erreur", job_id)
-        job.finished_at = utc_now()
-        job.heartbeat_at = job.finished_at
-        if job.started_at is not None:
-            debut = job.started_at
-            fin = job.finished_at
-            if getattr(debut, "tzinfo", None) is not None:
-                debut = debut.astimezone(timezone.utc).replace(tzinfo=None)
-            if getattr(fin, "tzinfo", None) is not None:
-                fin = fin.astimezone(timezone.utc).replace(tzinfo=None)
-            job.duration_ms = max(0, int((fin - debut).total_seconds() * 1000))
-        db.commit()
-        log.info(
-            "Job d'import %s terminé (%s) en %s ms",
-            job_id,
-            job.status,
-            job.duration_ms,
-        )
-    finally:
-        db.close()
-        # Purge du contenu extrait une fois le traitement fini (succès ou
-        # échec) : seuls le zip source et la table jobs restent sur disque.
-        shutil.rmtree(Path(extract_dir).parent, ignore_errors=True)
 
 
 @router.post("/import")
@@ -195,63 +121,69 @@ def admin_import_zip(
     extract_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with zipfile.ZipFile(upload_path) as zf:
-            # Extraction sécurisée : rejette d'abord les entrées absolues ou
-            # avec '..' (zip slip) et plafonne le nombre de fichiers (un zip
-            # de millions de petits fichiers créerait une explosion du nombre
-            # d'inodes / du temps d'extraction).
-            count = 0
-            for info in zf.infolist():
-                if info.is_dir():
-                    continue
-                count += 1
-                if count > MAX_ZIP_ENTRIES:
-                    _fail_job(db, job, f"archive trop dense (> {MAX_ZIP_ENTRIES} fichiers)")
-                    raise HTTPException(400, f"Archive trop dense (> {MAX_ZIP_ENTRIES} fichiers)")
-                try:
-                    target = (extract_dir / info.filename).resolve()
-                    target.relative_to(extract_dir.resolve())
-                except ValueError:
-                    _fail_job(db, job, f"chemin d'archive invalide: {info.filename}")
-                    raise HTTPException(400, f"Chemin d'archive invalide: {info.filename}")
-            # Extraction membre par membre avec compteur d'octets RÉELS écrits
-            # sur disque : le champ `info.file_size` est déclaré dans
-            # l'archive et forgeable (zip-bomb), seule la taille réellement
-            # écrite au fil de l'eau fait foi. Un zip chiffré ou corrompu
-            # lève ici RuntimeError/OSError -> 400 générique, job en erreur.
-            total = 0
-            for info in zf.infolist():
-                if info.is_dir():
-                    continue
-                target = (extract_dir / info.filename).resolve()
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(info) as src, target.open("wb") as dst:
-                    while True:
-                        chunk = src.read(_CHUNK)
-                        if not chunk:
-                            break
-                        total += len(chunk)
-                        if total > MAX_ZIP_BYTES:
-                            _fail_job(db, job, "contenu décompressé trop volumineux (200 Mo max)")
-                            raise HTTPException(400, "Contenu décompressé trop volumineux (200 Mo max)")
-                        dst.write(chunk)
-    except HTTPException:
+        # L'extraction valide l'archive et plafonne le nombre d'entrées et
+        # d'octets réellement écrits (le `file_size` déclaré est forgeable).
+        # Elle est refaite à l'identique par le worker si le dossier extrait a
+        # disparu entre-temps : la même fonction est donc partagée.
+        extraire_archive(upload_path, extract_dir, MAX_ZIP_ENTRIES, MAX_ZIP_BYTES)
+    except ValueError as exc:
+        message = str(exc)
+        if "trop dense" in message:
+            _fail_job(db, job, f"archive trop dense (> {MAX_ZIP_ENTRIES} fichiers)")
+            code, detail = 400, f"Archive trop dense (> {MAX_ZIP_ENTRIES} fichiers)"
+        elif "invalide" in message:
+            _fail_job(db, job, message)
+            code, detail = 400, message.capitalize()
+        else:
+            _fail_job(db, job, "contenu décompressé trop volumineux (200 Mo max)")
+            code, detail = 400, "Contenu décompressé trop volumineux (200 Mo max)"
         upload_path.unlink(missing_ok=True)
         shutil.rmtree(job_dir, ignore_errors=True)
-        raise
+        raise HTTPException(code, detail) from exc
     except Exception as exc:
         _fail_job(db, job, "archive zip invalide ou chiffrée")
         upload_path.unlink(missing_ok=True)
         shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(400, "Archive zip invalide ou chiffrée") from exc
 
-    upload_path.unlink(missing_ok=True)
+    # L'archive source est conservée jusqu'à l'état terminal : sans elle, un
+    # redémarrage pendant l'import laisserait un job impossible à reprendre
+    # (le dossier extrait vit sur le disque non persistant du processus).
+    source_local = job_dir / "source.zip"
+    shutil.move(str(upload_path), str(source_local))
+    cle_source = cle_source_import(job.id)
+    try:
+        with source_local.open("rb") as src:
+            def _blocs():
+                while True:
+                    bloc = src.read(_CHUNK)
+                    if not bloc:
+                        break
+                    yield bloc
+
+            get_storage().put_stream(
+                cle_source, _blocs(), size=source_local.stat().st_size,
+                mime_type="application/zip",
+            )
+    except Exception as exc:
+        # La copie objet est la seule garantie de reprise inter-processus ;
+        # son échec est signalé mais n'empêche pas l'import en cours.
+        log.warning("Archive source de l'import %s non copiée en stockage : %s", job.id, exc)
+    job.params_json = json.dumps(
+        {
+            "extract_dir": str(extract_dir),
+            "source_local": str(source_local),
+            "source_storage": cle_source,
+        },
+        ensure_ascii=False,
+    )
+    db.commit()
 
     # Pas d'élagage de dossier racine : `_parse_path` identifie chaque
     # segment par sa nature (année, classe, matière) quelle que soit sa
     # position — un dossier racine du type "2022" ne doit jamais être
     # confondu avec un simple préfixe d'archive.
-    background.add_task(_run_import_job, job.id, str(extract_dir))
+    background.add_task(executer, "import", job.id)
     log.info("Job d'import %s planifié (%s, %d o)", job.id, name, received)
     return {"job_id": job.id, "status": "pending"}
 

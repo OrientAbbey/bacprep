@@ -6,7 +6,9 @@ import {
   dureeLisible,
   estActif,
   libellePhase,
+  operationsEnCours,
   STATUTS_ACTIFS,
+  type JobOperation,
   type JobSuivi,
 } from "./jobs";
 
@@ -163,5 +165,104 @@ describe("libellePhase", () => {
     expect(libellePhase("")).toBeNull();
     expect(libellePhase(null)).toBeNull();
     expect(libellePhase(undefined)).toBeNull();
+  });
+});
+
+describe("operationsEnCours", () => {
+  function operation(partiel: Partial<JobOperation> & { id: string }): JobOperation {
+    return { status: "running", ...partiel };
+  }
+
+  const maintenant = Date.parse("2026-01-01T12:00:10Z");
+
+  it("ne garde que les jobs actifs et ignore les rapports terminés", () => {
+    const operations = operationsEnCours(
+      [
+        operation({
+          id: "export",
+          kind: "export",
+          status: "running",
+          started_at: "2026-01-01T12:00:00Z",
+          destination: "_sauvegardes/2026",
+        }),
+        operation({
+          id: "fini",
+          kind: "export",
+          status: "done",
+          started_at: "2026-01-01T11:00:00Z",
+        }),
+      ],
+      [],
+      maintenant
+    );
+
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      id: "export",
+      type: "export",
+      onglet: "sauvegardes",
+      detail: "_sauvegardes/2026",
+      duree: 10_000,
+    });
+  });
+
+  it("distingue export, restauration et import, avec leur onglet", () => {
+    const operations = operationsEnCours(
+      [
+        operation({ id: "e", kind: "export", destination: "_sauvegardes/e" }),
+        operation({
+          id: "r",
+          kind: "restore",
+          source: "_sauvegardes/source",
+          phase: "verification",
+        }),
+      ],
+      [operation({ id: "i", filename: "catalogue.zip" })],
+      maintenant
+    );
+
+    expect(operations.map((o) => o.type).sort()).toEqual(["export", "import", "restore"]);
+    expect(operations.find((o) => o.id === "r")).toMatchObject({
+      onglet: "sauvegardes",
+      detail: "_sauvegardes/source",
+      phase: "Vérification",
+    });
+    expect(operations.find((o) => o.id === "i")).toMatchObject({
+      onglet: "import",
+      detail: "catalogue.zip",
+    });
+  });
+
+  it("trie la plus longue opération d'abord", () => {
+    const operations = operationsEnCours(
+      [
+        operation({
+          id: "courte",
+          started_at: "2026-01-01T12:00:05Z",
+          destination: "_sauvegardes/courte",
+        }),
+        operation({
+          id: "longue",
+          started_at: "2026-01-01T11:00:00Z",
+          destination: "_sauvegardes/longue",
+        }),
+      ],
+      [],
+      maintenant
+    );
+
+    expect(operations.map((o) => o.id)).toEqual(["longue", "courte"]);
+  });
+
+  it("accepte des listes absentes et un job en attente sans date", () => {
+    expect(operationsEnCours(null, undefined, maintenant)).toEqual([]);
+
+    const [operationEnAttente] = operationsEnCours(
+      [operation({ id: "attente", status: "pending" })],
+      [],
+      maintenant
+    );
+    expect(operationEnAttente.duree).toBeNull();
+    expect(operationEnAttente.phase).toBeNull();
   });
 });

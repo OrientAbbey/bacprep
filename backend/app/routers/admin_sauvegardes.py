@@ -19,10 +19,8 @@ sinon la requête HTTP, et le serveur web derrière un proxy la tuerait.
 from __future__ import annotations
 
 import json
-import os
-import shutil
+import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -34,14 +32,12 @@ from ..core.export_service import (
     NOM_MANIFESTE,
     NOM_PRET,
     PREFIXE,
-    run_export,
 )
+from ..core.job_runner import executer
 from ..core.logging_config import get_logger
 from ..core.restore_service import (
     MODES,
     MODE_DISASTER,
-    ManifesteInvalide,
-    run_restore,
 )
 from ..core.storage import StorageError, get_storage, presigned_url_or_none
 from ..db import SessionLocal, get_db, utc_now
@@ -55,12 +51,6 @@ from .deps import log_admin_event, require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin-sauvegardes"])
 log = get_logger("admin_sauvegardes")
-
-_TVA = "sauvegardes_tmp"
-
-
-def _dossier_tva(job_id: str) -> Path:
-    return Path(os.getenv("DATA_DIR", ".")) / _TVA / job_id
 
 
 def _job_to_dict(job: SauvegardeJobORM) -> dict:
@@ -87,6 +77,7 @@ def _job_to_dict(job: SauvegardeJobORM) -> dict:
         "logs": charge(job.logs_json, []),
         "phase": job.phase or "",
         "duration_ms": job.duration_ms,
+        "attempts": job.attempts or 0,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
@@ -170,6 +161,8 @@ def _lister_sauvegardes(db: Session) -> tuple[list[dict], list[dict]]:
     archive corrompue, au lieu d'afficher un message unique et faux.
     """
     stockage = get_storage()
+    debut = time.perf_counter()
+    lectures = 0
     try:
         objets = stockage.list_objects(PREFIXE)
     except NotImplementedError:
@@ -223,6 +216,7 @@ def _lister_sauvegardes(db: Session) -> tuple[list[dict], list[dict]]:
         etat = etats.get(prefixe)
         pret = False
         try:
+            lectures += 1
             pret = stockage.exists(f"{prefixe}/{NOM_PRET}")
         except Exception:
             # `exists` peut échouer indépendamment : on laisse alors la
@@ -238,6 +232,7 @@ def _lister_sauvegardes(db: Session) -> tuple[list[dict], list[dict]]:
             # Aucun job connu : sauvegarde antérieure au marqueur `_READY`.
             # On l'accepte si son index et son manifeste sont lisibles.
         try:
+            lectures += 2  # index + manifeste
             resume = _resume(prefixe, stockage)
         except SauvegardeIgnoree as exc:
             log.warning("Sauvegarde ignorée (%s) : %s", exc, prefixe)
@@ -258,6 +253,15 @@ def _lister_sauvegardes(db: Session) -> tuple[list[dict], list[dict]]:
             # `list_objects` le garantit), donc le maximum est direct.
             resume.modifie_le = _iso(max(dates))
         resumes.append(resume.model_dump())
+    log.info(
+        "Inventaire des sauvegardes : %d objet(s), %d sauvegarde(s), %d ignorée(s), "
+        "%d lecture(s) — %.0f ms",
+        len(objets),
+        len(resumes),
+        len(ignorees),
+        lectures,
+        (time.perf_counter() - debut) * 1000,
+    )
     return resumes, ignorees
 
 
@@ -340,18 +344,6 @@ def _marquer_orphelin_si_besoin(db, job: SauvegardeJobORM) -> None:
     log.warning("Job de sauvegarde %s orphelin marqué en erreur", job.id)
 
 
-def _duree_ms(debut, fin) -> Optional[int]:
-    """Durée d'exécution en millisecondes, ou None si le job n'a pas commencé.
-
-    Les deux côtés sont ramenés en UTC naïf : `started_at` est aware sur
-    PostgreSQL et naïf sur SQLite, et les soustraire directement lèverait
-    `TypeError` sur l'un des deux moteurs seulement.
-    """
-    if debut is None or fin is None:
-        return None
-    return max(0, int((_naive(fin) - _naive(debut)).total_seconds() * 1000))
-
-
 def _naive(moment) -> "datetime":
     """`created_at` selon le moteur : aware sur PostgreSQL, naive sur SQLite.
 
@@ -362,101 +354,6 @@ def _naive(moment) -> "datetime":
     if getattr(moment, "tzinfo", None) is not None:
         return moment.astimezone(timezone.utc).replace(tzinfo=None)
     return moment
-
-
-def _run_export_job(job_id: str, destination: str) -> None:
-    """Tâche de fond : exporte, puis persiste rapport et compteurs.
-
-    Session PROPRE à la tâche de fond (celle de la requête HTTP est fermée
-    avant exécution) et réclamation atomique du job, comme l'import : deux
-    exports lancés ensemble ne peuvent pas s'exécuter deux fois.
-    """
-    from ..db import SessionLocal
-
-    db = SessionLocal()
-    logs: list[str] = []
-    try:
-        if not (
-            db.query(SauvegardeJobORM)
-            .filter(SauvegardeJobORM.id == job_id, SauvegardeJobORM.status == "pending")
-            .update({SauvegardeJobORM.status: "running"})
-        ):
-            db.commit()
-            log.warning("Job d'export %s déjà pris en charge — abandon", job_id)
-            return
-        job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one_or_none()
-        if not job:
-            return
-        # `started_at` date la PRISE EN CHARGE, pas la demande : un job resté
-        # en attente derrière un déploiement ne doit pas compter ce temps
-        # d'attente dans sa durée d'exécution.
-        maintenant = utc_now()
-        job.started_at = maintenant
-        job.heartbeat_at = maintenant
-        job.phase = "manifeste"
-        job.phase_started_at = maintenant
-        db.commit()
-
-        def noter(message: str) -> None:
-            logs.append(message)
-            job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
-            job.heartbeat_at = utc_now()
-            db.commit()
-
-        def progresser(fichiers, total, parties, parties_total, octets) -> None:
-            job.fichiers_faits = fichiers
-            job.total_fichiers = total
-            job.partie_courante = parties
-            job.parties_total = parties_total
-            job.octets_faits = octets
-            job.heartbeat_at = utc_now()
-            db.commit()
-
-        def changer_phase(nom: str) -> None:
-            maintenant = utc_now()
-            job.phase = nom
-            job.phase_started_at = maintenant
-            job.heartbeat_at = maintenant
-            db.commit()
-            log.info("Job d'export %s — phase %s", job_id, nom)
-
-        try:
-            report = run_export(
-                db,
-                destination,
-                on_progress=noter,
-                dossier_tmp=_dossier_tva(job_id),
-                progression=progresser,
-                on_phase=changer_phase,
-            )
-            job.report_json = json.dumps(report, ensure_ascii=False, default=str)
-            job.total_octets = report.get("octets", 0)
-            job.octets_faits = job.total_octets
-            job.fichiers_faits = report.get("nb_fichiers", 0)
-            job.parties_total = len(report.get("parties", []))
-            job.partie_courante = job.parties_total
-            job.status = "done"
-        except Exception as exc:
-            db.rollback()
-            job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one()
-            job.status = "error"
-            job.report_json = json.dumps(
-                {"erreurs": [{"erreur": str(exc)}]}, ensure_ascii=False
-            )
-            log.exception("Job d'export %s en erreur", job_id)
-        job.finished_at = utc_now()
-        job.heartbeat_at = job.finished_at
-        job.duration_ms = _duree_ms(job.started_at, job.finished_at)
-        db.commit()
-        log.info(
-            "Job d'export %s terminé (%s) en %s ms",
-            job_id,
-            job.status,
-            job.duration_ms,
-        )
-    finally:
-        db.close()
-        shutil.rmtree(_dossier_tva(job_id), ignore_errors=True)
 
 
 @router.post("/sauvegardes/export")
@@ -475,8 +372,9 @@ def lancer_export(
     # MÊME seconde ne doivent pas s'écraser l'un l'autre. Une seconde de
     # précision suffit pour un nom, pas pour garantir l'unicité.
     job.destination = f"{PREFIXE}/{utc_now().strftime('%Y-%m-%dT%H%M%SZ')}-{job.id[:6]}"
+    job.params_json = "{}"
     db.commit()
-    background.add_task(_run_export_job, job.id, job.destination)
+    background.add_task(executer, "export", job.id)
     log.info("Export demandé par un administrateur → %s", job.destination)
     # Tracé d'audit : un export est un DUMP du catalogue. Demander « qui a
     # produit cette copie de toutes les données » doit avoir une réponse, et
@@ -494,122 +392,6 @@ def lancer_export(
 # --------------------------------------------------------------------------
 # Restauration
 # --------------------------------------------------------------------------
-
-
-def _run_restore_job(job_id: str, source: str, mode: str, confirmer: bool) -> None:
-    from ..db import SessionLocal
-
-    db = SessionLocal()
-    logs: list[str] = []
-    try:
-        if not (
-            db.query(SauvegardeJobORM)
-            .filter(SauvegardeJobORM.id == job_id, SauvegardeJobORM.status == "pending")
-            .update({SauvegardeJobORM.status: "running"})
-        ):
-            db.commit()
-            return
-        job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one_or_none()
-        if not job:
-            return
-        maintenant = utc_now()
-        job.started_at = maintenant
-        job.heartbeat_at = maintenant
-        job.phase = "manifeste"
-        job.phase_started_at = maintenant
-        db.commit()
-
-        def noter(message: str) -> None:
-            logs.append(message)
-            job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
-            job.heartbeat_at = utc_now()
-            db.commit()
-
-        def progresser(fichiers, total, octets, parties, parties_total) -> None:
-            job.fichiers_faits = fichiers
-            job.total_fichiers = total
-            job.octets_faits = octets
-            job.partie_courante = parties
-            job.parties_total = parties_total
-            job.heartbeat_at = utc_now()
-            db.commit()
-
-        def changer_phase(nom: str) -> None:
-            maintenant = utc_now()
-            job.phase = nom
-            job.phase_started_at = maintenant
-            job.heartbeat_at = maintenant
-            db.commit()
-            log.info("Job de restauration %s — phase %s", job_id, nom)
-
-        try:
-            report = run_restore(
-                db,
-                source,
-                mode=mode,
-                dry_run=not confirmer,
-                on_progress=noter,
-                dossier_tmp=_dossier_tva(job_id),
-                confirmation_recue=confirmer,
-                progression=progresser,
-                on_phase=changer_phase,
-            )
-            job.report_json = json.dumps(report, ensure_ascii=False, default=str)
-            job.total_fichiers = report.get("fichiers", 0)
-            job.total_octets = report.get("octets", 0)
-            if confirmer:
-                job.fichiers_faits = report.get("ecrits", 0)
-                job.octets_faits = job.total_octets
-            else:
-                # En essai à blanc, `fichiers_faits` reste à 0 : rien n'a été
-                # écrit, et afficher « 400 fichiers faits » ferait croire à une
-                # restauration en cours.
-                job.fichiers_faits = 0
-            job.partie_courante = job.parties_total
-            # Une restauration incomplète est un ÉCHEC : les métadonnées n'ont
-            # pas été écrites, et l'écran doit le dire sans ambiguïté.
-            if confirmer and _incomplete(report):
-                job.status = "error"
-            else:
-                job.status = "done"
-        except ManifesteInvalide as exc:
-            db.rollback()
-            job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one()
-            job.status = "error"
-            job.report_json = json.dumps(
-                {"erreurs": [{"erreur": str(exc)}]}, ensure_ascii=False
-            )
-            log.warning("Restauration refusée (%s) : %s", job_id, exc)
-        except Exception as exc:
-            db.rollback()
-            job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one()
-            job.status = "error"
-            job.report_json = json.dumps(
-                {"erreurs": [{"erreur": str(exc)}]}, ensure_ascii=False
-            )
-            log.exception("Job de restauration %s en erreur", job_id)
-        job.finished_at = utc_now()
-        job.heartbeat_at = job.finished_at
-        job.duration_ms = _duree_ms(job.started_at, job.finished_at)
-        db.commit()
-        log.info(
-            "Job de restauration %s terminé (%s) en %s ms",
-            job_id,
-            job.status,
-            job.duration_ms,
-        )
-    finally:
-        db.close()
-        shutil.rmtree(_dossier_tva(job_id), ignore_errors=True)
-
-
-def _incomplete(report: dict) -> bool:
-    return bool(
-        report.get("introuvables")
-        or report.get("incoherences")
-        or report.get("corrompues")
-        or report.get("erreurs")
-    )
 
 
 @router.post("/sauvegardes/restore")
@@ -651,12 +433,11 @@ def lancer_restauration(
         status="pending",
         source=demande.source,
         mode=demande.mode,
+        params_json=json.dumps({"confirmer": bool(demande.confirme)}, ensure_ascii=False),
     )
     db.add(job)
     db.commit()
-    background.add_task(
-        _run_restore_job, job.id, demande.source, demande.mode, demande.confirme
-    )
+    background.add_task(executer, "restore", job.id)
     log.info(
         "Restauration %s demandée (essai à blanc=%s) depuis %s",
         demande.mode,

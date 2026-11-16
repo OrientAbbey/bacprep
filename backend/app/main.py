@@ -277,11 +277,17 @@ def _ensure_job_tracking_columns() -> None:
             ("phase", "VARCHAR(40) NOT NULL DEFAULT ''"),
             ("phase_started_at", horodatage),
             ("duration_ms", "INTEGER"),
+            ("worker_id", "VARCHAR(64)"),
+            ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+            ("params_json", "TEXT NOT NULL DEFAULT '{}'"),
         ],
         "import_jobs": [
             ("started_at", horodatage),
             ("heartbeat_at", horodatage),
             ("duration_ms", "INTEGER"),
+            ("worker_id", "VARCHAR(64)"),
+            ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+            ("params_json", "TEXT NOT NULL DEFAULT '{}'"),
         ],
     }
     for table, colonnes in ajouts.items():
@@ -387,8 +393,17 @@ async def lifespan(app: FastAPI):
         "Démarrage backend — DATABASE_URL=%s",
         engine.url.render_as_string(hide_password=True),
     )
-    yield
-    log.info("Arrêt backend")
+    # Le worker consomme la file persistée en base. Il démarre APRÈS les
+    # migrations et le seed : reprendre un job avant que les colonnes de suivi
+    # existent le ferait échouer sur `UndefinedColumn`.
+    from .core.job_queue import arreter_worker, demarrer_worker
+
+    worker = demarrer_worker()
+    try:
+        yield
+    finally:
+        arreter_worker(worker)
+        log.info("Arrêt backend")
 
 
 # Documentation OpenAPI : publique en développement, en production servie à

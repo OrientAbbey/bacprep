@@ -794,6 +794,116 @@ console.log("\nBack-office");
     await page.waitForFunction(() => ![...document.querySelectorAll("input[aria-label='Libellé (FR)']")].some((i) => i.value === "Matière 3 mois"));
   });
 
+  await test("admin › opérations longues : bandeau global, suivi après changement d'onglet, rapport rouvrable", async () => {
+    // Export simulé : un vrai export du catalogue E2E peut durer ou finir
+    // avant que le test n'ait changé d'onglet. On mocke les routes de jobs
+    // pour rendre le scénario déterministe ; les panneaux, eux, sont réels.
+    const debut = new Date(Date.now() - 5_000).toISOString();
+    const job = {
+      id: "e2e0000000000000000000000000001",
+      kind: "export",
+      status: "running",
+      destination: "_sauvegardes/2026-01-01T000000Z-e2e",
+      source: "",
+      mode: "",
+      total_fichiers: 10,
+      fichiers_faits: 4,
+      total_octets: 4096,
+      octets_faits: 1024,
+      partie_courante: 0,
+      parties_total: 1,
+      report: {},
+      logs: [],
+      phase: "lecture",
+      duration_ms: null,
+      created_at: debut,
+      started_at: debut,
+      heartbeat_at: new Date().toISOString(),
+      finished_at: null,
+    };
+    const json = (route, body) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+
+    // Le panneau liste les jobs au montage pour reprendre une opération en
+    // cours. Tant que l'export n'est pas lancé, la liste doit être vide :
+    // sinon le bouton « Créer une sauvegarde maintenant » est désactivé
+    // (enCours) et le test ne peut jamais démarrer le job.
+    let exportLance = false;
+
+    await page.route(
+      (url) => url.pathname === "/api/admin/sauvegardes" && url.search === "",
+      (route) => json(route, { sauvegardes: [], total_octets: 0, ignorees: [] })
+    );
+    await page.route(
+      (url) => url.pathname === "/api/admin/sauvegardes/jobs" || url.pathname.startsWith("/api/admin/sauvegardes/jobs/"),
+      (route) =>
+        json(
+          route,
+          route.request().url().endsWith("/jobs") ? { jobs: exportLance ? [job] : [] } : job
+        )
+    );
+    await page.route(
+      (url) => url.pathname === "/api/admin/import/jobs",
+      (route) => json(route, [])
+    );
+    await page.route(
+      (url) => url.pathname === "/api/admin/sauvegardes/export",
+      (route) => {
+        exportLance = true;
+        return json(route, job);
+      }
+    );
+
+    await page.getByRole("tab", { name: "Sauvegardes" }).click();
+    await page.getByRole("heading", { name: "Sauvegardes", exact: true }).waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "Créer une sauvegarde maintenant" }).click();
+
+    const bandeau = page.getByRole("status", { name: "Opérations en cours" });
+    await bandeau.waitFor({ timeout: 10000 });
+    await bandeau.getByText("Sauvegarde du catalogue").waitFor();
+    ok((await bandeau.getByText("Lecture et compression").count()) >= 1, "la phase du job doit être lisible dans le bandeau");
+    await page.screenshot({ path: `${SHOTS}/admin-operations-bandeau.png` });
+
+    // Le bandeau survit au démontage du panneau : c'est tout l'objet du lot.
+    await page.getByRole("tab", { name: "Import massif" }).click();
+    await page.getByRole("heading", { name: "Importer un dossier d'épreuves" }).waitFor({ timeout: 10000 });
+    await bandeau.getByText("Sauvegarde du catalogue").waitFor({ timeout: 10000 });
+
+    // « Voir » ramène sur l'onglet concerné, où le job est repris du serveur.
+    await bandeau.getByRole("button", { name: "Voir" }).click();
+    await page.getByRole("heading", { name: "Sauvegardes", exact: true }).waitFor({ timeout: 10000 });
+    await page.getByText("En cours…").first().waitFor({ timeout: 10000 });
+    ok((await page.getByText("Lecture et compression").count()) >= 1, "la carte du job doit afficher sa phase après le retour");
+
+    // Fin du job : la durée serveur prend le relais du temps écoulé.
+    job.status = "done";
+    job.phase = "";
+    job.duration_ms = 12_345;
+    job.finished_at = new Date().toISOString();
+    job.fichiers_faits = 10;
+    job.report = {
+      nb_fichiers: 10,
+      octets: 4096,
+      parties: [{ nom: "sauvegarde.zip", octets: 4096, nb_fichiers: 10, sha256: "0".repeat(64) }],
+    };
+    await page.getByText("Terminé", { exact: true }).first().waitFor({ timeout: 10000 });
+    await page.getByText("12,3 s").first().waitFor({ timeout: 5000 });
+
+    // Plus rien en cours : le bandeau disparaît, le rapport reste consultable.
+    await page.getByRole("tab", { name: "Import massif" }).click();
+    await bandeau.waitFor({ state: "detached", timeout: 10000 });
+    await page.getByRole("tab", { name: "Sauvegardes" }).click();
+    await page.getByRole("heading", { name: "Dernières opérations" }).waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: /Voir le rapport/ }).first().click();
+    await page.getByText("Fichiers écrits").waitFor({ timeout: 10000 });
+    ok((await page.getByText("10", { exact: true }).count()) >= 1, "le rapport rouvert doit afficher les compteurs du job");
+
+    await page.unroute((url) => url.pathname === "/api/admin/sauvegardes" && url.search === "");
+    await page.unroute((url) => url.pathname === "/api/admin/sauvegardes/jobs" || url.pathname.startsWith("/api/admin/sauvegardes/jobs/"));
+    await page.unroute((url) => url.pathname === "/api/admin/import/jobs");
+    await page.unroute((url) => url.pathname === "/api/admin/sauvegardes/export");
+  });
+
   await test("page Abonnement : les formules viennent de la base (prix modifié visible)", async () => {
     const plans = (await (await ctx.request.get("/api/admin/plans")).json()).plans;
     const p = plans.find((x) => x.scope === "epreuve" && x.actif);

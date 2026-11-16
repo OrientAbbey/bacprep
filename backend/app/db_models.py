@@ -321,6 +321,13 @@ class SauvegardeJobORM(Base):
     phase = Column(String(40), nullable=False, default="")
     phase_started_at = Column(UTCDateTime, nullable=True)
     duration_ms = Column(Integer, nullable=True)
+    # Identité du worker qui exécute, nombre de tentatives et paramètres
+    # nécessaires à une reprise après redémarrage (ex. `confirmer` pour une
+    # restauration). Sans `params_json`, une restauration reprise serait
+    # rejouée en essai à blanc — ou l'inverse.
+    worker_id = Column(String(64), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    params_json = Column(Text, nullable=False, default="{}")
     report_json = Column(Text, nullable=False, default="{}")
     logs_json = Column(Text, nullable=False, default="[]")
     created_at = Column(UTCDateTime, default=utc_now)
@@ -342,6 +349,12 @@ class ImportJobORM(Base):
     started_at = Column(UTCDateTime, nullable=True)
     heartbeat_at = Column(UTCDateTime, nullable=True)
     duration_ms = Column(Integer, nullable=True)
+    # Suivi de reprise : quel worker exécute, combien de fois le job a été
+    # tenté, et où retrouver l'archive source si le disque du processus a
+    # disparu entre deux tentatives.
+    worker_id = Column(String(64), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    params_json = Column(Text, nullable=False, default="{}")
     report_json = Column(Text, nullable=False, default="{}")
     # Lignes de journal accumulées pendant l'exécution (affichées en direct
     # par l'interface admin via polling) — liste JSON de chaînes.

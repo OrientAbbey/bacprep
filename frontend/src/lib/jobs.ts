@@ -126,3 +126,74 @@ export function libellePhase(phase: string | null | undefined): string | null {
   };
   return libelles[phase] ?? phase;
 }
+
+/** Job enrichi des seuls champs dont le bandeau global a besoin. */
+export interface JobOperation extends JobSuivi {
+  kind?: string;
+  phase?: string;
+  filename?: string;
+  source?: string;
+  destination?: string;
+}
+
+export type OngletOperation = "sauvegardes" | "import";
+
+export interface OperationEnCours {
+  id: string;
+  type: "export" | "restore" | "import";
+  libelle: string;
+  detail: string;
+  phase: string | null;
+  duree: number | null;
+  onglet: OngletOperation;
+}
+
+/** Opérations encore actives, tous types confondus, pour le bandeau global.
+ *
+ *  Le bandeau ne dépend PAS de l'onglet affiché : c'est tout son intérêt.
+ *  Auparavant, quitter « Sauvegardes » pendant un export faisait disparaître
+ *  toute trace de l'opération ; ici la liste serveur reste la source de vérité.
+ *  Les jobs terminaux sont exclus : un rapport ancien n'est pas une opération
+ *  « en cours ».
+ */
+export function operationsEnCours(
+  sauvegardes: readonly JobOperation[] | null | undefined,
+  imports: readonly JobOperation[] | null | undefined,
+  maintenant: number = Date.now()
+): OperationEnCours[] {
+  const operations: OperationEnCours[] = [];
+
+  function ajouter(
+    job: JobOperation,
+    type: OperationEnCours["type"],
+    onglet: OngletOperation,
+    libelle: string,
+    detail: string
+  ) {
+    if (!estActif(job)) return;
+    operations.push({
+      id: job.id,
+      type,
+      libelle,
+      detail,
+      phase: libellePhase(job.phase),
+      duree: dureeJob(job, maintenant),
+      onglet,
+    });
+  }
+
+  for (const job of sauvegardes ?? []) {
+    if (job.kind === "restore") {
+      ajouter(job, "restore", "sauvegardes", "Restauration du catalogue", job.source ?? "");
+    } else {
+      ajouter(job, "export", "sauvegardes", "Sauvegarde du catalogue", job.destination ?? "");
+    }
+  }
+  for (const job of imports ?? []) {
+    ajouter(job, "import", "import", "Import massif", job.filename ?? "");
+  }
+
+  // Le plus long d'abord : c'est celui qui risque de bloquer l'administrateur.
+  operations.sort((a, b) => (b.duree ?? 0) - (a.duree ?? 0));
+  return operations;
+}

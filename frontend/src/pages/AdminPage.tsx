@@ -17,6 +17,7 @@ import { useToast } from "../components/Toast";
 import { Spinner } from "../components/Spinner";
 import { messageErreurConnexion } from "../lib/messageConnexion";
 import { AdminAssistantGlobal } from "./admin/AdminAssistantGlobal";
+import { BandeauOperations } from "./admin/BandeauOperations";
 import { CalendrierPanel } from "./admin/CalendrierPanel";
 import { GabaritsPanel } from "./admin/GabaritsPanel";
 import { BanquePanel } from "./admin/BanquePanel";
@@ -433,6 +434,12 @@ export function AdminPage() {
           </button>
         </div>
       </div>
+
+      {/* Bandeau global : une opération longue reste visible même si l'on a
+          quitté l'onglet qui l'a lancée. Il est volontairement HORS de
+          `data-chrome` : le plein écran masque le décor, pas le travail en
+          cours. */}
+      <BandeauOperations token={token} onOuvrir={(onglet) => setTab(onglet)} />
 
       {stats && (
         <div data-chrome>
