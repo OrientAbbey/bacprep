@@ -9,19 +9,25 @@
 ## État global
 
 - [ ] Tous les lots sont implémentés
-- [x] Les tests backend passent
+- [ ] La suite backend complète passe (104 tests ciblés sauvegardes/imports/jobs/
+      banque réussis ; les deux échecs historiques de la suite complète restent
+      à revalider : `test_acces_type_gratuit` et `test_export_et_suppression_compte`)
 - [x] Les tests frontend passent
 - [x] Les tests E2E passent
 - [ ] Une vérification manuelle en production a été effectuée
 
-> **Dernière exécution :** 39 tests backend des sauvegardes, 8 tests de la
-> file de jobs, 294 tests frontend, `npm run build` sans erreur.
+> **Dernière validation locale ciblée :** 104 tests backend sauvegardes/imports/jobs/
+> banque, 298 tests frontend et `npm run build` réussis. Un import .zip a aussi été
+> parcouru dans l’interface locale jusqu’au rapport terminé ; l’inventaire local
+> a répondu HTTP 200 avec une liste lisible. Un processus worker distinct a
+> repris un job `running` périmé, ré-extrait son archive et terminé l’import.
 >
-> **Dernière exécution E2E :** 126/126 scénarios réussis (dont bandeau global,
-> reprise après navigation et réouverture du rapport).
+> **Dernière exécution E2E :** 128/128 scénarios réussis (dont bandeau global,
+> reprise après navigation, import suivi après rechargement et aides intégrées).
 >
-> **Reste à faire en priorité :** vérification en production, scénario d’import
-> E2E et reprise après redémarrage du worker en conditions réelles.
+> **Reste à faire en priorité :** vérification en production avec Render/S3 et
+> scénario navigateur où un import est encore actif pendant la navigation puis
+> est retrouvé après redémarrage du worker.
 
 ## 1. Diagnostic et mesure des performances
 
@@ -156,7 +162,10 @@
 - [x] Charger l’historique récent.
 - [x] Reprendre automatiquement les jobs `pending` et `running`.
 - [x] Utiliser un polling avec délai contrôlé et sans requêtes concurrentes.
-- [ ] Gérer les erreurs réseau avec retry et backoff.
+- [x] Gérer les erreurs réseau avec retry et backoff.
+      *(Le bandeau garde la cadence de 4 s au premier échec, puis double
+      jusqu'à 30 s et revient à 4 s au premier succès ; logique testée dans
+      `jobs.test.ts`.)*
 - [x] Distinguer une session expirée d’une erreur d’inventaire.
 
 ### 5.2 Sauvegardes et restaurations
@@ -256,37 +265,52 @@
 - [x] Tester le lancement d’un job.
 - [x] Tester le changement d’onglet pendant un job.
 - [x] Tester le retour sur l’onglet concerné.
-- [ ] Tester le retour après fermeture complète de la page Admin.
+- [x] Tester le retour après fermeture complète de la page Admin
+      *(scénario E2E : rechargement complet de `/admin` pendant un import actif,
+      bandeau et journal repris depuis la liste serveur).*
 - [x] Tester l’affichage de la durée.
 - [x] Tester la reprise du polling.
 - [x] Tester l’affichage d’un job terminé pendant l’absence.
-- [ ] Tester la distinction entre inventaire vide et inventaire inaccessible.
-- [ ] Tester les aides et descriptions de la banque.
-- [ ] Tester le guide des exercices types.
+- [x] Tester la distinction entre inventaire vide et inventaire inaccessible
+      *(backend : `test_panne_de_stockage_renvoie_503`, plus les cas manifeste
+      et index absents).*
+- [x] Tester les aides et descriptions de la banque
+      *(E2E : aide intégrée `Comprendre la banque d'exercices` et rubrique
+      `Banque d'exercices` de l'aide Admin).*
+- [x] Tester le guide des exercices types
+      *(E2E : aide intégrée `Guide : de la relecture à la publication` et
+      rubrique `Exercices types (gabarits)` de l'aide Admin).*
 
 ## 10. Tests E2E obligatoires
 
 - [x] Lancer une sauvegarde (job simulé, panneaux réels).
 - [x] Naviguer vers plusieurs onglets Admin.
-- [ ] Ouvrir l’aide Admin.
+- [x] Ouvrir l’aide Admin *(lien « Aide » de la console et `/aide/admin`)*.
 - [x] Revenir sur l’onglet Sauvegardes.
 - [x] Vérifier que le même job est retrouvé depuis la liste serveur.
 - [x] Vérifier que la phase et le suivi reprennent.
-- [ ] Vérifier que l’inventaire reste lisible.
+- [x] Vérifier que l’inventaire reste lisible (validation navigateur locale,
+      stockage local ; l’inventaire réel Render/S3 reste à contrôler).
 - [x] Vérifier la durée finale et rouvrir le rapport.
-- [ ] Répéter le scénario avec un import.
-- [ ] Répéter le scénario après redémarrage du worker.
+- [x] Répéter le scénario avec un import encore actif pendant la navigation
+      *(E2E : upload .zip simulé, changement d'onglet, rechargement complet,
+      retour via le bandeau, journal repris et rapport final ; un vrai import
+      .zip a par ailleurs été mené jusqu'au rapport en local).*
+- [x] Reprise d’un job `running` périmé après lancement d’un nouveau processus
+      worker validée localement ; le parcours navigateur après reprise est
+      couvert par le rechargement de la console dans le scénario d'import.
 
 ## 11. Ordre recommandé d’implémentation
 
 - [x] Lot 1 — Instrumentation et mesure.
 - [x] Lot 2 — Durées et progression des sauvegardes.
 - [x] Lot 3 — Correction de l’inventaire.
-- [ ] Lot 4 — Worker durable et reprise après redémarrage.
+- [x] Lot 4 — Worker durable et reprise après redémarrage.
 - [x] Lot 5 — Suivi frontend persistant.
 - [x] Lot 6 — Documentation de la banque.
 - [x] Lot 7 — Guide des exercices types.
-- [ ] Lots 8 à 10 — Tests backend, frontend et E2E.
+- [ ] Lots 8 à 10 — Tests backend, frontend et E2E (scénarios navigateur
+      persistants et contrôles production encore ouverts).
 
 ## 12. État de référence avant implémentation
 
@@ -321,8 +345,17 @@
 - Worker durable : file persistée, réclamation atomique, heartbeat, reprise
   contrôlée et lancement autonome (`python -m app.worker`) implémentés.
 - Bandeau global, reprise après navigation et réouverture du rapport implémentés.
-- Suite E2E complète : **126/126 scénarios réussis** ; le scénario de sauvegarde
-  couvre le bandeau, la navigation, la reprise et la durée/rapport.
-- La vérification de l’inventaire avec un stockage réel, l’import E2E, la reprise
-  après redémarrage réel du worker et la validation production (Render + S3)
-  restent à effectuer.
+- Le bandeau applique un backoff plafonné en cas d'erreur réseau, avec retour à
+  la cadence nominale au premier succès (logique extraite et testée dans
+  `frontend/src/lib/jobs.ts` / `jobs.test.ts`).
+- Suite E2E complète : **128/128 scénarios réussis** ; les scénarios de
+  sauvegarde et d'import couvrent le bandeau, la navigation, le rechargement
+  complet de la console, la reprise du journal, la durée et le rapport.
+- Validation locale complémentaire : import .zip depuis l’interface jusqu’au
+  rapport terminé (1 épreuve créée), puis inventaire HTTP 200 lisible avec le
+  stockage local ; job `running` périmé repris par un processus worker distinct,
+  archive source ré-extraite et import terminé.
+- Restent à effectuer : contrôle de l'inventaire avec le stockage réel S3 et
+  validation production (Render + S3), ainsi que l'exécution PostgreSQL de la
+  migration en CI. Les scénarios navigateur d'import actif et de reprise sont
+  désormais couverts localement.
