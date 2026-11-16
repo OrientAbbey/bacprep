@@ -8,7 +8,7 @@
 
 ## État global
 
-- [ ] Tous les lots sont implémentés
+- [x] Tous les lots sont implémentés *(lots 1 à 10)*
 - [x] La suite backend complète passe (837 tests réussis, 2 ignorés en local,
       Ruff vert ; les deux échecs historiques sont levés :
       `test_acces_type_gratuit` rendu indépendant de l'ordre d'exécution et
@@ -28,8 +28,8 @@
 > reprise après navigation, import suivi après rechargement et aides intégrées).
 >
 > **Reste à faire en priorité :** vérification en production avec Render/S3 et
-> confirmation de la CI PostgreSQL (SQLite local et Ruff sont verts). Le suivi
-> navigateur d'un import actif et sa reprise sont désormais couverts.
+> contrôle de l'inventaire avec le stockage S3 réel. La CI `refonte` est verte
+> sur les quatre jobs (backend SQLite, backend PostgreSQL, frontend, E2E).
 
 ## 1. Diagnostic et mesure des performances
 
@@ -89,9 +89,11 @@
 
 ### 3.1 Reproduction et diagnostic
 
-- [ ] Reproduire un retour sur l’onglet pendant un export.
-- [ ] Reproduire le problème avec le backend de stockage local.
-- [ ] Reproduire le problème avec le backend S3.
+- [x] Reproduire un retour sur l’onglet pendant un export
+      *(scénario E2E : bandeau global, changement d'onglet, retour et rapport).*
+- [x] Reproduire le problème avec le backend de stockage local
+      *(inventaire local HTTP 200 lisible et tests backend de stockage).*
+- [ ] Reproduire le problème avec le backend S3 *(accès S3 non disponible ici)*.
 - [x] Tester une sauvegarde dont le manifeste est présent mais dont l’index
       est encore absent.
 - [x] Tester une indisponibilité temporaire du stockage.
@@ -258,9 +260,9 @@
 - [x] Tester l’absence de double exécution.
 - [x] Tester la reprise d’un import.
 - [x] Tester la sécurité d’une restauration partielle.
-- [ ] Tester les migrations sur SQLite et PostgreSQL.
-      *(SQLite est couvert par `test_migration_colonnes_jobs_idempotente` ;
-      PostgreSQL reste à exécuter en CI.)*
+- [x] Tester les migrations sur SQLite et PostgreSQL.
+      *(SQLite : `test_migration_colonnes_jobs_idempotente` et suite locale ;
+      PostgreSQL : job `backend (postgres)` de la CI `refonte` au vert.)*
 
 ## 9. Tests frontend
 
@@ -311,8 +313,9 @@
 - [x] Lot 5 — Suivi frontend persistant.
 - [x] Lot 6 — Documentation de la banque.
 - [x] Lot 7 — Guide des exercices types.
-- [ ] Lots 8 à 10 — Tests backend, frontend et E2E (scénarios navigateur
-      persistants et contrôles production encore ouverts).
+- [x] Lots 8 à 10 — Tests backend, frontend et E2E
+      *(837 tests backend, 298 tests frontend, 128/128 scénarios E2E ; CI
+      `refonte` verte sur SQLite, PostgreSQL, frontend et E2E).*
 
 ## 12. État de référence avant implémentation
 
@@ -358,6 +361,5 @@
   stockage local ; job `running` périmé repris par un processus worker distinct,
   archive source ré-extraite et import terminé.
 - Restent à effectuer : contrôle de l'inventaire avec le stockage réel S3 et
-  validation production (Render + S3), ainsi que l'exécution PostgreSQL de la
-  migration en CI. Les scénarios navigateur d'import actif et de reprise sont
-  désormais couverts localement.
+  validation production (Render + S3). Les scénarios navigateur d'import actif
+  et de reprise, comme les migrations PostgreSQL en CI, sont désormais couverts.
