@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   choisirJobASuivre,
+  delaiProchainEssai,
+  DELAI_MAX_BANDEAU_MS,
   dureeEcoulee,
   dureeJob,
   dureeLisible,
   estActif,
+  INTERVALLE_BANDEAU_MS,
   libellePhase,
   operationsEnCours,
   STATUTS_ACTIFS,
@@ -25,6 +28,31 @@ describe("STATUTS_ACTIFS / estActif", () => {
     expect(estActif(job({ id: "d", status: "error" }))).toBe(false);
     expect(estActif(null)).toBe(false);
     expect(estActif(undefined)).toBe(false);
+  });
+});
+
+describe("delaiProchainEssai", () => {
+  it("garde la cadence normale au premier échec, puis double", () => {
+    expect(delaiProchainEssai(0)).toBe(INTERVALLE_BANDEAU_MS);
+    expect(delaiProchainEssai(1)).toBe(INTERVALLE_BANDEAU_MS);
+    expect(delaiProchainEssai(2)).toBe(INTERVALLE_BANDEAU_MS * 2);
+    expect(delaiProchainEssai(3)).toBe(INTERVALLE_BANDEAU_MS * 4);
+  });
+
+  it("plafonne l'attente pour ne pas geler le bandeau", () => {
+    expect(delaiProchainEssai(4)).toBe(DELAI_MAX_BANDEAU_MS);
+    expect(delaiProchainEssai(1_000)).toBe(DELAI_MAX_BANDEAU_MS);
+  });
+
+  it("accepte une cadence et un plafond explicites", () => {
+    expect(delaiProchainEssai(2, 1_000, 5_000)).toBe(2_000);
+    expect(delaiProchainEssai(3, 1_000, 5_000)).toBe(4_000);
+    expect(delaiProchainEssai(4, 1_000, 5_000)).toBe(5_000);
+  });
+
+  it("ignore un compteur invalide", () => {
+    expect(delaiProchainEssai(-1)).toBe(INTERVALLE_BANDEAU_MS);
+    expect(delaiProchainEssai(Number.NaN)).toBe(INTERVALLE_BANDEAU_MS);
   });
 });
 

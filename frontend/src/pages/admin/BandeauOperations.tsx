@@ -1,19 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Activity } from "lucide-react";
 import { api } from "../../api/client";
 import { ImportJob, SauvegardeJob } from "../../api/types";
 import {
+  delaiProchainEssai,
   dureeLisible,
   operationsEnCours,
   type OngletOperation,
   type OperationEnCours,
 } from "../../lib/jobs";
 import { authHeaders } from "./shared";
-
-/** Intervalle de rafraîchissement du bandeau. Quatre secondes suffisent pour
- *  une durée qui s'affiche en minutes ; interroger plus souvent ne rendrait
- *  pas l'attente plus courte et multiplierait les appels à l'API. */
-const INTERVALLE_MS = 4000;
 
 /** Bandeau « Opérations en cours », visible quel que soit l'onglet.
  *
@@ -31,6 +27,10 @@ export function BandeauOperations({
   onOuvrir: (onglet: OngletOperation) => void;
 }) {
   const [operations, setOperations] = useState<OperationEnCours[]>([]);
+  // Échecs consécutifs, pour espacer les essais quand le réseau ou le serveur
+  // est indisponible. Un `useRef` et non un état : ce compteur pilote un
+  // minuteur, il ne doit provoquer aucun rendu.
+  const echecs = useRef(0);
 
   useEffect(() => {
     let vivant = true;
@@ -46,17 +46,25 @@ export function BandeauOperations({
           api.get<ImportJob[]>("/api/admin/import/jobs", authHeaders(token)),
         ]);
         if (!vivant) return;
+        echecs.current = 0;
         setOperations(operationsEnCours(sauvegardes.jobs, imports));
       } catch {
         /* Le bandeau est un confort : une erreur ici ne doit pas masquer le
            panneau actif ni produire de message en boucle. Les panneaux
-           concernés signalent leurs propres erreurs. */
+           concernés signalent leurs propres erreurs. On conserve toutefois
+           la dernière liste connue : une coupure passagère ne doit pas faire
+           croire que l'opération a disparu. */
+        echecs.current += 1;
       } finally {
         // `setTimeout` récursif et non `setInterval` : si une requête dépasse
         // l'intervalle (réseau lent, stockage S3 froid), la suivante attend
         // son tour au lieu de s'empiler. Un bandeau ne doit pas devenir la
         // source du ralentissement qu'il sert à expliquer.
-        if (vivant) timer = setTimeout(charger, INTERVALLE_MS);
+        //
+        // Après un échec, l'attente double (4 s, 8 s, 16 s… plafonnée à 30 s)
+        // au lieu de marteler un serveur en réveil ; le premier succès
+        // rétablit la cadence nominale.
+        if (vivant) timer = setTimeout(charger, delaiProchainEssai(echecs.current));
       }
     }
 

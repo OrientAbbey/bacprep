@@ -29,6 +29,32 @@ export function estActif(job: JobSuivi | null | undefined): boolean {
   return !!job && STATUTS_ACTIFS.has(job.status);
 }
 
+/** Cadence nominale du bandeau global. Quatre secondes suffisent pour une durée
+ *  qui s'affiche en minutes ; plus fréquent multiplierait les appels inutiles. */
+export const INTERVALLE_BANDEAU_MS = 4_000;
+
+/** Plafond du backoff : au-delà, l'écran réagirait trop tard au retour du
+ *  réseau ou du serveur (réveil Render). */
+export const DELAI_MAX_BANDEAU_MS = 30_000;
+
+/** Délai avant le prochain essai du bandeau, après `echecs` échecs consécutifs.
+ *
+ *  Le premier échec garde la cadence normale : une coupure d'un instant
+ *  (onglet en arrière-plan, réveil du serveur) se répare souvent seule. Ensuite
+ *  le délai double à chaque échec, jusqu'au plafond. L'appelant remet le
+ *  compteur à zéro au premier succès — sans quoi le bandeau resterait lent
+ *  après une panne passée.
+ */
+export function delaiProchainEssai(
+  echecs: number,
+  base: number = INTERVALLE_BANDEAU_MS,
+  max: number = DELAI_MAX_BANDEAU_MS
+): number {
+  if (!Number.isFinite(echecs) || echecs <= 0) return base;
+  const facteur = 2 ** Math.min(Math.floor(echecs) - 1, 10);
+  return Math.min(max, base * facteur);
+}
+
 function instant(iso: string | null | undefined): number {
   if (!iso) return 0;
   const valeur = Date.parse(iso);
