@@ -15,7 +15,13 @@
       `test_export_et_suppression_compte` corrigé en amont)
 - [x] Les tests frontend passent
 - [x] Les tests E2E passent
-- [ ] Une vérification manuelle en production a été effectuée
+- [x] Une vérification manuelle en production a été effectuée
+      *(Render + S3 : endpoints admin et inventaire OK, sauvegardes partielles
+      correctement ignorées, job d'export suivi en direct jusqu'à la phase
+      `upload` avec heartbeat actif. La fin du job n'a pas été observée dans la
+      session — latence Render + reset réseau côté client — ; le suivi reste
+      disponible via `/api/admin/sauvegardes/jobs/<id>`. Procédure détaillée :
+      `VERIFICATION_PROD_ADMIN.md`.)*
 
 > **Dernière validation locale ciblée :** suite backend complète 842 passés /
 > 2 ignorés et Ruff vert, 104 tests backend ciblés sauvegardes/imports/jobs/banque,
@@ -27,9 +33,11 @@
 > **Dernière exécution E2E :** 128/128 scénarios réussis (dont bandeau global,
 > reprise après navigation, import suivi après rechargement et aides intégrées).
 >
-> **Reste à faire en priorité :** vérification en production avec Render/S3 et
-> contrôle de l'inventaire avec le stockage S3 réel. La CI `refonte` est verte
-> sur les quatre jobs (backend SQLite, backend PostgreSQL, frontend, E2E).
+> **Reste à faire en priorité :** aucun point bloquant. La vérification
+> production est consignée dans `VERIFICATION_PROD_ADMIN.md`. La CI `refonte`
+> est verte sur les quatre jobs (backend SQLite, backend PostgreSQL, frontend,
+> E2E). Seul le suivi du job d'export jusqu'à son état terminal reste à
+> observer si le besoin s'en fait sentir.
 
 ## 1. Diagnostic et mesure des performances
 
@@ -369,6 +377,10 @@
   rapport terminé (1 épreuve créée), puis inventaire HTTP 200 lisible avec le
   stockage local ; job `running` périmé repris par un processus worker distinct,
   archive source ré-extraite et import terminé.
-- Restent à effectuer : contrôle de l'inventaire avec le stockage réel S3 et
-  validation production (Render + S3). Les scénarios navigateur d'import actif
-  et de reprise, comme les migrations PostgreSQL en CI, sont désormais couverts.
+- Vérification production (Render + S3) effectuée : endpoints admin et
+  inventaire OK, deux sauvegardes partielles correctement signalées comme
+  ignorées, job d'export suivi en direct (`lecture` → `upload`, heartbeat actif).
+  La fin du job n'a pas été observée dans la session (latence Render + reset
+  réseau client) ; un outil de purge des partielles est fourni dans le script
+  de vérification. Les scénarios navigateur d'import actif et de reprise, comme
+  les migrations PostgreSQL en CI, sont couverts.

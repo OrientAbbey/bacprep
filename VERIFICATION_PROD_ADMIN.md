@@ -51,7 +51,21 @@ Si le job est encore `running` au bout du délai, **ne relance pas `--write`** (
 python scripts_dev/verifier_prod_admin.py --job-id <id_du_job> --cleanup --timeout 900
 ```
 
-Le script affiche toutes les 15 s le statut, la phase, la durée et le heartbeat, puis vérifie le rapport et nettoie la sauvegarde créée par ce job.
+Le script affiche toutes les 15 s le statut, la phase, la durée et le heartbeat, puis vérifie le rapport et nettoie la sauvegarde créée par ce job. Les coupures réseau transitoires (`ConnectionResetError`, `URLError`) sont désormais réessayées deux fois automatiquement.
+
+### Purger les sauvegardes partielles
+
+Les exports interrompus laissent des sauvegardes dans « ignorées » : elles ne sont pas restaurables et n'ont pas d'effet fonctionnel, mais occupent de la place. Pour les retirer :
+
+```bash
+# aperçu (aucune suppression)
+python scripts_dev/verifier_prod_admin.py --purge-ignored
+
+# suppression effective
+python scripts_dev/verifier_prod_admin.py --purge-ignored --yes
+```
+
+Les entrées dont la raison indique une écriture en cours sont volontairement épargnées (leur job est peut-être encore actif).
 
 > Le script ne stocke aucun secret : il lit uniquement les variables d'environnement de la machine qui l'exécute.
 

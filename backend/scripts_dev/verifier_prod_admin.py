@@ -17,6 +17,10 @@ Prérequis : Python 3.10+ (stdlib uniquement), accès réseau à l'URL.
 
     # reprendre le suivi d'un job déjà lancé (sans en créer un autre) :
     ... python backend/scripts_dev/verifier_prod_admin.py --job-id <id> --cleanup
+
+    # purger les sauvegardes partielles signalées par l'inventaire :
+    ... python backend/scripts_dev/verifier_prod_admin.py --purge-ignored      # aperçu
+    ... python backend/scripts_dev/verifier_prod_admin.py --purge-ignored --yes # suppression
 """
 from __future__ import annotations
 
@@ -58,20 +62,30 @@ class Verif:
         req = urllib.request.Request(
             f"{self.base}{chemin}", data=donnees, headers=en_tetes, method=method
         )
-        try:
-            with self.opener.open(req, timeout=self.timeout) as reponse:
-                for brut in reponse.headers.get_all("Set-Cookie", []):
-                    cookie = SimpleCookie()
-                    cookie.load(brut)
-                    if "admin_session" in cookie:
-                        self.session_token = cookie["admin_session"].value
-                return reponse.status, json.loads(reponse.read().decode("utf-8") or "null")
-        except urllib.error.HTTPError as err:
-            texte = err.read().decode("utf-8", errors="replace")
+        for tentative in range(3):
             try:
-                return err.code, json.loads(texte)
-            except json.JSONDecodeError:
-                return err.code, {"detail": texte[:500]}
+                with self.opener.open(req, timeout=self.timeout) as reponse:
+                    for brut in reponse.headers.get_all("Set-Cookie", []):
+                        cookie = SimpleCookie()
+                        cookie.load(brut)
+                        if "admin_session" in cookie:
+                            self.session_token = cookie["admin_session"].value
+                    return reponse.status, json.loads(reponse.read().decode("utf-8") or "null")
+            except urllib.error.HTTPError as err:
+                texte = err.read().decode("utf-8", errors="replace")
+                try:
+                    return err.code, json.loads(texte)
+                except json.JSONDecodeError:
+                    return err.code, {"detail": texte[:500]}
+            except (urllib.error.URLError, ConnectionResetError, TimeoutError) as err:
+                # Render coupe parfois une connexion au milieu d'un polling.
+                # On réessaie deux fois : ce n'est pas une erreur applicative
+                # et le job continue côté serveur.
+                if tentative < 2:
+                    time.sleep(1.5 * (tentative + 1))
+                    continue
+                return 502, {"detail": f"réseau indisponible après 3 tentatives : {err}"}
+        return 502, {"detail": "réseau indisponible"}
 
     def appeler(self, method: str, chemin: str, corps: object = None) -> tuple[int, object]:
         code, donnees = self._requete(method, chemin, corps)
@@ -95,7 +109,14 @@ class Verif:
         print(f"  FAIL {nom}" + (f" — {detail}" if detail else ""))
         return False
 
-    def lancer(self, ecrire: bool, nettoyer: bool, job_id_existant: str | None = None) -> None:
+    def lancer(
+        self,
+        ecrire: bool,
+        nettoyer: bool,
+        job_id_existant: str | None = None,
+        purger_ignores: bool = False,
+        confirmation: bool = False,
+    ) -> None:
         print(f"Vérification de {self.base}")
         token = os.getenv("VERIFY_ADMIN_TOKEN", "")
         email = os.getenv("VERIFY_ADMIN_EMAIL", "")
@@ -157,7 +178,9 @@ class Verif:
             f"HTTP {code}",
         )
 
-        if job_id_existant:
+        if purger_ignores:
+            self.purger_ignorees(confirmation)
+        elif job_id_existant:
             self._verifier_export(nettoyer, job_id_existant)
         elif ecrire:
             self._verifier_export(nettoyer)
@@ -224,6 +247,38 @@ class Verif:
         elif cle:
             print(f"       sauvegarde de test à supprimer manuellement : {cle}")
 
+    def purger_ignorees(self, confirmation: bool) -> None:
+        """Supprime les sauvegardes partielles signalées par l'inventaire.
+
+        On écarte volontairement celles dont la raison indique une écriture
+        en cours : leur job est peut-être encore actif et le worker écrirait
+        dans le vide. Toutes les autres sont des restes inutilisables.
+        """
+        code, inventaire = self.appeler("GET", "/api/admin/sauvegardes")
+        if code != 200 or not isinstance(inventaire, dict):
+            self.verifier("lecture de l'inventaire pour purge", False, f"HTTP {code}")
+            return
+        ignorees = inventaire.get("ignorees") or []
+        candidats = [
+            entree for entree in ignorees
+            if "en cours" not in str(entree.get("raison", "")).lower()
+        ]
+        if not candidats:
+            print("  Aucune sauvegarde ignorée à purger.")
+            return
+        print(f"  {len(candidats)} sauvegarde(s) ignorée(s) à purger :")
+        for entree in candidats:
+            print(f"    - {entree.get('cle')} — {entree.get('raison')}")
+        if not confirmation:
+            print("  Aperçu seul. Relancer avec --yes pour supprimer.")
+            return
+        for entree in candidats:
+            cle = entree.get("cle", "")
+            code, reponse = self.appeler(
+                "DELETE", f"/api/admin/sauvegardes/{urllib.parse.quote(cle, safe='/')}"
+            )
+            self.verifier(f"suppression de {cle}", code == 200, f"HTTP {code} {reponse}")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -232,6 +287,14 @@ def main() -> int:
     parser.add_argument(
         "--job-id",
         help="reprend le suivi d'un job existant au lieu d'en créer un nouveau",
+    )
+    parser.add_argument(
+        "--purge-ignored",
+        action="store_true",
+        help="liste les sauvegardes partielles ignorées (avec --yes, les supprime)",
+    )
+    parser.add_argument(
+        "--yes", action="store_true", help="confirme la suppression des ignorées"
     )
     parser.add_argument(
         "--timeout", type=float, default=None,
@@ -246,7 +309,7 @@ def main() -> int:
         return 2
 
     verif = Verif(base, timeout)
-    verif.lancer(args.write, args.cleanup, args.job_id)
+    verif.lancer(args.write, args.cleanup, args.job_id, args.purge_ignored, args.yes)
     print(f"\n{verif.ok} OK, {verif.echecs} échec(s)")
     return 0 if verif.echecs == 0 else 1
 
