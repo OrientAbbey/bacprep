@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import http.cookiejar
 import json
+from http.cookies import SimpleCookie
 import os
 import sys
 import time
@@ -37,18 +38,30 @@ class Verif:
         )
         self.ok = 0
         self.echecs = 0
+        # Le frontend envoie le jeton brut dans `X-Admin-Session` ; le cookie
+        # httpOnly peut être perdu selon les redirections/le proxy. On capture
+        # sa valeur au login et on la rejoue explicitement ensuite.
+        self.session_token: str | None = None
+        self.login_body: dict[str, object] = {}
 
-    def appeler(self, method: str, chemin: str, corps: object = None) -> tuple[int, object]:
+    def _requete(self, method: str, chemin: str, corps: object = None) -> tuple[int, object]:
         donnees = None
         en_tetes = {"Accept": "application/json"}
         if corps is not None:
             donnees = json.dumps(corps).encode("utf-8")
             en_tetes["Content-Type"] = "application/json"
+        if self.session_token:
+            en_tetes["X-Admin-Session"] = self.session_token
         req = urllib.request.Request(
             f"{self.base}{chemin}", data=donnees, headers=en_tetes, method=method
         )
         try:
             with self.opener.open(req, timeout=self.timeout) as reponse:
+                for brut in reponse.headers.get_all("Set-Cookie", []):
+                    cookie = SimpleCookie()
+                    cookie.load(brut)
+                    if "admin_session" in cookie:
+                        self.session_token = cookie["admin_session"].value
                 return reponse.status, json.loads(reponse.read().decode("utf-8") or "null")
         except urllib.error.HTTPError as err:
             texte = err.read().decode("utf-8", errors="replace")
@@ -56,6 +69,19 @@ class Verif:
                 return err.code, json.loads(texte)
             except json.JSONDecodeError:
                 return err.code, {"detail": texte[:500]}
+
+    def appeler(self, method: str, chemin: str, corps: object = None) -> tuple[int, object]:
+        code, donnees = self._requete(method, chemin, corps)
+        if code == 401 and chemin != "/api/admin/login" and self.session_token:
+            print("       session admin expirée — reconnexion...")
+            self._relogin()
+            code, donnees = self._requete(method, chemin, corps)
+        return code, donnees
+
+    def _relogin(self) -> None:
+        code, _ = self._requete("POST", "/api/admin/login", self.login_body)
+        if code != 200:
+            print(f"       reconnexion impossible (HTTP {code})")
 
     def verifier(self, nom: str, condition: bool, detail: str = "") -> bool:
         if condition:
@@ -78,6 +104,7 @@ class Verif:
         corps_login: dict[str, object] = {"token": token, "force": force}
         if email:
             corps_login["email"] = email
+        self.login_body = corps_login
         code, data = self.appeler("POST", "/api/admin/login", corps_login)
         if code == 409 and not force:
             self.verifier(
@@ -139,6 +166,7 @@ class Verif:
         if not job_id:
             self.verifier("identifiant de job renvoyé", False, str(job))
             return
+        print(f"       job de test : {job_id}")
 
         echeance = time.time() + self.timeout
         etat: dict = {}
@@ -161,6 +189,7 @@ class Verif:
         )
 
         cle = etat.get("destination", "")
+        print(f"       sauvegarde de test : {cle}")
         code, inventaire = self.appeler("GET", "/api/admin/sauvegardes")
         self.verifier(
             "sauvegarde visible dans l'inventaire",
