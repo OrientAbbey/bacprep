@@ -800,6 +800,42 @@ def test_panne_de_stockage_renvoie_503(admin, monkeypatch) -> None:
     assert "stockage" in r.json()["detail"].lower()
 
 
+def test_session_admin_expiree_pendant_inventaire_401_pas_503(admin, monkeypatch) -> None:
+    """Une session expirée pendant le chargement de l'inventaire est une 401,
+    pas une panne de stockage (503).
+
+    La vérification de la session doit précéder tout accès au stockage :
+    sinon l'écran afficherait « stockage momentanément indisponible » alors
+    que la seule cause est le verrou admin expiré — deux messages qui
+    n'appellent pas du tout la même réaction.
+    """
+    from datetime import timedelta
+
+    from app.core import admin_session
+    from app.core.admin_session import session_timeout
+    from app.db import SessionLocal, utc_now
+    from app.db_models import AdminLockORM
+    from app.routers import admin_sauvegardes as route
+
+    appels_stockage: list[int] = []
+
+    def stockage_interdit():
+        appels_stockage.append(1)
+        raise AssertionError("Le stockage ne doit pas être interrogé avec une session expirée")
+
+    monkeypatch.setattr(route, "get_storage", stockage_interdit)
+
+    with SessionLocal() as db:
+        lock = db.query(AdminLockORM).filter(AdminLockORM.id == admin_session.LOCK_ID).one()
+        lock.last_activity = utc_now() - session_timeout() - timedelta(minutes=1)
+        db.commit()
+
+    r = admin.get("/api/admin/sauvegardes")
+    assert r.status_code == 401, r.text
+    assert "Session admin invalide ou expirée" in r.json()["detail"]
+    assert appels_stockage == []
+
+
 def test_echec_export_conserve_duree_et_phase(admin, epreuve_gratuite, monkeypatch) -> None:
     """Un export en échec garde sa durée et la phase atteinte.
 
