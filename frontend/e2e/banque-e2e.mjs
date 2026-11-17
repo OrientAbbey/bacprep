@@ -86,7 +86,14 @@ async function peupler(matiere, classe, n, series) {
   for (let i = 0; i < n; i++) {
     const r = await admin.request.post("/api/admin/banque/exercices", {
       data: {
-        sujet: `Sujet ${matiere} ${i + 1}`, corrige: `Corrigé ${matiere} ${i + 1}`,
+        // Le premier exercice porte une formule de chimie et une structure
+        // SMILES : la recette vérifie qu'elles arrivent jusqu'à l'élève.
+        sujet: i === 0
+          ? `Sujet ${matiere} 1\n\nLa formule de l'eau : $\\ce{H2O}$.\n\n\`\`\`mol topologique\nCCO éthanol\n\`\`\``
+          : `Sujet ${matiere} ${i + 1}`,
+        corrige: i === 0
+          ? `Corrigé ${matiere} 1\n\n$\\pu{18 g.mol-1}$.\n\n\`\`\`mol developpee\nCCO éthanol\n\`\`\``
+          : `Corrigé ${matiere} ${i + 1}`,
         partie_id: part.id, session: (i % 3) + 1, niveau_intrinseque: "Moyen",
         tag_examen: true, actif: true, matieres: [matiere], classes: [classe], series,
       },
@@ -183,6 +190,21 @@ console.log("\nGénérateur — correction et impression séparée");
     await page.getByRole("heading", { name: "Corrigé", exact: true }).first().waitFor({ timeout: 15000 });
     // Le corrigé est bien chargé (le bouton d'impression du corrigé apparaît).
     await page.getByRole("button", { name: "Imprimer le corrigé", exact: true }).waitFor({ timeout: 10000 });
+  });
+
+  await test("rendu chimie : formule mhchem et structure SMILES jusqu'à l'élève", async () => {
+    const gen = page.getByRole("heading", { name: "Épreuve personnalisée", exact: true });
+    await gen.waitFor({ timeout: 15000 });
+    // \ce{H2O} est rendu par l'extension mhchem (chunk chargé à la demande).
+    // La zone d'impression est masquée à l'écran : on attend l'attachement du
+    // rendu, pas sa visibilité.
+    await page.locator(".print-zone-sujet .katex").first().waitFor({ state: "attached", timeout: 15000 });
+    const html = await page.locator(".print-zone-sujet").innerHTML();
+    ok(/H/.test(html) && /2/.test(html) && /O/.test(html), "formule chimique absente du rendu");
+    // SmilesDrawer est chargé de façon différée : le SVG apparaît après le chunk.
+    await page.locator(".print-zone-sujet figure.mol svg g *").first().waitFor({ state: "attached", timeout: 20000 });
+    ok((await page.locator(".print-zone-sujet figure.mol.error").count()) === 0, "structure non dessinable");
+    await page.screenshot({ path: `${SHOTS}/generateur-chimie.png` });
   });
 
   await test("impression sujet : seule la zone sujet est visible en media print", async () => {
