@@ -33,6 +33,7 @@ import { classeLabel } from "../lib/referentiel";
  * signalement). Aucun exercice n'apparaît ici sans avoir été validé par un
  * enseignant.
  */
+
 export function EntrainementPage() {
   const [params] = useSearchParams();
   const id = params.get("g");
@@ -40,12 +41,13 @@ export function EntrainementPage() {
 }
 
 function Liste() {
+  const [params] = useSearchParams();
   const [liste, setListe] = useState<ResumeGabarit[] | null>(null);
   const [erreur, setErreur] = useState(false);
   const [essai, setEssai] = useState(0);
   const [matiere, setMatiere] = useState("");
   const [difficulte, setDifficulte] = useState("");
-  const [composer, setComposer] = useState(false);
+  const [composer, setComposer] = useState(() => params.has("gen"));
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -181,6 +183,8 @@ interface OptionsBanque {
 
 function ComposerBanque() {
   const { user } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const generationParam = params.get("gen");
   const [options, setOptions] = useState<OptionsBanque | null>(null);
   const [chargementOptions, setChargementOptions] = useState(true);
   const [classe, setClasse] = useState("terminale");
@@ -214,17 +218,6 @@ function ComposerBanque() {
     }
   }, []);
 
-  // Lorsque la classe change, si elle impose une spécialité et qu'aucune n'est
-  // sélectionnée, on se positionne sur la première disponible pour éviter une
-  // demande invalide côté serveur.
-  useEffect(() => {
-    if (!options) return;
-    const meta = options.classes_meta?.[classe];
-    if (meta?.specialite_obligatoire && !serie && options.series.length > 0) {
-      setSerie(options.series[0]);
-    }
-  }, [classe, options, serie]);
-
   useEffect(() => {
     if (!user) {
       setOptions(null);
@@ -235,6 +228,25 @@ function ComposerBanque() {
     void chargerOptions(ctl.signal);
     return () => ctl.abort();
   }, [chargerOptions, user?.id]);
+
+  // Réaffichage : une adresse avec `?gen=<id>` recharge l'épreuve composée
+  // (même principe que la graine de l'entraînement). Le serveur vérifie
+  // la propriété : un autre élève obtient une 404.
+  useEffect(() => {
+    if (!generationParam || generation) return;
+    let annule = false;
+    api
+      .get<BanqueGenerationOutput>(`/api/banque/generations/${encodeURIComponent(generationParam)}`)
+      .then((saved) => {
+        if (!annule) setGeneration(saved);
+      })
+      .catch(() => {
+        /* épreuve introuvable ou non accessible : le formulaire reste vide */
+      });
+    return () => {
+      annule = true;
+    };
+  }, [generationParam, generation]);
 
   const exercices = generation?.exercices ?? [];
   const sujetMarkdown = exercices.map((ex) => `## ${t("Exercice {n}", { n: ex.numero })}\n\n${ex.contenu ?? ""}`).join("\n\n---\n\n");
@@ -256,6 +268,15 @@ function ComposerBanque() {
       const created = await api.post<BanqueGenerationOutput>("/api/banque/generer", parametres);
       const saved = await api.get<BanqueGenerationOutput>(`/api/banque/generations/${encodeURIComponent(created.generation_id)}`);
       setGeneration(saved);
+      // L'adresse conserve l'identifiant : un rechargement remontre l'épreuve.
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.set("gen", saved.generation_id);
+          return p;
+        },
+        { replace: true },
+      );
     } catch (err) {
       setErreur(err instanceof ApiError && err.status === 403
         ? t("Cette matière n'est pas couverte par ton abonnement actif.")
@@ -317,7 +338,7 @@ function ComposerBanque() {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="text-xs">{t("Classe")}<select value={classe} onChange={(e) => setClasse(e.target.value)} disabled={chargementOptions || !options?.classes.length} className={`${champ} mt-1`}>{(options?.classes ?? []).map((code) => <option key={code} value={code}>{classeLabel(code)}</option>)}</select></label>
+            <label className="text-xs">{t("Classe")}<select value={classe} onChange={(e) => { setClasse(e.target.value); setSerie(""); }} disabled={chargementOptions || !options?.classes.length} className={`${champ} mt-1`}>{(options?.classes ?? []).map((code) => <option key={code} value={code}>{classeLabel(code)}</option>)}</select></label>
             <label className="text-xs">{t("Matière")}<select value={matiere} onChange={(e) => setMatiere(e.target.value)} disabled={chargementOptions || !options?.matieres.length} className={`${champ} mt-1`}>{(options?.matieres ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
             <label className="text-xs">{t("Série / spécialité")}{specialiteObligatoire && <span className="text-correction"> *</span>}<select value={serie} onChange={(e) => setSerie(e.target.value)} required={specialiteObligatoire} disabled={chargementOptions || !options?.series.length} className={`${champ} mt-1`}><option value="">{specialiteObligatoire ? t("Choisis une spécialité") : t("Toutes / aucune")}</option>{(options?.series ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
             <label className="text-xs">{t("Format de l'épreuve")}<select value={mode} onChange={(e) => setMode(e.target.value as BanqueMode)} className={`${champ} mt-1`}>

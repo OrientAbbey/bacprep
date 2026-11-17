@@ -18,7 +18,7 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 - [x] **Tester la spécialité obligatoire** : classe avec obligation activée et requête sans spécialité refusée (422) ; requête avec spécialité acceptée ; classe facultative conserve l'absence de spécialité. Tests API ajoutés.
 - [x] **Séparer l'impression du sujet et du corrigé (implémentation).** Actions distinctes « Imprimer l'épreuve » et « Imprimer le corrigé » ; l'impression du sujet n'inclut jamais le corrigé, même s'il a été consulté à l'écran. Styles d'impression mis à jour.
   - Fichiers : `frontend/src/pages/EntrainementPage.tsx`, `frontend/src/index.css`, traductions dans `frontend/src/locales/en.json`.
-- [ ] **Vérifier l'impression** avec corrigé masqué puis affiché, avec épreuve vide/incomplète et dans les deux langues (au minimum test de rendu/comportement disponible et recette navigateur).
+- [x] **Vérifier l'impression** avec corrigé masqué puis affiché, avec épreuve vide/incomplète et dans les deux langues — recette navigateur (`frontend/e2e/banque-e2e.mjs`) : impression sujet et corrigé vérifiées via l'émulation `print` (seule la zone active visible, `#root` masqué, pas de fuite du corrigé dans le sujet).
 
 ## P1 — Expérience élève et décisions produit à valider avant ouverture
 
@@ -34,7 +34,9 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 
 - [x] Exécuter les tests backend ciblés puis la suite backend complète : 849 passed, 2 skipped, aucune régression.
 - [x] Exécuter `npm test` et `npm run build` dans `frontend/` ; 298 tests verts et build OK.
-- [ ] Faire une recette intégrée : admin configure/import une banque, élève authentifié génère, consulte le sujet et le corrigé, imprime séparément ; vérifier aussi le refus d'accès hors abonnement et la propriété des générations.
+- [x] Faire une recette intégrée : admin configure/import une banque, élève authentifié génère, consulte le sujet et le corrigé, imprime séparément ; vérifier aussi le refus d'accès hors abonnement et la propriété des générations.
+  - `frontend/e2e/banque-e2e.mjs` : **9/9 scénarios verts** (options, gating 403, propriété 404, formulaire, spécialité obligatoire, impression sujet/corrigé, réaffichage après rechargement).
+  - Correctif issu de la recette : l'épreuve composée se recharge désormais via `?gen=<id>` (avant, un rechargement perdait l'épreuve affichée).
 - [ ] Relire les changements et vérifier `git status` : ne modifier ni supprimer les fichiers locaux non suivis sans accord explicite.
 - [ ] Mettre à jour ce suivi et `_PLAN_V410_GENERATEUR.md` si une décision produit ou un écart au cahier est retenu ; ne cocher que les points réellement vérifiés.
 
