@@ -1,6 +1,7 @@
 import { Sparkles, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { detailServeur } from "../lib/detailServeur";
+import { chargerExtensions } from "../lib/renduMath";
 import { useModalFocus } from "../lib/useModalFocus";
 import {
   genererExercices,
@@ -83,6 +84,11 @@ export function AtelierExercicesModal({
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => () => abort.current?.abort(), []);
+  // mhchem est chargé à la demande : on le précharge à l'ouverture pour que
+  // le contrôle strict des formules \ce{…}/\pu{…} soit fiable au résultat.
+  useEffect(() => {
+    void chargerExtensions().catch(() => undefined);
+  }, []);
 
   // Contrôles du serveur + contrôle strict des formules par KaTeX (disponible
   // seulement ici, dans le navigateur).

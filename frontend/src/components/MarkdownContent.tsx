@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -7,7 +7,7 @@ import "katex/dist/katex.min.css";
 import { resolveMediaUrl } from "../api/client";
 import { rehypeSourceOffsets, rehypeStripAnchorText } from "../lib/markdownSource";
 import { rehypeImageWidths } from "../lib/markdownImages";
-import { normalizeDisplayMathDelimitersPreservingOffsets, normalizeLatexDelimiters } from "../lib/latex";
+import { chargerExtensions, KATEX_OPTIONS, normaliserPourRendu } from "../lib/renduMath";
 import { ImageLightbox } from "./ImageLightbox";
 
 /** Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
@@ -44,13 +44,29 @@ export const MarkdownContent = React.memo(function MarkdownContent({
   // Visionneuse d'image (loupe) : l'image cliquée est retenue en local,
   // recouverte par un overlay plein écran (voir ImageLightbox).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  // Les extensions (mhchem) sont chargées à la demande : une fois prêtes, on
+  // re-rend pour que les formules \ce{…}/\pu{…} déjà présentes s'affichent.
+  const [extensionsPretes, setExtensionsPretes] = useState(false);
+  useEffect(() => {
+    let actif = true;
+    chargerExtensions()
+      .then(() => {
+        if (actif) setExtensionsPretes(true);
+      })
+      .catch(() => {
+        /* extension indisponible : le rendu de base reste fonctionnel */
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
 
   const rehypePlugins = useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>>(
     () =>
       trackSourcePositions
-        ? [rehypeKatex, rehypeImageWidths, rehypeSourceOffsets, rehypeStripAnchorText]
-        : [rehypeKatex, rehypeImageWidths, rehypeStripAnchorText],
-    [trackSourcePositions]
+        ? [[rehypeKatex, KATEX_OPTIONS], rehypeImageWidths, rehypeSourceOffsets, rehypeStripAnchorText]
+        : [[rehypeKatex, KATEX_OPTIONS], rehypeImageWidths, rehypeStripAnchorText],
+    [trackSourcePositions, extensionsPretes]
   );
 
   // Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
@@ -98,10 +114,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({
   // lignes, à longueur identique : cela active KaTeX sans décaler les offsets
   // de sélection du lecteur ni modifier le reste du Markdown.
   const normalized = useMemo(
-    () => {
-      if (variant === "chat") return normalizeLatexDelimiters(content);
-      return normalizeDisplayMathDelimitersPreservingOffsets(content);
-    },
+    () => normaliserPourRendu(content, { preserverOffsets: variant === "epreuve" }),
     [content, variant]
   );
 

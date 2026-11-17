@@ -1,4 +1,4 @@
-import katex from "katex";
+import { verifierFormule } from "./renduMath";
 import { streamEventSource } from "./streaming";
 
 /**
@@ -56,7 +56,7 @@ export function verifierFormules(markdown: string, ou: "sujet" | "corrige"): Con
   const controles: ControleAtelier[] = [];
   for (const { formule, bloc } of extraireFormules(markdown)) {
     try {
-      katex.renderToString(formule, { throwOnError: true, strict: "ignore", displayMode: bloc });
+      verifierFormule(formule, bloc);
     } catch (e) {
       if (controles.length < MAX_FORMULES_SIGNALEES) {
         const message = (e instanceof Error ? e.message : String(e)).replace(/^KaTeX parse error:\s*/i, "").slice(0, 120);
