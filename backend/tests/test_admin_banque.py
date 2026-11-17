@@ -110,6 +110,21 @@ def test_export_import_roundtrip(admin, monkeypatch):
     assert admin.post("/api/admin/banque/import", json={"mode": "fusionner", "snapshot": bad}).status_code == 422
 
 
+def test_schema_banque_cible_structuration_export(admin, db):
+    """Le schéma versionné décrit bien la structure de l'export ; l'export
+    réels et le schéma partagent les mêmes clés de premier niveau."""
+    import pathlib
+
+    racine = pathlib.Path(__file__).resolve().parents[2]
+    schema = __import__("json").loads((racine / "backend" / "schemas" / "banque-1.0.schema.json").read_text(encoding="utf-8"))
+    assert schema["properties"]["schemaVersion"]["enum"] == ["1.0"]
+    assert set(schema["required"]) == {"schemaVersion", "matieres", "parties", "classes", "specialites", "exercices"}
+
+    export = admin.get("/api/admin/banque/export").json()
+    assert set(export) == set(schema["required"]) | {"exportedAt"}
+    assert export["schemaVersion"] == "1.0"
+
+
 def test_journal_admin_filtrable(admin, db):
     row = BanqueJournalORM(user_id="u-test", generation_id="g-test", type="GENERATION", params_json="{}", details_json="{}")
     db.add(row)

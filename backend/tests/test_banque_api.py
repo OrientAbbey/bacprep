@@ -201,6 +201,31 @@ def test_historique_expire_preserve_generation_la_plus_recente(eleve, db):
     assert db.query(BanqueJournalORM).filter_by(type="INFO_HISTORY_PURGED", user_id=user_id).count() == 1
 
 
+def test_journal_technique_purge_apres_retention(eleve, db):
+    """Le journal technique (identifiant utilisateur + paramètres) est purgé au-
+    delà de la durée de conservation ; les entrées récentes survivent."""
+    now = utc_now()
+    ancien = BanqueJournalORM(
+        user_id="u-journal-ancien", generation_id="g-1", type="GENERATION",
+        params_json="{}", details_json="{}", created_at=now - timedelta(days=400),
+    )
+    recent = BanqueJournalORM(
+        user_id="u-journal-recent", generation_id="g-2", type="GENERATION",
+        params_json="{}", details_json="{}", created_at=now - timedelta(days=10),
+    )
+    db.add_all([ancien, recent])
+    db.commit()
+    ancien_id, recent_id = ancien.id, recent.id
+
+    from app.routers.banque import _purger_historique
+    _purger_historique(db, now)
+    db.commit()
+    db.expire_all()
+
+    assert db.get(BanqueJournalORM, ancien_id) is None
+    assert db.get(BanqueJournalORM, recent_id) is not None
+
+
 def test_suppression_compte_preserve_journal_technique(eleve, db):
     user = db.query(UserORM).filter_by(email="eleve@test.cm").one()
     journal = BanqueJournalORM(

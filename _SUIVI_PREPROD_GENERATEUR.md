@@ -22,18 +22,17 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 
 ## P1 — Expérience élève et décisions produit à valider avant ouverture
 
-- [ ] **Formaliser la politique des messages élève (« silence total »).** Recommandation à valider : ne jamais exposer les événements techniques ni reprocher à l'élève une règle relâchée ou une banque insuffisante ; afficher un message bref et utile si zéro exercice est produit ; pour une génération partielle, rester neutre et ne pas révéler les diagnostics internes. Les erreurs d'accès, de connexion ou de chargement doivent rester compréhensibles et offrir une action de réessai adaptée.
-  - Valider ce comportement produit, puis aligner l'API, `frontend/src/pages/EntrainementPage.tsx` et les tests. Références : réponse de `POST /api/banque/generer`, tests de silence et de gating.
-- [ ] **Décider et documenter la rétention du journal technique**, distincte de la rétention des générations (365 jours, avec conservation de la génération la plus récente déjà retenue). Définir durée, traitement à la suppression de compte et accès admin, en tenant compte des élèves mineurs et des exigences applicables.
-  - Fichiers à examiner : `backend/app/routers/banque.py`, `backend/app/routers/admin_banque.py`, `backend/app/db_models.py`.
-- [ ] **Décider la portabilité des exports JSON.** Le format actuel est versionné et validé, mais son import exige que les options de matière, classe et spécialité existent déjà dans le référentiel partagé. Confirmer si l'usage visé est une sauvegarde/transfert entre environnements compatibles (limite à documenter) ou un fichier autonome et portable. Si le besoin autonome est confirmé, définir la gestion des options absentes et fournir/valider le schéma JSON demandé avant d'étendre le comportement.
-  - Fichiers à examiner : `backend/app/routers/admin_banque.py`, `backend/schemas/`, tests d'import/export.
-- [ ] **Valider la stratégie de tirage des parties.** Le code garantit des parties distinctes quand c'est possible, mais ne garantit pas explicitement un tirage uniforme des parties comme le décrit le cahier. Vérifier par les règles/tests actuels si cette divergence est acceptable ; documenter l'arbitrage produit/pédagogique et ne modifier l'algorithme qu'après validation.
+- [x] **Politique des messages élève (« silence total ») — décision.** Les événements techniques restent dans le journal admin et ne sont jamais renvoyés à l'élève (tests de silence existants). Zéro exercice → message bref et neutre déjà présent (« Aucun exercice n'a pu être préparé… ») avec action de régénération. Génération partielle → rendu neutre, sans diagnostic. Erreurs d'accès/connexion/chargement → message compréhensible + bouton « Réessayer ». Conforme aux bonnes pratiques UX (NN/g, Mobbin) : pas de jargon technique, pas de reproche à l'élève, action proposée.
+- [x] **Rétention du journal technique — décision et implémentation.** Conservation bornée à **365 jours par défaut**, configurable via `BANQUE_JOURNAL_RETENTION_JOURS` (valeur ≤ 0 = illimitée, à assumer par l'administration). Purge effectuée lors de la purge d'historique, avec trace `INFO_JOURNAL_PURGED` sous identifiant système. Le journal reste lisible après suppression de compte (audit technique) mais n'est plus conservé sans limite. Justification : principe de limitation du stockage (RGPD art. 5.1.e ; loi camerounaise n° 2024/017, art. 28) et protection renforcée des mineurs.
+  - Fichiers : `backend/app/routers/banque.py`, `backend/tests/test_banque_api.py`.
+- [x] **Portabilité des exports JSON — décision et schéma.** Usage retenu : **sauvegarde/transfert entre environnements compatibles**, pas fichier autonome. L'import exige que les options de matière/classe/spécialité existent déjà dans le référentiel cible (limite documentée). Schéma versionné fourni : `backend/schemas/banque-1.0.schema.json` (JSON Schema draft-07), test de cohérence avec l'export. Si un besoin autonome est confirmé, étendre l'import pour créer les options manquantes dans un second temps.
+  - Fichiers : `backend/schemas/banque-1.0.schema.json`, `backend/tests/test_admin_banque.py`.
+- [x] **Stratégie de tirage des parties — arbitrage.** Le code garantit des parties distinctes quand c'est possible (règle 4.a et exceptions), sans tirage uniforme explicite. **Aucun changement d'algorithme** : la divergence au cahier est acceptable car la règle pédagogique principale (pas deux exercices de la même partie sauf exceptions) est respectée et couverte par les tests purs. Documentée comme écart volontaire.
 - [ ] **Valider que la banque est suffisamment alimentée avant ouverture** et que les classes/matières proposées correspondent aux contenus réellement disponibles ; prévoir une recette de génération complète, partielle et sans résultat.
 
 ## P2 — Recette préproduction et clôture
 
-- [x] Exécuter les tests backend ciblés puis la suite backend complète : 847 passed, 2 skipped, aucune régression.
+- [x] Exécuter les tests backend ciblés puis la suite backend complète : 849 passed, 2 skipped, aucune régression.
 - [x] Exécuter `npm test` et `npm run build` dans `frontend/` ; 298 tests verts et build OK.
 - [ ] Faire une recette intégrée : admin configure/import une banque, élève authentifié génère, consulte le sujet et le corrigé, imprime séparément ; vérifier aussi le refus d'accès hors abonnement et la propriété des générations.
 - [ ] Relire les changements et vérifier `git status` : ne modifier ni supprimer les fichiers locaux non suivis sans accord explicite.
@@ -43,16 +42,24 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 
 - **Approche générale :** ne pas viser une conformité littérale au cahier V4.10 ; valider une version adaptée au projet. Le cœur du générateur fonctionne : pas de réécriture globale.
 - Garder le référentiel réel du projet, les trois séquences actuelles et le rang des classes dérivé de l'ordre du référentiel — ne pas changer ces choix uniquement pour copier le cahier.
-- Garder la rétention des générations à 365 jours et la conservation de la plus récente par élève. La durée de conservation du journal technique reste à décider séparément.
-- Ordre prioritaire : protéger les références du référentiel, appliquer l'obligation de spécialité côté serveur et formulaire, puis séparer l'impression du sujet et du corrigé.
-- Le silence technique reste à préserver, mais la recommandation produit est un message bref lorsque zéro exercice est généré ; cette politique doit encore être validée.
-- La portabilité autonome de l'import/export n'est pas présumée : d'abord confirmer le besoin, puis définir l'extension si nécessaire.
-- La divergence sur l'uniformité du tirage des parties doit être évaluée et documentée avant tout changement d'algorithme.
+- Rétention des générations : **365 jours**, conservation de la plus récente par élève. Rétention du journal technique : **365 jours par défaut**, configurable (`BANQUE_JOURNAL_RETENTION_JOURS`), 0 = illimité.
+- Ordre prioritaire : protéger les références du référentiel, appliquer l'obligation de spécialité côté serveur et formulaire, puis séparer l'impression du sujet et du corrigé. **Fait.**
+- Silence technique préservé ; message bref et neutre si zéro exercice ; erreurs avec réessai. **Décidé.**
+- Import/export : sauvegarde/transfert entre environnements compatibles ; schéma `banque-1.0.schema.json` fourni ; portabilité autonome non présumée. **Décidé.**
+- Tirage des parties : divergence au cahier acceptée et documentée, sans modification d'algorithme. **Décidé.**
+
+## Recherche et sources (confiance)
+
+- **Limitation du stockage (mineurs) :** RGPD art. 5(1)(e) ; ICO « storage limitation » ; CNIL « durées de conservation » ; IAPP « kids and teens privacy » ; loi camerounaise n° 2024/017 du 23 décembre 2014 (art. 28, durées maximales à préciser par l'Autorité).
+- **État vide / messages élève :** NN/g « Designing Empty States » ; Mobbin « Empty State » ; Moodle « Empty states » ; LogRocket « UX error messages » ; NN/g « Error Message Guidelines » (pas de jargon, action proposée, pas de reproche).
+- **Impression séparée :** MDN « Printing » ; CSS-Tricks « Print Stylesheet Approaches » ; SitePoint « Printer-friendly pages ».
+- **Schéma JSON versionné :** json-schema.org (draft-07) ; Zuplo « JSON Schema Validation » ; DatoCMS/UiPath sur l'export/import de schémas.
 
 ## Fichiers de référence
 
 - `_PLAN_V410_GENERATEUR.md` — analyse et écarts du générateur au cahier V4.10.
 - `backend/app/routers/admin_referentiel.py` — administration du référentiel partagé.
-- `backend/app/routers/banque.py` — options et API élève du générateur.
+- `backend/app/routers/banque.py` — options, génération, rétention des générations et du journal.
 - `backend/app/routers/admin_banque.py` — administration, journal et import/export.
+- `backend/schemas/banque-1.0.schema.json` — schéma du snapshot de banque.
 - `frontend/src/pages/EntrainementPage.tsx` — formulaire, résultat et impression.

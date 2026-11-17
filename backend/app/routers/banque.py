@@ -6,6 +6,7 @@ les réponses élève : l'incomplétude et les contraintes relâchées sont muet
 from __future__ import annotations
 
 import json
+import os
 import random
 import uuid
 from datetime import timedelta
@@ -38,6 +39,25 @@ from .auth import require_user
 
 router = APIRouter(prefix="/api/banque", tags=["banque"])
 RETENTION = timedelta(days=365)
+
+
+def _retention_configurable(nom_env: str, defaut_jours: int) -> timedelta | None:
+    """Durée de conservation configurable : valeur absente ou invalide = défaut ;
+    0 ou négatif = conservation illimitée (l'administration l'assume)."""
+    brut = os.getenv(nom_env, "").strip()
+    if not brut:
+        return timedelta(days=defaut_jours)
+    try:
+        jours = int(brut)
+    except ValueError:
+        return timedelta(days=defaut_jours)
+    return None if jours <= 0 else timedelta(days=jours)
+
+
+# Le journal technique contient un identifiant utilisateur et les paramètres de
+# génération : sa conservation est bornée (365 jours par défaut, configurable,
+# 0 = illimité) et distincte de celle des générations.
+JOURNAL_RETENTION = _retention_configurable("BANQUE_JOURNAL_RETENTION_JOURS", 365)
 _limiteur = SlidingWindowLimiter(
     max_attempts=30,
     window_seconds=300.0,
@@ -113,6 +133,25 @@ def _purger_historique(db: Session, now) -> None:
                 "INFO_HISTORY_PURGED",
                 {},
                 {"deleted": count},
+            )
+    if JOURNAL_RETENTION is not None:
+        cutoff_journal = now - JOURNAL_RETENTION
+        # Les entrées techniques vieilles de plus de la durée de conservation
+        # sont supprimées. La trace de la purge est remontée sous un identifiant
+        # système, non rattaché à un élève.
+        nb_journal = (
+            db.query(BanqueJournalORM)
+            .filter(BanqueJournalORM.created_at < cutoff_journal)
+            .delete(synchronize_session=False)
+        )
+        if nb_journal:
+            _journal(
+                db,
+                "",
+                "",
+                "INFO_JOURNAL_PURGED",
+                {},
+                {"deleted": nb_journal, "retention_jours": JOURNAL_RETENTION.days},
             )
 
 

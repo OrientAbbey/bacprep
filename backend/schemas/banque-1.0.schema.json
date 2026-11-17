@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://bacprep.local/schemas/banque-1.0.schema.json",
+  "title": "Banque d'exercices du générateur d'épreuves (Copies & Corrigés)",
+  "description": "Snapshot de la banque d'exercices, versionné. Les matières, classes et spécialités référencées doivent déjà exister dans le référentiel partagé de l'installation cible : l'import ne crée ni ne supprime ces options globales. Les identifiants de parties et d'exercices sont des UUID ; l'import accepte les formes avec ou sans tirets et les normalise.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "matieres", "parties", "classes", "specialites", "exercices"],
+  "properties": {
+    "schemaVersion": { "type": "string", "enum": ["1.0"] },
+    "exportedAt": { "type": "string" },
+    "matieres": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "nom"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "nom": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "parties": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "matiereId", "nom", "ordre"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "matiereId": { "type": "string", "minLength": 1 },
+          "nom": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "ordre": { "type": "integer", "minimum": 0, "maximum": 10000 }
+        }
+      }
+    },
+    "classes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "nom"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "nom": { "type": "string", "minLength": 1 },
+          "aExamen": { "type": "boolean" },
+          "specialiteObligatoire": { "type": "boolean" }
+        }
+      }
+    },
+    "specialites": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "nom"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "nom": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "exercices": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "sujet", "corrige", "matiereIds", "classeIds", "specialiteIds", "partieId"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "sujet": { "type": "string", "minLength": 1, "maxLength": 100000 },
+          "corrige": { "type": "string", "minLength": 1, "maxLength": 100000 },
+          "matiereIds": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string", "minLength": 1 } },
+          "classeIds": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string", "minLength": 1 } },
+          "specialiteIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "oneOf": [
+                { "type": "string", "minLength": 1 },
+                { "type": "string", "enum": ["SPECIAL:Aucune"] }
+              ]
+            }
+          },
+          "partieId": { "type": "string", "minLength": 1 },
+          "session": { "type": ["integer", "null"], "minimum": 1, "maximum": 6 },
+          "niveauIntrinseque": { "type": "string", "enum": ["Facile", "Moyen", "Difficile"] },
+          "tagExamen": { "type": "boolean" },
+          "actif": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
