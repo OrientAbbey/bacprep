@@ -7,6 +7,7 @@ import type { BanqueDifficulte, BanqueGenerationInput, BanqueGenerationOutput, B
 import { useAuth } from "../auth/AuthProvider";
 import { Combobox } from "../components/Combobox";
 import { MarkdownContent } from "../components/MarkdownContent";
+import { prechargerMol } from "../components/MolBlock";
 import { Spinner } from "../components/Spinner";
 import { useToast } from "../components/Toast";
 import { getLang, t } from "../i18n";
@@ -292,11 +293,20 @@ function ComposerBanque() {
 
   useEffect(() => {
     if (!impression) return;
+    let annule = false;
+    let minuteur: number | undefined;
     const fin = () => setImpression(null);
     window.addEventListener("afterprint", fin, { once: true });
-    const t = window.setTimeout(() => window.print(), 300);
+    // Le dessin des molécules est asynchrone (chunk différé) : on attend le
+    // chargement avant d'ouvrir la boîte d'impression, sinon le PDF est vide.
+    void prechargerMol()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!annule) minuteur = window.setTimeout(() => window.print(), 300);
+      });
     return () => {
-      window.clearTimeout(t);
+      annule = true;
+      if (minuteur !== undefined) window.clearTimeout(minuteur);
       window.removeEventListener("afterprint", fin);
     };
   }, [impression]);

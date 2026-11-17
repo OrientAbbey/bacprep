@@ -2,6 +2,7 @@ import { Printer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MarkdownContent } from "./MarkdownContent";
+import { prechargerMol } from "./MolBlock";
 import { t } from "../i18n";
 
 export type ChoixPdf = "sujet" | "corrige" | "les-deux";
@@ -51,12 +52,20 @@ export function ExportPdf({
 
   useEffect(() => {
     if (!choix) return;
+    let annule = false;
+    let minuteur: number | undefined;
     const fin = () => setChoix(null);
     window.addEventListener("afterprint", fin, { once: true });
-    // Laisse React rendre la zone d'impression (et KaTeX/images) avant d'ouvrir la boîte d'impression.
-    const t = window.setTimeout(() => window.print(), 600);
+    // Laisse React rendre la zone d'impression (et KaTeX/images), et attend le
+    // chunk SmilesDrawer, avant d'ouvrir la boîte d'impression.
+    void prechargerMol()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!annule) minuteur = window.setTimeout(() => window.print(), 600);
+      });
     return () => {
-      window.clearTimeout(t);
+      annule = true;
+      if (minuteur !== undefined) window.clearTimeout(minuteur);
       window.removeEventListener("afterprint", fin);
     };
   }, [choix]);

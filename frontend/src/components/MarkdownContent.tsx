@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -9,6 +9,7 @@ import { rehypeSourceOffsets, rehypeStripAnchorText } from "../lib/markdownSourc
 import { rehypeImageWidths } from "../lib/markdownImages";
 import { chargerExtensions, KATEX_OPTIONS, normaliserPourRendu } from "../lib/renduMath";
 import { ImageLightbox } from "./ImageLightbox";
+import { MolBlock, type StyleMol } from "./MolBlock";
 
 /** Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
  * le backend — sans quoi les images d'une épreuve (ou d'un message
@@ -77,7 +78,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({
   // Les liens `<a>` sont filtrés : seuls http, https, mailto et les chemins
   // internes `/api/files/` sont autorisés — empêche les liens
   // `javascript:...` injectés via le Markdown (XSS au clic).
-  const components = useMemo(
+  const components = useMemo<Components>(
     () => ({
       img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
         const src = props.src ? resolveMediaUrl(props.src) : props.src;
@@ -104,6 +105,16 @@ export const MarkdownContent = React.memo(function MarkdownContent({
           return <span {...props} />;
         }
         return <a {...props} />;
+      },
+      code: ({ node, ...props }) => {
+        const langage = /language-([\w-]+)/.exec(props.className ?? "")?.[1] ?? "";
+        if (langage.startsWith("mol")) {
+          const meta = node?.data?.meta ?? "";
+          const brut = (langage.slice(3) || meta.trim().split(/\s+/)[0] || "topologique").toLowerCase();
+          const style: StyleMol = brut === "developpee" || brut === "cram" ? brut : "topologique";
+          return <MolBlock contenu={typeof props.children === "string" ? props.children : String(props.children)} style={style} />;
+        }
+        return <code {...props} />;
       },
     }),
     []
