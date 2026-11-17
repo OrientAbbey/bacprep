@@ -1,8 +1,29 @@
-"""Tests de l'onglet « Paramètres » (table ``referentiel_options``) :
+"""Tests de l'onglet « Paramètres » (table ``referentiel_options``) : 
 seed idempotent au démarrage, protection admin, CRUD (création, renommage,
 suppression), compteur « en usage », auto-ajout à la sauvegarde d'une épreuve
 et journal d'audit des mutations."""
 from __future__ import annotations
+
+from app.db_models import BanqueExerciceORM, BanquePartieORM
+
+
+def _cree_banque_ref(admin, matiere: str, *, classe: str = "terminale", serie: str = "SPECIAL:Aucune"):
+    """Crée une partie et un exercice de banque référençant la matière/classe/série."""
+    part = admin.post("/api/admin/banque/parties", json={"matiere": matiere, "nom": "Partie test"})
+    assert part.status_code == 200, part.text
+    ex = admin.post("/api/admin/banque/exercices", json={
+        "sujet": "Sujet", "corrige": "Corrigé", "partie_id": part.json()["id"],
+        "session": 1, "niveau_intrinseque": "Moyen", "tag_examen": False,
+        "matieres": [matiere], "classes": [classe], "series": [serie],
+    })
+    assert ex.status_code == 200, ex.text
+    return part.json()["id"], ex.json()["id"]
+
+
+def _purger_banque(db, part_id: str, ex_id: str) -> None:
+    db.query(BanqueExerciceORM).filter(BanqueExerciceORM.id == ex_id).delete(synchronize_session=False)
+    db.query(BanquePartieORM).filter(BanquePartieORM.id == part_id).delete(synchronize_session=False)
+    db.commit()
 
 
 def _options(client, scope: str) -> dict:
@@ -246,3 +267,72 @@ def test_journal_audit_referentiel(admin):
     assert "referentiel_option_ajoutee" in actions
     assert "referentiel_option_renommee" in actions
     assert "referentiel_option_supprimee" in actions
+
+
+# ---------- Références de la banque (intégrité) ----------
+
+def test_proteger_references_banque_matiere(admin, db):
+    """Une matière référencée par une partie et un exercice de banque ne peut
+    ni être renommée ni supprimée ; le libellé reste modifiable ; la suppression
+    redevient possible une fois les références retirées."""
+    matiere = "REF-BANQ-MAT"
+    r = admin.post("/api/admin/referentiel-options", json={"scope": "matiere", "code": matiere})
+    assert r.status_code == 200
+    opt_id = r.json()["id"]
+    part_id, ex_id = _cree_banque_ref(admin, matiere)
+
+    opt = _trouve(_options(admin, "matiere"), matiere)
+    assert opt is not None
+    assert opt["en_usage"] >= 2  # partie + exercice
+
+    r = admin.patch(f"/api/admin/referentiel-options/{opt_id}", json={"code": "REF-BANQ-MAT-2"})
+    assert r.status_code == 409
+
+    r = admin.patch(f"/api/admin/referentiel-options/{opt_id}", json={"label": "Libellé modifié"})
+    assert r.status_code == 200
+    assert _trouve(_options(admin, "matiere"), matiere)["label"] == "Libellé modifié"
+
+    assert admin.delete(f"/api/admin/referentiel-options/{opt_id}").status_code == 409
+
+    _purger_banque(db, part_id, ex_id)
+    assert admin.delete(f"/api/admin/referentiel-options/{opt_id}").status_code == 200
+
+
+def test_proteger_references_banque_serie(admin, db):
+    """Une spécialité référencée dans une liste JSON d'exercice est protégée
+    contre renommage et suppression."""
+    matiere = "REF-BANQ-SER-MAT"
+    assert admin.post("/api/admin/referentiel-options", json={"scope": "matiere", "code": matiere}).status_code == 200
+    serie = "REF-BANQ-SER"
+    r = admin.post("/api/admin/referentiel-options", json={"scope": "serie", "code": serie})
+    assert r.status_code == 200
+    opt_id = r.json()["id"]
+    part_id, ex_id = _cree_banque_ref(admin, matiere, serie=serie)
+
+    opt = _trouve(_options(admin, "serie"), serie)
+    assert opt is not None and opt["en_usage"] >= 1
+    assert admin.patch(f"/api/admin/referentiel-options/{opt_id}", json={"code": "REF-BANQ-SER-2"}).status_code == 409
+    assert admin.delete(f"/api/admin/referentiel-options/{opt_id}").status_code == 409
+
+    _purger_banque(db, part_id, ex_id)
+    assert admin.delete(f"/api/admin/referentiel-options/{opt_id}").status_code == 200
+
+
+def test_proteger_references_banque_classe(admin, db):
+    """Une classe référencée par un exercice de banque est protégée contre
+    renommage et suppression."""
+    matiere = "REF-BANQ-CLA-MAT"
+    assert admin.post("/api/admin/referentiel-options", json={"scope": "matiere", "code": matiere}).status_code == 200
+    classe = "REF-BANQ-CLASSE"
+    r = admin.post("/api/admin/referentiel-options", json={"scope": "classe", "code": classe})
+    assert r.status_code == 200
+    opt_id = r.json()["id"]
+    part_id, ex_id = _cree_banque_ref(admin, matiere, classe=classe)
+
+    opt = _trouve(_options(admin, "classe"), classe)
+    assert opt is not None and opt["en_usage"] >= 1
+    assert admin.patch(f"/api/admin/referentiel-options/{opt_id}", json={"code": "REF-BANQ-CLASSE-2"}).status_code == 409
+    assert admin.delete(f"/api/admin/referentiel-options/{opt_id}").status_code == 409
+
+    _purger_banque(db, part_id, ex_id)
+    assert admin.delete(f"/api/admin/referentiel-options/{opt_id}").status_code == 200

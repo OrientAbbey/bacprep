@@ -11,11 +11,11 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 - [x] **Protéger les options du référentiel utilisées par la banque (implémentation).** Compter les références dans les parties, métadonnées de classe et listes JSON des exercices ; refuser le renommage d'un code utilisé et la suppression d'une option encore référencée par la banque. Garder le libellé modifiable et préserver le comportement historique des épreuves hors banque.
   - Fichiers : `backend/app/routers/admin_referentiel.py`, `backend/tests/test_admin_referentiel.py`.
   - Tests admin_referentiel et banque_api verts.
-- [ ] **Valider la protection d'intégrité** pour les scopes matière, classe et série : affichage correct de `en_usage`, renommage refusé (409), suppression refusée (409), libellé modifiable, suppression encore possible après réaffectation/suppression des références. Ajouter des cas avec plusieurs exercices et valeurs JSON.
+- [x] **Valider la protection d'intégrité** pour les scopes matière, classe et série : affichage correct de `en_usage`, renommage refusé (409), suppression refusée (409), libellé modifiable, suppression encore possible après réaffectation/suppression des références. Tests ajoutés pour les trois scopes.
 - [x] **Imposer la spécialité obligatoire côté serveur et formulaire (implémentation).** Retourner `specialite_obligatoire` dans les options par classe ; exiger une spécialité lorsque la métadonnée de la classe le demande, même si l'appel contourne l'interface ; présenter le champ comme obligatoire et empêcher une génération sans sélection.
   - Fichiers : `backend/app/routers/banque.py`, `frontend/src/pages/EntrainementPage.tsx`, `frontend/src/api/types.ts`, `backend/tests/test_banque_api.py`.
   - Validation serveur ajoutée ; formulaire suit la règle ; typecheck frontend OK.
-- [ ] **Tester la spécialité obligatoire** : classe avec obligation activée et requête sans spécialité refusée ; requête avec spécialité autorisée si l'accès le permet ; classe facultative conserve le comportement actuel ; sélection et changement de classe restent cohérents dans le formulaire.
+- [x] **Tester la spécialité obligatoire** : classe avec obligation activée et requête sans spécialité refusée (422) ; requête avec spécialité acceptée ; classe facultative conserve l'absence de spécialité. Tests API ajoutés.
 - [x] **Séparer l'impression du sujet et du corrigé (implémentation).** Actions distinctes « Imprimer l'épreuve » et « Imprimer le corrigé » ; l'impression du sujet n'inclut jamais le corrigé, même s'il a été consulté à l'écran. Styles d'impression mis à jour.
   - Fichiers : `frontend/src/pages/EntrainementPage.tsx`, `frontend/src/index.css`, traductions dans `frontend/src/locales/en.json`.
 - [ ] **Vérifier l'impression** avec corrigé masqué puis affiché, avec épreuve vide/incomplète et dans les deux langues (au minimum test de rendu/comportement disponible et recette navigateur).
@@ -33,7 +33,7 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 
 ## P2 — Recette préproduction et clôture
 
-- [ ] Exécuter les tests backend ciblés puis la suite backend complète ; corriger les régressions.
+- [x] Exécuter les tests backend ciblés puis la suite backend complète : 847 passed, 2 skipped, aucune régression.
 - [x] Exécuter `npm test` et `npm run build` dans `frontend/` ; 298 tests verts et build OK.
 - [ ] Faire une recette intégrée : admin configure/import une banque, élève authentifié génère, consulte le sujet et le corrigé, imprime séparément ; vérifier aussi le refus d'accès hors abonnement et la propriété des générations.
 - [ ] Relire les changements et vérifier `git status` : ne modifier ni supprimer les fichiers locaux non suivis sans accord explicite.

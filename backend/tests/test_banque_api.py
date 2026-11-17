@@ -217,3 +217,64 @@ def test_suppression_compte_preserve_journal_technique(eleve, db):
     db.expire_all()
     assert db.get(UserORM, user_id) is None
     assert db.query(BanqueJournalORM).filter_by(id=journal_id).count() == 1
+
+
+def _setup_classe(db, user, *, classe: str, serie: str | None = None, obligation: bool = False):
+    """Banque minimaliste sur une classe fraîche, avec abonnement matière/série."""
+    subject = f"API Banque Spe {uuid.uuid4().hex}"
+    _ensure_option(db, "matiere", subject)
+    _ensure_option(db, "classe", classe)
+    if serie:
+        _ensure_option(db, "serie", serie)
+    now = utc_now()
+    db.add(SubscriptionORM(
+        user_id=user.id, evaluation="ALL", classe=classe, filiere=serie or "A",
+        matiere=subject, annee="ALL", start_date=now, end_date=now + timedelta(days=30), statut="active",
+    ))
+    part = BanquePartieORM(matiere=subject, nom="P", ordre=0)
+    db.add(part)
+    db.flush()
+    series = [serie, "SPECIAL:Aucune"] if serie else ["SPECIAL:Aucune"]
+    db.add(BanqueExerciceORM(
+        sujet="Sujet spe", corrige="Corrigé spe", partie_id=part.id, session=1,
+        niveau_intrinseque="Moyen", tag_examen=True, actif=True,
+        matieres_json=json.dumps([subject]), classes_json=json.dumps([classe]),
+        series_json=json.dumps(series),
+    ))
+    db.commit()
+    return subject
+
+
+def test_specialite_obligatoire_serveur_et_options(eleve, admin, db):
+    """La métadonnée de classe est exposée et imposée côté serveur, même sans
+    passer par l'interface."""
+    user = db.query(UserORM).filter_by(email="eleve@test.cm").one()
+    classe = "premiere-spe"
+    subject = _setup_classe(db, user, classe=classe, serie="A")
+    r = admin.put(f"/api/admin/banque/classes/{classe}", json={"a_examen": True, "specialite_obligatoire": True})
+    assert r.status_code == 200, r.text
+
+    options = eleve.get("/api/banque/options").json()
+    assert options["classes_meta"][classe]["specialite_obligatoire"] is True
+
+    denied = eleve.post("/api/banque/generer", json={
+        "matiere": subject, "classe": classe, "sequence": 1, "mode": "sequence", "difficulte": "Moyen",
+    })
+    assert denied.status_code == 422
+
+    ok = eleve.post("/api/banque/generer", json={
+        "matiere": subject, "classe": classe, "serie": "A", "sequence": 1, "mode": "sequence", "difficulte": "Moyen",
+    })
+    assert ok.status_code == 200, ok.text
+
+
+def test_specialite_facultative_accepte_absence(eleve, db):
+    """Sans obligation, l'absence de spécialité reste acceptée (comportement
+    historique)."""
+    user = db.query(UserORM).filter_by(email="eleve@test.cm").one()
+    classe = "seconde-spe"
+    subject = _setup_classe(db, user, classe=classe)
+    response = eleve.post("/api/banque/generer", json={
+        "matiere": subject, "classe": classe, "sequence": 1, "mode": "sequence", "difficulte": "Moyen",
+    })
+    assert response.status_code == 200, response.text
