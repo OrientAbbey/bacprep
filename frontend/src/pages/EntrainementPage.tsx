@@ -174,6 +174,7 @@ function Liste() {
 interface OptionsBanque {
   matieres: string[];
   classes: string[];
+  classes_meta: Record<string, { specialite_obligatoire: boolean }>;
   series: string[];
   sequences: number[];
 }
@@ -192,6 +193,7 @@ function ComposerBanque() {
   const [corrige, setCorrige] = useState<BanqueGenerationOutput | null>(null);
   const [corrigeAffiche, setCorrigeAffiche] = useState(false);
   const [enCours, setEnCours] = useState(false);
+  const [impression, setImpression] = useState<"sujet" | "corrige" | null>(null);
   const [chargementCorrige, setChargementCorrige] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [erreurOptions, setErreurOptions] = useState<string | null>(null);
@@ -212,6 +214,17 @@ function ComposerBanque() {
     }
   }, []);
 
+  // Lorsque la classe change, si elle impose une spécialité et qu'aucune n'est
+  // sélectionnée, on se positionne sur la première disponible pour éviter une
+  // demande invalide côté serveur.
+  useEffect(() => {
+    if (!options) return;
+    const meta = options.classes_meta?.[classe];
+    if (meta?.specialite_obligatoire && !serie && options.series.length > 0) {
+      setSerie(options.series[0]);
+    }
+  }, [classe, options, serie]);
+
   useEffect(() => {
     if (!user) {
       setOptions(null);
@@ -226,10 +239,12 @@ function ComposerBanque() {
   const exercices = generation?.exercices ?? [];
   const sujetMarkdown = exercices.map((ex) => `## ${t("Exercice {n}", { n: ex.numero })}\n\n${ex.contenu ?? ""}`).join("\n\n---\n\n");
   const corrigeMarkdown = corrige?.exercices.map((ex) => `## ${t("Exercice {n}", { n: ex.numero })}\n\n${ex.contenu ?? ""}`).join("\n\n---\n\n") ?? "";
+  const specialiteObligatoire = options?.classes_meta?.[classe]?.specialite_obligatoire === true;
   const parametres = useMemo<BanqueGenerationInput | null>(() => {
     if (!matiere || !classe) return null;
+    if (specialiteObligatoire && !serie) return null;
     return { matiere, classe, serie: serie || undefined, mode, difficulte, ...(mode === "sequence" ? { sequence } : {}) };
-  }, [matiere, classe, serie, mode, difficulte, sequence]);
+  }, [matiere, classe, serie, mode, difficulte, sequence, specialiteObligatoire]);
 
   async function genererEpreuve() {
     if (!parametres || !user) return;
@@ -249,6 +264,21 @@ function ComposerBanque() {
       setEnCours(false);
     }
   }
+
+  function imprimer(cible: "sujet" | "corrige") {
+    setImpression(cible);
+  }
+
+  useEffect(() => {
+    if (!impression) return;
+    const fin = () => setImpression(null);
+    window.addEventListener("afterprint", fin, { once: true });
+    const t = window.setTimeout(() => window.print(), 300);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("afterprint", fin);
+    };
+  }, [impression]);
 
   async function afficherCorrige() {
     if (corrigeAffiche) {
@@ -289,7 +319,7 @@ function ComposerBanque() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="text-xs">{t("Classe")}<select value={classe} onChange={(e) => setClasse(e.target.value)} disabled={chargementOptions || !options?.classes.length} className={`${champ} mt-1`}>{(options?.classes ?? []).map((code) => <option key={code} value={code}>{classeLabel(code)}</option>)}</select></label>
             <label className="text-xs">{t("Matière")}<select value={matiere} onChange={(e) => setMatiere(e.target.value)} disabled={chargementOptions || !options?.matieres.length} className={`${champ} mt-1`}>{(options?.matieres ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-            <label className="text-xs">{t("Série / spécialité")}<select value={serie} onChange={(e) => setSerie(e.target.value)} disabled={chargementOptions || !options?.series.length} className={`${champ} mt-1`}><option value="">{t("Toutes / aucune")}</option>{(options?.series ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label className="text-xs">{t("Série / spécialité")}{specialiteObligatoire && <span className="text-correction"> *</span>}<select value={serie} onChange={(e) => setSerie(e.target.value)} required={specialiteObligatoire} disabled={chargementOptions || !options?.series.length} className={`${champ} mt-1`}><option value="">{specialiteObligatoire ? t("Choisis une spécialité") : t("Toutes / aucune")}</option>{(options?.series ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
             <label className="text-xs">{t("Format de l'épreuve")}<select value={mode} onChange={(e) => setMode(e.target.value as BanqueMode)} className={`${champ} mt-1`}>
               <option value="sequence">{t("Séquence")}</option><option value="examen">{t("Examen")}</option><option value="examen_blanc">{t("Examen blanc")}</option><option value="vide">{t("Sans séquence")}</option>
             </select></label>
@@ -314,13 +344,20 @@ function ComposerBanque() {
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => void afficherCorrige()} disabled={chargementCorrige || exercices.length === 0} aria-pressed={corrigeAffiche} className={`${bouton} bg-ink text-paper hover:bg-ink`}>{chargementCorrige ? <Spinner /> : <Check size={16} aria-hidden="true" />}{t(corrigeAffiche ? "Masquer la correction" : "Voir le corrigé")}</button>
             <button type="button" onClick={() => void genererEpreuve()} disabled={enCours} className={bouton}><RefreshCw size={16} aria-hidden="true" />{t("Régénérer une épreuve")}</button>
-            <button type="button" onClick={() => window.print()} className={bouton}><Printer size={16} aria-hidden="true" />{t("Imprimer")}</button>
+            <button type="button" onClick={() => imprimer("sujet")} className={bouton}><Printer size={16} aria-hidden="true" />{t("Imprimer l'épreuve")}</button>
+            {corrige && <button type="button" onClick={() => imprimer("corrige")} className={bouton}><Printer size={16} aria-hidden="true" />{t("Imprimer le corrigé")}</button>}
           </div>
           {createPortal(
-            <div className="print-zone">
+            <div className={`print-zone print-zone-sujet${impression === "sujet" ? " print-zone--actif" : ""}`}>
               <h1>{t("Épreuve personnalisée")}: {generation.parametres.matiere} — {classeLabel(generation.parametres.classe)}</h1>
               <MarkdownContent content={sujetMarkdown} variant="epreuve" />
-              {corrigeAffiche && corrigeMarkdown && <><h2>{t("Corrigé")}</h2><MarkdownContent content={corrigeMarkdown} variant="epreuve" /></>}
+            </div>,
+            document.body,
+          )}
+          {corrige && createPortal(
+            <div className={`print-zone print-zone-corrige${impression === "corrige" ? " print-zone--actif" : ""}`}>
+              <h1>{t("Corrigé")}: {generation.parametres.matiere} — {classeLabel(generation.parametres.classe)}</h1>
+              <MarkdownContent content={corrigeMarkdown} variant="epreuve" />
             </div>,
             document.body,
           )}

@@ -159,6 +159,11 @@ def _valider_referentiel(db: Session, payload: GenerationIn) -> tuple[tuple[str,
         raise HTTPException(422, "Sélection invalide")
     if payload.serie is not None and payload.serie not in scopes["serie"]:
         raise HTTPException(422, "Sélection invalide")
+    # Spécialité obligatoire : la métadonnée de classe impose le choix d'une
+    # spécialité, même si l'appel contourne l'interface élève.
+    meta = db.get(BanqueClasseMetaORM, payload.classe)
+    if meta is not None and meta.specialite_obligatoire and payload.serie is None:
+        raise HTTPException(422, "Sélection invalide")
     classes = tuple(
         row.code
         for row in db.query(ReferentielOptionORM)
@@ -274,9 +279,14 @@ def options_generation(
             if row.code in disponibles
         ]
 
+    classes = codes_disponibles("classe", classes_banque)
     return {
         "matieres": codes_disponibles("matiere", matieres_banque),
-        "classes": codes_disponibles("classe", classes_banque),
+        "classes": classes,
+        "classes_meta": {
+            row.classe: {"specialite_obligatoire": row.specialite_obligatoire}
+            for row in db.query(BanqueClasseMetaORM).filter(BanqueClasseMetaORM.classe.in_(classes)).all()
+        },
         "series": codes_disponibles("serie", series_banque - {SPECIAL_AUCUNE}),
         "sequences": [int(value[len("SEQUENCE "):]) for value in referentiel.EVALUATIONS if value.startswith("SEQUENCE ")],
     }

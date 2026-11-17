@@ -357,6 +357,18 @@ export interface BanqueGenerationInput {
   difficulte: BanqueDifficulte;
 }
 
+export interface BanqueClasseMeta {
+  specialite_obligatoire: boolean;
+}
+
+export interface BanqueOptions {
+  matieres: string[];
+  classes: string[];
+  classes_meta: Record<string, BanqueClasseMeta>;
+  series: string[];
+  sequences: number[];
+}
+
 export interface BanqueGenerationExercice {
   numero: number;
   sujet?: string;

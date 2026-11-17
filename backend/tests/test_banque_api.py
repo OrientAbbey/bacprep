@@ -60,7 +60,7 @@ def test_options_eleve_refletent_la_banque_active_sans_contenu(eleve, db):
     assert "terminale" in options["classes"]
     assert options["series"] == []
     assert options["sequences"] == [1, 2, 3]
-    assert set(options) == {"matieres", "classes", "series", "sequences"}
+    assert set(options) == {"matieres", "classes", "classes_meta", "series", "sequences"}
     assert "sujet" not in response.text and "corrige" not in response.text
 
 

@@ -7,6 +7,8 @@ les mêmes données et peuvent auto-ajouter une valeur hors liste
 """
 from __future__ import annotations
 
+import json
+from collections import Counter
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,7 +18,14 @@ from sqlalchemy.orm import Session
 
 from ..core import referentiel_options as ref_store
 from ..db import get_db
-from ..db_models import EpreuveFiliereORM, EpreuveORM, ReferentielOptionORM
+from ..db_models import (
+    BanqueClasseMetaORM,
+    BanqueExerciceORM,
+    BanquePartieORM,
+    EpreuveFiliereORM,
+    EpreuveORM,
+    ReferentielOptionORM,
+)
 from .deps import log_admin_event, require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -40,10 +49,44 @@ def _check_scope(scope: str) -> None:
         raise HTTPException(422, f"scope inconnu — attendu parmi {', '.join(ref_store.SCOPES)}")
 
 
+def _json_codes(raw: str | None) -> list[str]:
+    try:
+        values = json.loads(raw or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return [value for value in values if isinstance(value, str)] if isinstance(values, list) else []
+
+
+def _banque_references(db: Session, scope: str) -> dict[str, int]:
+    """Compte les références de la banque stockées en JSON ou sans clé
+    étrangère. Les lignes distinctes sont les entités impactées, pas les
+    occurrences répétées d'un même code dans une liste."""
+    counts: Counter[str] = Counter()
+
+    if scope == "matiere":
+        for (code,) in db.query(BanquePartieORM.matiere).all():
+            if code:
+                counts[code] += 1
+    elif scope == "classe":
+        for (code,) in db.query(BanqueClasseMetaORM.classe).all():
+            if code:
+                counts[code] += 1
+
+    exercise_column = {
+        "matiere": BanqueExerciceORM.matieres_json,
+        "classe": BanqueExerciceORM.classes_json,
+        "serie": BanqueExerciceORM.series_json,
+    }.get(scope)
+    if exercise_column is not None:
+        for (raw,) in db.query(exercise_column).all():
+            counts.update(set(_json_codes(raw)))
+    return dict(counts)
+
+
 def _usage_counts(db: Session) -> dict[str, dict[str, int]]:
-    """Nombre d'épreuves utilisant chaque option, par scope. Obtenu en deux
-    requêtes (colonnes d'épreuves + jointure séries) plutôt qu'une requête
-    par option."""
+    """Nombre d'épreuves utilisant chaque option, par scope, banque comprise.
+    Les séries d'épreuves historiques sont comptées séparément des codes JSON
+    des exercices de banque."""
     cols = ref_store.SCOPE_EPREUVE_COLONNE
     counts: dict[str, dict[str, int]] = {scope: {} for scope in ref_store.SCOPES}
     for scope, column in cols.items():
@@ -61,24 +104,27 @@ def _usage_counts(db: Session) -> dict[str, dict[str, int]]:
     ):
         if code:
             counts["serie"][code] = n
+    for scope in ("matiere", "classe", "serie"):
+        for code, n in _banque_references(db, scope).items():
+            counts[scope][code] = counts[scope].get(code, 0) + n
     return counts
 
 
 def _en_usage(db: Session, scope: str, code: str) -> int:
-    """Nombre d'épreuves utilisant cette option (colonne d'épreuve, ou
-    souscription de série pour le scope "serie") — sert de garde-fou au
-    renommage (le code est le classement, le libellé la vitrine)."""
+    """Nombre d'entités utilisant cette option, dans les épreuves historiques
+    et dans la banque ; sert de garde-fou au renommage/suppression."""
     key = (code or "").strip()
     column = ref_store.SCOPE_EPREUVE_COLONNE.get(scope)
+    historic = 0
     if column is not None:
-        return int(
+        historic = int(
             db.query(func.count(EpreuveORM.id)).filter(getattr(EpreuveORM, column) == key).scalar() or 0
         )
     if scope == "serie":
-        return int(
+        historic += int(
             db.query(func.count(EpreuveFiliereORM.id)).filter(EpreuveFiliereORM.filiere == key).scalar() or 0
         )
-    return 0
+    return historic + _banque_references(db, scope).get(key, 0)
 
 
 @router.get("/referentiel-options")
@@ -160,18 +206,16 @@ def admin_update_referentiel_option(
         if not code:
             raise HTTPException(422, "code vide")
         if code != row.code:
-            if ref_store.get_option(db, row.scope, code) is not None:
-                raise HTTPException(409, "Cette valeur existe déjà pour ce scope")
             if _en_usage(db, row.scope, row.code):
-                # Renommer réécrirait la liste sans toucher aux épreuves déjà
-                # saisies : elles afficheraient une valeur « hors liste » et
-                # le compteur en_usage perdrait son sens (revue 2026-09,
-                # REVUE_BACKEND.md §5). Le libellé (label) reste modifiable.
+                # Le code est une référence d'intégrité pour les épreuves
+                # historiques comme pour la banque ; seul le libellé se modifie.
                 raise HTTPException(
                     409,
-                    "Cette valeur est utilisée par des épreuves — modifiez le libellé (label) "
-                    "plutôt que le code, ou supprimez puis recréez l'option.",
+                    "Cette valeur est utilisée par des épreuves ou la banque d'exercices — "
+                    "modifiez le libellé (label) plutôt que le code.",
                 )
+            if ref_store.get_option(db, row.scope, code) is not None:
+                raise HTTPException(409, "Cette valeur existe déjà pour ce scope")
         row.code = code
     if payload.label is not None:
         row.label = payload.label.strip() or None
@@ -192,12 +236,19 @@ def admin_delete_referentiel_option(
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> dict:
-    """Supprime une option de la liste. Les épreuves déjà saisies avec cette
-    valeur GARDENT leur valeur (aucune réécriture) — l'appelant affiche le
-    compteur `en_usage` pour confirmation avant suppression."""
+    """Supprime une option uniquement si aucune référence de la banque ne
+    dépend de son code. Les épreuves historiques peuvent conserver une valeur
+    hors liste, conformément au comportement existant."""
     row = db.query(ReferentielOptionORM).filter(ReferentielOptionORM.id == option_id).one_or_none()
     if not row:
         raise HTTPException(404, "Option introuvable")
+    banque_usage = _banque_references(db, row.scope).get(row.code, 0)
+    if banque_usage:
+        raise HTTPException(
+            409,
+            f"Cette valeur est utilisée par {banque_usage} élément(s) de la banque d'exercices — "
+            "réaffectez-les avant de supprimer l'option.",
+        )
     db.delete(row)
     db.commit()
     log_admin_event(
