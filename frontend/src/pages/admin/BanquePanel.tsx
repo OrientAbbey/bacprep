@@ -9,6 +9,8 @@ import type {
   BanquePartie,
 } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { FormulesToolbar } from "../../components/FormulesToolbar";
+import { MarkdownContent } from "../../components/MarkdownContent";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { formatRelativeTime } from "../../lib/time";
@@ -46,6 +48,8 @@ const exerciceVide = (partie_id = ""): ExerciceForm => ({
 export function BanquePanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const fichierRef = useRef<HTMLInputElement>(null);
+  const sujetZoneRef = useRef<HTMLTextAreaElement>(null);
+  const corrigeZoneRef = useRef<HTMLTextAreaElement>(null);
   const modeImportRef = useRef<"fusionner" | "remplacer">("fusionner");
   const [data, setData] = useState<BanqueAdminData | null>(null);
   const [journal, setJournal] = useState<BanqueJournalEntry[]>([]);
@@ -463,8 +467,22 @@ export function BanquePanel({ token }: { token: string }) {
               <p className="text-[10px] text-ink-soft">Cette option inclut aussi les classes sans spécialité.</p>
             </fieldset>
             <p className="text-[10px] text-slate">Coche au moins une classe : sans classe, l&apos;exercice n&apos;est proposé à aucun élève. Les spécialités restreignent le tirage aux séries cochées ; « Aucune spécialité » l&apos;ouvre à toutes.</p>
-            <label className="block text-xs">Sujet *<textarea required maxLength={100000} rows={7} value={exerciceForm.sujet} onChange={(e) => setExerciceForm({ ...exerciceForm, sujet: e.target.value })} className="mt-1 w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" /></label>
-            <label className="block text-xs">Corrigé *<textarea required maxLength={100000} rows={7} value={exerciceForm.corrige} onChange={(e) => setExerciceForm({ ...exerciceForm, corrige: e.target.value })} className="mt-1 w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" /></label>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="space-y-1">
+                <label className="block text-xs">Sujet *</label>
+                <FormulesToolbar textareaRef={sujetZoneRef} onChanger={(sujet) => setExerciceForm((f) => (f ? { ...f, sujet } : f))} />
+                <textarea ref={sujetZoneRef} required maxLength={100000} rows={9} value={exerciceForm.sujet} onChange={(e) => setExerciceForm({ ...exerciceForm, sujet: e.target.value })} className="w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" />
+                <p className="font-mono-tag text-[10px] text-ink-soft">Rendu en temps réel</p>
+                <div className="max-h-72 overflow-y-auto rounded border border-ink-soft/15 bg-paper p-2"><MarkdownContent content={exerciceForm.sujet} variant="epreuve" /></div>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs">Corrigé *</label>
+                <FormulesToolbar textareaRef={corrigeZoneRef} onChanger={(corrige) => setExerciceForm((f) => (f ? { ...f, corrige } : f))} />
+                <textarea ref={corrigeZoneRef} required maxLength={100000} rows={9} value={exerciceForm.corrige} onChange={(e) => setExerciceForm({ ...exerciceForm, corrige: e.target.value })} className="w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" />
+                <p className="font-mono-tag text-[10px] text-ink-soft">Rendu en temps réel</p>
+                <div className="max-h-72 overflow-y-auto rounded border border-ink-soft/15 bg-paper p-2"><MarkdownContent content={exerciceForm.corrige} variant="epreuve" /></div>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               <button disabled={operation} className={`${bouton} bg-ink text-paper`}><Save size={14} aria-hidden="true" /> Enregistrer</button>
               <button type="button" onClick={() => { setExerciceForm(null); setExerciceEnEdition(null); }} className={bouton}>Annuler</button>

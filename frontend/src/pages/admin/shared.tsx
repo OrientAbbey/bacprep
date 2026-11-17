@@ -2,6 +2,7 @@ import { useClickOutside } from "../../components/Combobox";
 import React, { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, FileUp, Plus, Sparkles, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
+import { FormulesToolbar } from "../../components/FormulesToolbar";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatBytes } from "../../lib/format";
 import { foldText } from "../../lib/text";
@@ -209,7 +210,12 @@ export function FormatAttendu() {
           <li>les paragraphes, <strong>listes</strong> à puces ou numérotées et <strong>tableaux</strong> Markdown ;</li>
           <li>
             les <strong>formules</strong> : <code>$…$</code> en ligne, <code>$$…$$</code> en bloc (environnements
-            LaTeX placés <em>dans</em> <code>$$…$$</code>) ;
+            LaTeX placés <em>dans</em> <code>$$…$$</code>) ; la barre d'outils insère les modèles courants ;
+          </li>
+          <li>
+            la <strong>chimie</strong> : <code>{"$\\ce{H2O}$"}</code> (formule/équation), <code>{"$\\pu{g.mol-1}$"}</code>{" "}
+            (unités) et les blocs <code>{"```mol topologique | developpee | cram"}</code> pour dessiner une structure
+            à partir d'un SMILES ;
           </li>
           <li>
             les <strong>images</strong> <code>![légende](/api/files/…)</code>, avec une largeur d'affichage
@@ -684,6 +690,7 @@ export function ContentBlock({
 }) {
   const textareaId = useId();
   const importRef = useRef<HTMLInputElement>(null);
+  const zoneTextRef = useRef<HTMLTextAreaElement>(null);
   // La largeur affichée est LUE depuis le Markdown lui-même (jamais d'état
   // local dérivé) : le sélecteur reste synchronisé avec la balise réelle
   // après une édition manuelle du texte, un changement d'onglet sujet, etc.
@@ -747,7 +754,9 @@ export function ContentBlock({
             <label htmlFor={textareaId} className="mb-1 block font-mono-tag text-[10px] text-ink-soft">
               Contenu Markdown
             </label>
+            <FormulesToolbar textareaRef={zoneTextRef} onChanger={onChange} />
             <textarea
+              ref={zoneTextRef}
               id={textareaId}
               value={markdown}
               onChange={(e) => onChange(e.target.value)}
