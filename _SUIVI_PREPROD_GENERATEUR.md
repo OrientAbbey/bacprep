@@ -2,7 +2,7 @@
 
 Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues après comparaison au cahier V4.10. Il complète `_PLAN_V410_GENERATEUR.md` sans le remplacer.
 
-**Légende :** `[ ]` à faire · `[~]` en cours · `[x]` réalisé et vérifié.
+**Légende :** `[ ]` à faire · `[~]` en cours · `[x]` réalisé et vérifié · `[>]` reporté à plus tard.
 
 > Ne cocher une tâche qu'après implémentation **et** vérification par les tests pertinents. Les fichiers locaux non suivis déjà présents dans le dépôt doivent être préservés.
 
@@ -28,7 +28,7 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 - [x] **Portabilité des exports JSON — décision et schéma.** Usage retenu : **sauvegarde/transfert entre environnements compatibles**, pas fichier autonome. L'import exige que les options de matière/classe/spécialité existent déjà dans le référentiel cible (limite documentée). Schéma versionné fourni : `backend/schemas/banque-1.0.schema.json` (JSON Schema draft-07), test de cohérence avec l'export. Si un besoin autonome est confirmé, étendre l'import pour créer les options manquantes dans un second temps.
   - Fichiers : `backend/schemas/banque-1.0.schema.json`, `backend/tests/test_admin_banque.py`.
 - [x] **Stratégie de tirage des parties — arbitrage.** Le code garantit des parties distinctes quand c'est possible (règle 4.a et exceptions), sans tirage uniforme explicite. **Aucun changement d'algorithme** : la divergence au cahier est acceptable car la règle pédagogique principale (pas deux exercices de la même partie sauf exceptions) est respectée et couverte par les tests purs. Documentée comme écart volontaire.
-- [ ] **Valider que la banque est suffisamment alimentée avant ouverture** et que les classes/matières proposées correspondent aux contenus réellement disponibles ; prévoir une recette de génération complète, partielle et sans résultat.
+- [>] **Valider que la banque est suffisamment alimentée avant ouverture** et que les classes/matières proposées correspondent aux contenus réellement disponibles ; prévoir une recette de génération complète, partielle et sans résultat. **Reporté à plus tard (décision opérationnelle).**
 
 ## P2 — Recette préproduction et clôture
 
@@ -37,8 +37,9 @@ Mis à jour le **17 novembre 2026**. Ce fichier suit les corrections retenues ap
 - [x] Faire une recette intégrée : admin configure/import une banque, élève authentifié génère, consulte le sujet et le corrigé, imprime séparément ; vérifier aussi le refus d'accès hors abonnement et la propriété des générations.
   - `frontend/e2e/banque-e2e.mjs` : **9/9 scénarios verts** (options, gating 403, propriété 404, formulaire, spécialité obligatoire, impression sujet/corrigé, réaffichage après rechargement).
   - Correctif issu de la recette : l'épreuve composée se recharge désormais via `?gen=<id>` (avant, un rechargement perdait l'épreuve affichée).
-- [ ] Relire les changements et vérifier `git status` : ne modifier ni supprimer les fichiers locaux non suivis sans accord explicite.
-- [ ] Mettre à jour ce suivi et `_PLAN_V410_GENERATEUR.md` si une décision produit ou un écart au cahier est retenu ; ne cocher que les points réellement vérifiés.
+- [x] Relire les changements et vérifier `git status` : ne modifier ni supprimer les fichiers locaux non suivis sans accord explicite.
+- [>] Mettre à jour `_PLAN_V410_GENERATEUR.md` avec les décisions produit et écarts au cahier. **Reporté à plus tard** (ce suivi fait foi).
+- [>] Recette avec les données de production sur la préparation réelle (distincte de la recette locale 9/9). **Reporté à plus tard.**
 
 ## Arbitrages et recommandations déjà notés
 
