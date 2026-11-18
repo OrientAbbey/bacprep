@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import React, { useEffect, useMemo, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -7,8 +7,9 @@ import "katex/dist/katex.min.css";
 import { resolveMediaUrl } from "../api/client";
 import { rehypeSourceOffsets, rehypeStripAnchorText } from "../lib/markdownSource";
 import { rehypeImageWidths } from "../lib/markdownImages";
-import { normalizeDisplayMathDelimitersPreservingOffsets, normalizeLatexDelimiters } from "../lib/latex";
+import { chargerExtensions, KATEX_OPTIONS, normaliserPourRendu } from "../lib/renduMath";
 import { ImageLightbox } from "./ImageLightbox";
+import { MolBlock, type StyleMol } from "./MolBlock";
 
 /** Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
  * le backend — sans quoi les images d'une épreuve (ou d'un message
@@ -44,13 +45,29 @@ export const MarkdownContent = React.memo(function MarkdownContent({
   // Visionneuse d'image (loupe) : l'image cliquée est retenue en local,
   // recouverte par un overlay plein écran (voir ImageLightbox).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  // Les extensions (mhchem) sont chargées à la demande : une fois prêtes, on
+  // re-rend pour que les formules \ce{…}/\pu{…} déjà présentes s'affichent.
+  const [extensionsPretes, setExtensionsPretes] = useState(false);
+  useEffect(() => {
+    let actif = true;
+    chargerExtensions()
+      .then(() => {
+        if (actif) setExtensionsPretes(true);
+      })
+      .catch(() => {
+        /* extension indisponible : le rendu de base reste fonctionnel */
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
 
   const rehypePlugins = useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>>(
     () =>
       trackSourcePositions
-        ? [rehypeKatex, rehypeImageWidths, rehypeSourceOffsets, rehypeStripAnchorText]
-        : [rehypeKatex, rehypeImageWidths, rehypeStripAnchorText],
-    [trackSourcePositions]
+        ? [[rehypeKatex, KATEX_OPTIONS], rehypeImageWidths, rehypeSourceOffsets, rehypeStripAnchorText]
+        : [[rehypeKatex, KATEX_OPTIONS], rehypeImageWidths, rehypeStripAnchorText],
+    [trackSourcePositions, extensionsPretes]
   );
 
   // Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
@@ -61,7 +78,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({
   // Les liens `<a>` sont filtrés : seuls http, https, mailto et les chemins
   // internes `/api/files/` sont autorisés — empêche les liens
   // `javascript:...` injectés via le Markdown (XSS au clic).
-  const components = useMemo(
+  const components = useMemo<Components>(
     () => ({
       img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
         const src = props.src ? resolveMediaUrl(props.src) : props.src;
@@ -89,6 +106,16 @@ export const MarkdownContent = React.memo(function MarkdownContent({
         }
         return <a {...props} />;
       },
+      code: ({ node, ...props }) => {
+        const langage = /language-([\w-]+)/.exec(props.className ?? "")?.[1] ?? "";
+        if (langage.startsWith("mol")) {
+          const meta = node?.data?.meta ?? "";
+          const brut = (langage.slice(3) || meta.trim().split(/\s+/)[0] || "topologique").toLowerCase();
+          const style: StyleMol = brut === "developpee" || brut === "cram" ? brut : "topologique";
+          return <MolBlock contenu={typeof props.children === "string" ? props.children : String(props.children)} style={style} />;
+        }
+        return <code {...props} />;
+      },
     }),
     []
   );
@@ -98,10 +125,7 @@ export const MarkdownContent = React.memo(function MarkdownContent({
   // lignes, à longueur identique : cela active KaTeX sans décaler les offsets
   // de sélection du lecteur ni modifier le reste du Markdown.
   const normalized = useMemo(
-    () => {
-      if (variant === "chat") return normalizeLatexDelimiters(content);
-      return normalizeDisplayMathDelimitersPreservingOffsets(content);
-    },
+    () => normaliserPourRendu(content, { preserverOffsets: variant === "epreuve" }),
     [content, variant]
   );
 

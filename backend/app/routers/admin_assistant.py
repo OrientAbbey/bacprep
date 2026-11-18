@@ -67,19 +67,18 @@ class AdminAskIn(BaseModel):
     de réconciliation)."""
 
     question: str = Field(min_length=1, max_length=8000)
-    # Bornes sur l'historique : sans elles, un client pouvait envoyer un
-    # tableau arbitrairement grand — entièrement parsé en mémoire AVANT que
-    # `_historique_borne` ne le tronque à 20. Le plafond de 100 messages
-    # reste très au-dessus de ce qu'envoie le frontend (une conversation
-    # d'édition) tout en refusant les charges aberrantes ; `role` et
-    # `content` sont bornés pour la même raison (une seule chaîne géante
-    # suffit à saturer la mémoire).
     historique: list[dict] = Field(default_factory=list, max_length=100)
     epreuve: dict = Field(default_factory=dict)
     epreuve_id: str | None = Field(default=None, max_length=64)
     # Onglet du back-office d'où vient la question : autre que l'édition d'une
     # épreuve, le contexte est un résumé de l'onglet et l'assistant peut proposer des actions.
     onglet: str | None = Field(default=None, max_length=24)
+    # Instantané fourni par l'interface (les champs exacts remplis par l'admin).
+    contexte: dict = Field(default_factory=dict)
+    # Active la boucle d'agent transverse (lectures, éditions de formulaire,
+    # plan groupé). Défaut faux : conserve le comportement historique « une
+    # réponse, une action » et les tests existants.
+    agent: bool = False
 
     @field_validator("question")
     @classmethod
@@ -116,6 +115,27 @@ class AdminAskIn(BaseModel):
                 not isinstance(valeur, str) or len(valeur) > EPREUVE_TEXT_MAX_CHARS
             ):
                 raise ValueError(f"epreuve.{champ} trop long (max {EPREUVE_TEXT_MAX_CHARS} caractères)")
+        return v
+
+    @field_validator("contexte")
+    @classmethod
+    def contexte_borne(cls, v: dict) -> dict:
+        # Champs remplis par l'interface : bornés pour éviter l'abus mémoire / LLM.
+        import json
+
+        def _taille(x: object) -> int:
+            try:
+                return len(json.dumps(x, ensure_ascii=False))
+            except (TypeError, ValueError):
+                return len(str(x))
+
+        total = 0
+        for cle, valeur in v.items():
+            if not isinstance(cle, str) or len(cle) > 80:
+                raise ValueError("contexte : clé invalide")
+            total += _taille(valeur)
+            if total > EPREUVE_TEXT_MAX_CHARS:
+                raise ValueError(f"contexte trop long (max {EPREUVE_TEXT_MAX_CHARS} caractères)")
         return v
 
 
@@ -189,7 +209,11 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
     prompt_onglet = None
     if payload.onglet and payload.onglet in admin_tools.ONGLETS:
         prompt_onglet = admin_tools.prompt_onglet(
-            payload.onglet, admin_tools.resume_onglet(db, payload.onglet), payload.question, payload.historique
+            payload.onglet,
+            admin_tools.resume_onglet(db, payload.onglet),
+            payload.question,
+            payload.historique,
+            contexte=payload.contexte or None,
         )
         payload.epreuve_id = f"onglet:{payload.onglet}"
 
@@ -219,9 +243,26 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
     async def event_stream():
         accumulated = ""
         try:
-            async for chunk in ask_admin_assistant_stream(payload.epreuve, payload.question, messages, prompt_onglet):
-                accumulated += chunk
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk}, ensure_ascii=False)}\n\n"
+            if prompt_onglet is not None and payload.agent:
+                # Voie agent : boucle bornée, éditions de formulaire et plan
+                # groupé signé. Les événements sont émis tels quels ; le texte
+                # est accumulé exactement comme dans la voie historique.
+                from ..core import admin_agent
+
+                async for event in admin_agent.executer_agent(
+                    epreuve=payload.epreuve,
+                    question=payload.question,
+                    messages=messages,
+                    prompt_de_base=prompt_onglet,
+                    admin=lock.email,
+                ):
+                    if event["type"] == "chunk":
+                        accumulated += event["text"]
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            else:
+                async for chunk in ask_admin_assistant_stream(payload.epreuve, payload.question, messages, prompt_onglet):
+                    accumulated += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk}, ensure_ascii=False)}\n\n"
         except FournisseursIndisponiblesError as exc:
             # Production : jamais de réponse simulée côté admin non plus.
             log.error("Assistant admin : aucun fournisseur LLM disponible (conversation=%s): %s", conv_id, exc)
@@ -291,3 +332,77 @@ async def admin_execute(
     log_admin_event(db, None, "assistant_action", lock.email, {"outil": payload.outil, "args": payload.args})
     db.commit()
     return {"ok": True, "outil": payload.outil, "resultat": jsonable_encoder(resultat)}
+
+
+class ActionPlan(BaseModel):
+    outil: str = Field(min_length=1, max_length=40)
+    args: dict = Field(default_factory=dict)
+
+
+@router.post("/proposition")
+def admin_proposition(
+    payload: list[ActionPlan],
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """(Re)signe un plan, éventuellement ÉDITÉ par l'admin avant approbation.
+
+    C'est le « return of control » : dès que l'admin modifie une action, le
+    jeton d'origine est invalidé et un nouveau jeton, lié aux nouvelles
+    actions, est émis. Aucun outil n'est exécuté ici."""
+    from ..core import admin_approbation
+
+    if not payload or len(payload) > 10:
+        raise HTTPException(422, "Le plan doit contenir entre 1 et 10 actions")
+    actions = [a.model_dump() for a in payload]
+    # La signature porte sur les actions TELLES QUE L'ADMIN LES VOIT, y compris
+    # un outil hors liste blanche : la validation est faite à l'exécution par
+    # `admin_tools.executer`, qui refusera cette action et la tracera. On ne
+    # cache pas ici une action que le modèle a proposée — l'admin doit pouvoir
+    # la voir et la rejeter explicitement.
+    return {"jeton": admin_approbation.creer(lock.email, actions)}
+
+
+class CommitIn(BaseModel):
+    jeton: str = Field(min_length=1, max_length=4_000)
+    actions: list[ActionPlan] = Field(min_length=1, max_length=10)
+
+
+@router.post("/commit")
+async def admin_commit(
+    payload: CommitIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Exécute un PLAN d'actions approuvé en une seule fois.
+
+    Le jeton signé lie l'approbation à cet admin, à ces actions exactes et à
+    une expiration courte : ni falsification des arguments, ni rejeu. Chaque
+    action est revérifiée (liste blanche, schéma) avant délégation aux
+    handlers admin existants. En cas de doute, rien n'est exécuté (fail closed)."""
+    from ..core import admin_approbation, admin_tools
+    from .deps import log_admin_event
+
+    actions = [a.model_dump() for a in payload.actions]
+    try:
+        admin_approbation.verifier(payload.jeton, lock.email, actions)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+    resultats: list[dict] = []
+    for action in actions:
+        outil, args = action["outil"], action["args"]
+        try:
+            resultat = await admin_tools.executer(db, lock, background, outil, args)
+            resultats.append({"outil": outil, "ok": True, "resultat": jsonable_encoder(resultat)})
+            log_admin_event(db, None, "assistant_action", lock.email, {"outil": outil, "args": args, "via": "plan"})
+        except (ValueError, ValidationError, HTTPException) as exc:
+            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            resultats.append({"outil": outil, "ok": False, "erreur": str(detail)})
+    reussis = sum(1 for r in resultats if r["ok"])
+    log_admin_event(db, None, "assistant_commit", lock.email, {
+        "nb_actions": len(actions), "reussis": reussis, "outils": [a["outil"] for a in actions],
+    })
+    db.commit()
+    return {"ok": reussis == len(actions), "resultats": resultats}

@@ -5,6 +5,7 @@ import type { Evenement } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { useContexteAdmin } from "../../lib/useAdminContexte";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 const champ = "w-full rounded border border-ink-soft/30 bg-paper px-2 py-1.5 text-sm";
@@ -26,6 +27,23 @@ export function CalendrierPanel({ token }: { token: string }) {
       });
   }, [token, showToast]);
   useEffect(load, [load]);
+
+  useContexteAdmin(
+    "calendrier",
+    { formulaire: form, evenements: liste?.map((e) => ({ id: e.id, titre: e.titre, date_debut: e.date_debut })) },
+    [
+      { cle: "titre", libelle: "Titre" },
+      { cle: "type", libelle: "Type", options: ["examen", "resultats", "inscription"] },
+      { cle: "evaluation", libelle: "Évaluation" },
+      { cle: "date_debut", libelle: "Date de début (AAAA-MM-JJ)" },
+      { cle: "date_fin", libelle: "Date de fin (AAAA-MM-JJ)" },
+      { cle: "lien_officiel", libelle: "Lien officiel" },
+      { cle: "visible", libelle: "Visible", type: "boolean" },
+    ],
+    (editions) => {
+      for (const edition of editions) setForm((f) => ({ ...f, ...(edition.champs as Record<string, string | boolean>) }));
+    },
+  );
 
   const erreur = () => showToast("Échec : titre et date de début (AAAA-MM-JJ) obligatoires, lien en https://.", "error");
   const creer = () =>

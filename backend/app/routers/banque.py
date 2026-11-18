@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
-from ..core import referentiel, store
+from ..core import referentiel, referentiel_options, store
 from ..core.banque_generation import (
     GENERATION,
     MAX_TENTATIVES,
@@ -178,7 +178,7 @@ class GenerationIn(BaseModel):
     matiere: str = Field(min_length=1, max_length=120)
     classe: str = Field(min_length=1, max_length=80)
     serie: str | None = Field(default=None, max_length=80)
-    sequence: int | None = Field(default=None, ge=1, le=6)
+    sequence: int | None = Field(default=None, ge=1)
     mode: str = "sequence"
     difficulte: str = "Moyen"
 
@@ -210,7 +210,7 @@ def _valider_referentiel(db: Session, payload: GenerationIn) -> tuple[tuple[str,
         .order_by(ReferentielOptionORM.position, ReferentielOptionORM.code)
         .all()
     )
-    sequences = tuple(v for v in referentiel.EVALUATIONS if v.startswith("SEQUENCE "))
+    sequences = tuple(f"SEQUENCE {n}" for n in referentiel_options.sequences_du_referentiel(db))
     return classes, sequences
 
 
@@ -327,7 +327,7 @@ def options_generation(
             for row in db.query(BanqueClasseMetaORM).filter(BanqueClasseMetaORM.classe.in_(classes)).all()
         },
         "series": codes_disponibles("serie", series_banque - {SPECIAL_AUCUNE}),
-        "sequences": [int(value[len("SEQUENCE "):]) for value in referentiel.EVALUATIONS if value.startswith("SEQUENCE ")],
+        "sequences": referentiel_options.sequences_du_referentiel(db),
     }
 
 
@@ -342,7 +342,7 @@ def generer_epreuve(
     if payload.mode not in ("sequence", "examen", "examen_blanc", "vide") or payload.difficulte not in ("Facile", "Moyen", "Difficile"):
         raise HTTPException(422, "Sélection invalide")
     classes, sequences = _valider_referentiel(db, payload)
-    if payload.sequence is not None and payload.sequence > len(sequences):
+    if payload.sequence is not None and f"SEQUENCE {payload.sequence}" not in sequences:
         raise HTTPException(422, "Sélection invalide")
     if not _access_granted(db, user.id, payload):
         raise HTTPException(403, "Cette matière n'est pas incluse dans un abonnement actif.")

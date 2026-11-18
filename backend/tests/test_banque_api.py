@@ -64,6 +64,34 @@ def test_options_eleve_refletent_la_banque_active_sans_contenu(eleve, db):
     assert "sujet" not in response.text and "corrige" not in response.text
 
 
+def test_sequence_configuree_dans_parametres_disponible_a_la_generation(eleve, db):
+    user = db.query(UserORM).filter_by(email="eleve@test.cm").one()
+    subject = _setup_banque(db, user)
+    db.query(ReferentielOptionORM).filter_by(scope="evaluation", code="SEQUENCE 4").delete()
+    db.commit()
+    sequence = ReferentielOptionORM(scope="evaluation", code="SEQUENCE 4", position=1000)
+    db.add(sequence)
+    db.commit()
+    try:
+        options = eleve.get("/api/banque/options").json()
+        assert options["sequences"] == [1, 2, 3, 4]
+        from app.routers.banque import GenerationIn, _valider_referentiel
+
+        payload = GenerationIn(
+            matiere=subject, classe="terminale", sequence=4,
+            mode="sequence", difficulte="Moyen",
+        )
+        assert "SEQUENCE 4" in _valider_referentiel(db, payload)[1]
+        response = eleve.post("/api/banque/generer", json={
+            "matiere": subject, "classe": "terminale", "sequence": 4,
+            "mode": "sequence", "difficulte": "Moyen",
+        })
+        assert response.status_code == 200, response.text
+    finally:
+        db.query(ReferentielOptionORM).filter_by(scope="evaluation", code="SEQUENCE 4").delete()
+        db.commit()
+
+
 def test_generation_complete_et_corrige_aligne(eleve, db):
     user = db.query(UserORM).filter_by(email="eleve@test.cm").one()
     subject = _setup_banque(db, user)

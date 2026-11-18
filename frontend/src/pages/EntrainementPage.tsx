@@ -7,6 +7,7 @@ import type { BanqueDifficulte, BanqueGenerationInput, BanqueGenerationOutput, B
 import { useAuth } from "../auth/AuthProvider";
 import { Combobox } from "../components/Combobox";
 import { MarkdownContent } from "../components/MarkdownContent";
+import { prechargerMol } from "../components/MolBlock";
 import { Spinner } from "../components/Spinner";
 import { useToast } from "../components/Toast";
 import { getLang, t } from "../i18n";
@@ -207,6 +208,7 @@ function ComposerBanque() {
     try {
       const values = await api.get<OptionsBanque>("/api/banque/options", undefined, signal);
       setOptions(values);
+      setSequence((current) => values.sequences.includes(current) ? current : values.sequences[0] ?? 1);
       setMatiere((current) => values.matieres.includes(current) ? current : values.matieres[0] || "");
       setClasse((current) => values.classes.includes(current) ? current : values.classes[0] || "");
       setSerie((current) => current && values.series.includes(current) ? current : "");
@@ -292,11 +294,20 @@ function ComposerBanque() {
 
   useEffect(() => {
     if (!impression) return;
+    let annule = false;
+    let minuteur: number | undefined;
     const fin = () => setImpression(null);
     window.addEventListener("afterprint", fin, { once: true });
-    const t = window.setTimeout(() => window.print(), 300);
+    // Le dessin des molécules est asynchrone (chunk différé) : on attend le
+    // chargement avant d'ouvrir la boîte d'impression, sinon le PDF est vide.
+    void prechargerMol()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!annule) minuteur = window.setTimeout(() => window.print(), 300);
+      });
     return () => {
-      window.clearTimeout(t);
+      annule = true;
+      if (minuteur !== undefined) window.clearTimeout(minuteur);
       window.removeEventListener("afterprint", fin);
     };
   }, [impression]);

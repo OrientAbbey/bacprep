@@ -120,6 +120,24 @@ def test_prompt_onglet_admin_impose_les_delimiteurs_latex_rendus():
     assert "n'utilise pas \\( \\) ni \\[ \\]" in prompt
 
 
+def test_prompt_onglet_inclut_tous_les_champs_du_formulaire_banque():
+    from app.core.admin_tools import prompt_onglet
+
+    prompt = prompt_onglet(
+        "banque", "Banque d'exercices", "Complète ce début d'exercice", [],
+        contexte={"formulaire_exercice": {
+            "sujet": "Début du sujet",
+            "corrige": "Début du corrigé",
+            "session": 4,
+            "classes": ["terminale"],
+        }},
+    )
+    assert "formulaire_exercice.sujet : Début du sujet" in prompt
+    assert "formulaire_exercice.corrige : Début du corrigé" in prompt
+    assert "formulaire_exercice.session : 4" in prompt
+    assert "formulaire_exercice.classes : [\"terminale\"]" in prompt
+
+
 # ---------- Mode démo (aucune clé) ----------
 
 def test_mode_demo_sans_cle(admin, monkeypatch):

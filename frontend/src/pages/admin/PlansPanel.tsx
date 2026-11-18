@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { useContexteAdmin } from "../../lib/useAdminContexte";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 interface Plan {
@@ -48,6 +49,37 @@ export function PlansPanel({ token }: { token: string }) {
       });
   }, [token, showToast]);
   useEffect(load, [load]);
+
+  useContexteAdmin(
+    "formules",
+    {
+      formulaire: {
+        plans: data?.plans.map((p) => ({ id: p.id, libelle: p.libelle, prix: p.prix, duree_jours: p.duree_jours, actif: p.actif })),
+        en_cours: edition,
+      },
+    },
+    [
+      { cle: "id", libelle: "Identifiant de la formule" },
+      { cle: "libelle", libelle: "Libellé" },
+      { cle: "libelle_en", libelle: "Libellé anglais" },
+      { cle: "description", libelle: "Description" },
+      { cle: "description_en", libelle: "Description anglaise" },
+      { cle: "prix", libelle: "Prix en FCFA", type: "number" },
+      { cle: "duree_jours", libelle: "Durée en jours", type: "number" },
+      { cle: "actif", libelle: "Formule active", type: "boolean" },
+    ],
+    (editions) => {
+      setEdition((etat) => {
+        const copie: Record<string, Partial<Plan>> = { ...etat };
+        for (const editionRecue of editions) {
+          const { id, ...champs } = editionRecue.champs as Record<string, unknown>;
+          const cible = data?.plans.find((p) => p.id === id) ?? data?.plans[0];
+          if (cible) copie[cible.id] = { ...copie[cible.id], ...champs };
+        }
+        return copie;
+      });
+    },
+  );
 
   const erreur = () => showToast("L'opération a échoué — vérifie les valeurs (prix ≥ 100 FCFA).", "error");
   const modifier = (p: Plan, patch: Partial<Plan>) =>

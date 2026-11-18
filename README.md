@@ -170,9 +170,12 @@ centré utilisateurs) — détail complet au module 16 du cahier des charges :
   du texte réglable · barre d'onglets mobile · **interface FR/EN** (`src/i18n.ts`, `src/locales/en.json`) ·
   **PWA** installable avec **lecture hors-ligne** (bouton « Hors-ligne » du lecteur).
 - **Admin** : onglets **Formules** (prix/durées, FR/EN) et **Calendrier** · colonne « Épreuves » bornée et
-  collante · **assistant IA sur tous les onglets** : il lit un résumé de l'onglet et *propose* des actions
-  (liste blanche dans `core/admin_tools.py`) que l'admin confirme d'un clic ; aucun outil de suppression,
-  de restauration ni de gestion des rôles.
+  collante · **agent IA sur tous les onglets** (sauf Épreuves, qui garde son assistant dédié) : il lit le
+  résumé de l'onglet et les champs en cours de saisie, **remplit le formulaire sous les yeux de l'admin**
+  (brouillon annulable, rien n'est enregistré), puis regroupe ses écritures en **un plan signé** que l'admin
+  approuve en un clic (`/api/admin/assistant/proposition` puis `/commit`, jeton HMAC lié aux actions,
+  expiration 5 min, anti-rejeu). Liste blanche dans `core/admin_tools.py` : aucun outil de suppression,
+  de restauration ni de gestion des rôles. Secret de signature : `ADMIN_APPROBATION_SECRET`.
   Dans l'éditeur d'épreuve, ses modifications (réécriture, chercher/remplacer par sujet numéroté, métadonnées)
   s'appliquent **seules à la fin de la réponse** au brouillon affiché, même non enregistré : case « Appliquer
   automatiquement » (cochée par défaut, mémorisée), champ modifié signalé en vert, bouton « Annuler la dernière
