@@ -381,7 +381,7 @@ export function BanquePanel({ token }: { token: string }) {
           <p><strong>Partie</strong> — groupe logique d&apos;exercices rattaché à une seule matière (ex. « Suites » en Mathématiques). Le générateur tire d&apos;abord des parties distinctes avant de tirer des exercices dedans : c&apos;est le mécanisme principal d&apos;équilibrage.</p>
           <p><strong>Matière</strong> — la matière de la partie, obligatoirement présente dans le référentiel (onglet « Paramètres »). Elle détermine dans quelles épreuves la partie peut apparaître et elle doit correspondre à la matière principale de l&apos;exercice.</p>
           <p><strong>Nom</strong> — libellé lisible et unique pour une matière ; utilisé partout (professeur, élève, aperçu).</p>
-          <p><strong>Ordre</strong> — ordre d&apos;affichage, du plus petit au plus grand. Ce n&apos;est <em>pas</em> une pondération de tirage : il sert seulement au rangement.</p>
+          <p><strong>Ordre</strong> — ordre d&apos;affichage, du plus petit au plus grand. Ce n&apos;est <em>pas une priorité de tirage</em> : il sert seulement au rangement.</p>
 
           <h4 className="pt-2 font-medium text-ink">Exercices — une ligne par exercice</h4>
           <p><strong>Sujet *</strong> — énoncé rédigé en Markdown ; formules LaTeX entre <code>$…$</code> et blocs <code>$$…$$</code> (rendus avec la même configuration que l&apos;élève). La barre d&apos;outils insère les modèles maths / physique / chimie.</p>
