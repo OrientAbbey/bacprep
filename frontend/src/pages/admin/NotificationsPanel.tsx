@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { NotificationAdmin } from "../../api/types";
 import { useToast } from "../../components/Toast";
 import { formatRelativeTime } from "../../lib/time";
+import { useContexteAdmin } from "../../lib/useAdminContexte";
 import { ListeAdmin } from "./ListeAdmin";
 import { authHeaders, EditableSelect, Field, Select } from "./shared";
 
@@ -37,6 +38,25 @@ export function NotificationsPanel({ token }: { token: string }) {
   const [edition, setEdition] = useState<{ id: string | null; form: Formulaire } | null>(null);
   const [rechargement, setRechargement] = useState(0);
   const recharger = () => setRechargement((n) => n + 1);
+
+  useContexteAdmin(
+    "notifications",
+    { formulaire: edition?.form ?? FORMULAIRE_VIDE, en_cours_de: edition?.id ? "modification" : "creation" },
+    [
+      { cle: "titre", libelle: "Titre" },
+      { cle: "message", libelle: "Message" },
+      { cle: "type", libelle: "Type", options: TYPES.map((t) => t.value) },
+      { cle: "actif", libelle: "Active", type: "boolean" },
+    ],
+    (editions) => {
+      setEdition((etat) => {
+        const base = etat ?? { id: null, form: FORMULAIRE_VIDE };
+        let form = { ...base.form };
+        for (const e of editions) form = { ...form, ...(e.champs as Partial<Formulaire>) };
+        return { ...base, form };
+      });
+    },
+  );
 
   async function sauvegarder(id: string | null, form: Formulaire) {
     try {

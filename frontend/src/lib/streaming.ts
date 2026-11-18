@@ -186,10 +186,17 @@ export interface AdminAskPayload {
   epreuve_id?: string;
   /** Onglet du back-office (hors édition d'épreuve) : le serveur fournit alors un résumé de l'onglet. */
   onglet?: string;
+  /** Instantané des champs saisis dans le formulaire de l'onglet ouvert (fourni par l'interface). */
+  contexte?: Record<string, unknown>;
+  /** Active la boucle d'agent (éditions de formulaire + plan signé). */
+  agent?: boolean;
 }
 
 export type AdminStreamEvent =
   | { type: "chunk"; text: string }
+  | { type: "etape"; numero: number }
+  | { type: "edition"; champs: Record<string, unknown> }
+  | { type: "proposition"; actions: { outil: string; args: Record<string, unknown> }[]; jeton: string }
   | { type: "done"; conversation: AdminConversation | null }
   | { type: "error"; message: string };
 

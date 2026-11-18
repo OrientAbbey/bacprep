@@ -199,9 +199,12 @@ export const sectionsAideAdmin: SectionAideAdmin[] = [
     id: "assistant-global",
     titre: "L'assistant des autres onglets",
     points: [
-      "Le bouton « Assistant » (en bas à droite) lit un résumé de l'onglet courant, répond à tes questions et propose des actions.",
-      "Rien ne s'exécute sans ton clic sur « Confirmer » : les actions passent par une liste blanche et sont validées côté serveur.",
-      "Sa discussion est mémorisée par onglet ; « Nouvelle conversation » l'efface. Les actions proposées lors d'une visite précédente ne sont pas rejouables : le texte revient, pas les boutons.",
+      "Le bouton « Assistant » (en bas à droite) est disponible dans tous les onglets sauf Épreuves (qui a son propre assistant). Il lit le résumé de l'onglet et les champs actuellement saisis dans le formulaire.",
+      "Il peut remplir le formulaire à ta place : les champs modifiés apparaissent immédiatement, avec un bouton « Annuler ces modifications ». Rien n'est enregistré tant que tu ne cliques pas sur « Enregistrer » dans le panneau.",
+      "Quand une écriture est nécessaire (créer, modifier, publier, bannir…), l'agent prépare un PLAN d'actions. Rien n'est exécuté avant ton clic sur « Tout approuver » ; « Rejeter » ne modifie rien.",
+      "Chaque plan est signé côté serveur et lié aux actions exactes : si tu édites une action avec le crayon, un nouveau jeton est demandé. Une approbation expire après 5 minutes et ne peut pas être rejouée.",
+      "Les actions passent par une liste blanche : l'agent ne peut jamais supprimer d'élément, lancer une restauration ni changer des rôles. Toutes les décisions et exécutions sont tracées dans le journal.",
+      "Sa discussion est mémorisée par onglet ; « Nouvelle conversation » l'efface. Les plans proposés lors d'une visite précédente ne sont pas rejouables : le texte revient, pas les boutons.",
     ],
   },
 ];

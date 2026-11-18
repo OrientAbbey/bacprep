@@ -15,6 +15,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { formatRelativeTime } from "../../lib/time";
 import { authHeaders, erreurDetail, purgerSessionExpiree } from "./shared";
+import { effacerContexteAdmin, enregistrerAppliqueurAdmin, publierContexteAdmin } from "../../lib/adminContexte";
 
 type PartieForm = { matiere: string; nom: string; ordre: string };
 type ExerciceForm = {
@@ -97,6 +98,64 @@ export function BanquePanel({ token }: { token: string }) {
     [data?.exercices, partieActive],
   );
   const partieSelectionnee = parties.find((p) => p.id === partieActive);
+
+  // L'assistant global lit ce contexte AU MOMENT DE LA QUESTION : l'admin
+  // peut dire « complète ce que j'ai commencé à saisir » — le modèle voit
+  // exactement les champs en cours.
+  useEffect(() => {
+    publierContexteAdmin(
+      "banque",
+      {
+        formulaire_exercice: exerciceForm
+          ? {
+              en_cours_de: exerciceEnEdition ? "modification" : "création",
+              sujet: exerciceForm.sujet,
+              corrige: exerciceForm.corrige,
+              partie_id: exerciceForm.partie_id,
+              session: exerciceForm.session === "" ? null : Number(exerciceForm.session),
+              niveau_intrinseque: exerciceForm.niveau_intrinseque,
+              tag_examen: exerciceForm.tag_examen,
+              actif: exerciceForm.actif,
+              matieres: exerciceForm.matieres,
+              classes: exerciceForm.classes,
+              series: exerciceForm.series,
+            }
+          : null,
+        parties: parties.map((p) => ({ id: p.id, matiere: p.matiere, nom: p.nom, ordre: p.ordre })),
+        sequences_disponibles: data?.referentiel.sequences ?? [],
+        classes: data?.referentiel.classe ?? [],
+        classes_meta: data?.classes_meta ?? {},
+        matieres: data?.referentiel.matiere ?? [],
+        series_referentiel: data?.referentiel.serie ?? [],
+        partie_active: partieSelectionnee
+          ? { id: partieSelectionnee.id, nom: partieSelectionnee.nom, matiere: partieSelectionnee.matiere }
+          : null,
+      },
+      [
+        { cle: "sujet", libelle: "Sujet" },
+        { cle: "corrige", libelle: "Corrigé" },
+        { cle: "partie_id", libelle: "Identifiant de la partie" },
+        { cle: "session", libelle: "Séquence", type: "number" },
+        { cle: "niveau_intrinseque", libelle: "Difficulté", options: ["Facile", "Moyen", "Difficile"] },
+        { cle: "tag_examen", libelle: "Tag examen", type: "boolean" },
+        { cle: "actif", libelle: "Actif", type: "boolean" },
+        { cle: "matieres", libelle: "Matières" },
+        { cle: "classes", libelle: "Classes" },
+        { cle: "series", libelle: "Séries" },
+      ],
+    );
+    const retrait = enregistrerAppliqueurAdmin("banque", (editions) => {
+      setExerciceForm((formulaire) => {
+        if (!formulaire) return formulaire;
+        let suite = { ...formulaire };
+        for (const edition of editions) {
+          suite = { ...suite, ...(edition.champs as Partial<ExerciceForm>) };
+        }
+        return suite;
+      });
+    });
+    return () => { retrait(); effacerContexteAdmin("banque"); };
+  }, [exerciceForm, exerciceEnEdition, parties, data, partieSelectionnee]);
 
   function erreurAction(err: unknown, message: string) {
     if (!purgerSessionExpiree(err)) showToast(erreurDetail(err, message), "error");
@@ -316,65 +375,35 @@ export function BanquePanel({ token }: { token: string }) {
           Comprendre la banque d&apos;exercices
         </summary>
         <div className="mt-3 space-y-2 text-sm text-ink-soft">
-          <p>
-            <strong>Partie</strong> — groupe logique auquel appartiennent des exercices
-            (par exemple « Fonctions » en Mathématiques). Une partie porte une seule
-            matière ; c&apos;est elle que le générateur choisit avant de tirer un exercice.
-          </p>
-          <p>
-            <strong>Matière</strong> — matière de rattachement de la partie. Elle doit
-            correspondre au référentiel : elle détermine dans quelles épreuves la partie
-            peut apparaître.
-          </p>
-          <p>
-            <strong>Nom</strong> — nom lisible et unique dans une matière. Deux parties de
-            la même matière ne peuvent pas porter le même nom. C&apos;est ce libellé que
-            l&apos;administrateur voit partout ensuite.
-          </p>
-          <p>
-            <strong>Ordre</strong> — ordre d&apos;affichage, du plus petit au plus grand.
-            Ce n&apos;est <em>pas</em> une priorité de tirage : un exercice d&apos;ordre 1
-            n&apos;est pas plus souvent choisi qu&apos;un exercice d&apos;ordre 9. Il sert
-            seulement à ranger les parties dans un ordre stable et prévisible.
-          </p>
-          <p>
-            <strong>Difficulté</strong> — niveau intrinsèque de l&apos;exercice (Facile,
-            Moyen, Difficile). Il sert au générateur à équilibrer un sujet ; il ne change
-            pas la difficulté de l&apos;épreuve elle-même.
-          </p>
-          <p>
-            <strong>Classes</strong> — niveaux pour lesquels l&apos;exercice est valable.
-            Laisser vide revient à ne le rendre disponible pour aucune classe : coche au
-            moins une classe pour qu&apos;il puisse être tiré.
-          </p>
-          <p>
-            <strong>Spécialités</strong> — séries concernées (A, C, D…). « Aucune
-            spécialité (toutes les séries) » rend l&apos;exercice disponible pour toutes
-            les séries, y compris les classes qui n&apos;en ont pas. Choisir une série
-            précise le réserve aux élèves de cette série.
-          </p>
-          <p>
-            <strong>Session</strong> — séquence pédagogique à laquelle l&apos;exercice
-            appartient. Laisser vide si l&apos;exercice ne dépend pas d&apos;une
-            progression (révision, annales).
-          </p>
-          <p>
-            <strong>Épreuve d&apos;examen</strong> — marque l&apos;exercice comme déjà
-            tombé à un examen. La case n&apos;est disponible que si une session est
-            choisie : un exercice hors progression ne peut pas porter ce tag.
-          </p>
-          <p>
-            <strong>Actif</strong> — l&apos;exercice est éligible au tirage. Un exercice
-            inactif reste dans la banque et garde son historique, mais le générateur ne
-            le choisit plus.
-          </p>
+          <p>La banque contient des exercices individuels que le générateur assemble en épreuves personnelles pour l&apos;élève. Trois éléments structurent la banque : la <strong>partie</strong>, l&apos;<strong>exercice</strong> et les <strong>critères de tirage</strong>.</p>
+
+          <h4 className="pt-2 font-medium text-ink">Parties</h4>
+          <p><strong>Partie</strong> — groupe logique d&apos;exercices rattaché à une seule matière (ex. « Suites » en Mathématiques). Le générateur tire d&apos;abord des parties distinctes avant de tirer des exercices dedans : c&apos;est le mécanisme principal d&apos;équilibrage.</p>
+          <p><strong>Matière</strong> — la matière de la partie, obligatoirement présente dans le référentiel (onglet « Paramètres »). Elle détermine dans quelles épreuves la partie peut apparaître et elle doit correspondre à la matière principale de l&apos;exercice.</p>
+          <p><strong>Nom</strong> — libellé lisible et unique pour une matière ; utilisé partout (professeur, élève, aperçu).</p>
+          <p><strong>Ordre</strong> — ordre d&apos;affichage, du plus petit au plus grand. Ce n&apos;est <em>pas</em> une pondération de tirage : il sert seulement au rangement.</p>
+
+          <h4 className="pt-2 font-medium text-ink">Exercices — une ligne par exercice</h4>
+          <p><strong>Sujet *</strong> — énoncé rédigé en Markdown ; formules LaTeX entre <code>$…$</code> et blocs <code>$$…$$</code> (rendus avec la même configuration que l&apos;élève). La barre d&apos;outils insère les modèles maths / physique / chimie.</p>
+          <p><strong>Corrigé *</strong> — corrigé rédigé avec le même format que le sujet. Indispensable pour l&apos;épreuve corrigée.</p>
+          <p><strong>Partie *</strong> — la partie à laquelle appartient l&apos;exercice. Une matière, plusieurs parties : chaque partie d&apos;une matière porte un nom distinct.</p>
+          <p><strong>Session</strong> — numéro de la séquence (1, 2, 3…). La liste des séquences est configurée dans l&apos;onglet « Paramètres » (codes « SEQUENCE n »). Laisser vide signifie que l&apos;exercice est hors séquence (révisions, annales) et n&apos;est éligible que pour les examens.</p>
+          <p><strong>Difficulté intrinsèque</strong> — niveau de la <em>question</em> (Facile / Moyen / Difficile), pas de la classe. Le générateur compose selon la difficulté demandée par l&apos;élève.</p>
+          <p><strong>Épreuve d&apos;examen</strong> — coche que l&apos;exercice est déjà tombé à l&apos;examen. N&apos;est disponible que si une session est renseignée.</p>
+          <p><strong>Actif</strong> — un exercice actif est éligible au tirage ; un inactif reste dans la banque mais n&apos;est plus proposé.</p>
+
+          <h4 className="pt-2 font-medium text-ink">Critères de ciblage — qui reçoit quoi</h4>
+          <p><strong>Matières</strong> — matières couvertes (liste du référentiel). Un exercice doit au moins couvrir la matière principale de la partie.</p>
+          <p><strong>Classes</strong> — classes pour lesquelles l&apos;exercice est valable. Au moins une classe cochée, sinon l&apos;exercice est impossible à tirer.</p>
+          <p><strong>Spécialités</strong> — séries du bac (A, C, D…) rattachées à l&apos;exercice. « Aucune spécialité (toutes les séries) » rend l&apos;exercice universel, y compris pour les classes qui n&apos;ont pas de série. Les classes dont la métadonnée « Spécialité obligatoire » est activée imposent un choix au moment de générer.</p>
+
+          <h4 className="pt-2 font-medium text-ink">Exemple complet</h4>
           <p className="rounded border border-ink-soft/15 bg-paper p-3">
-            <strong>Exemple complet.</strong> Pour ajouter les suites en Terminale D :
-            crée une partie « Suites » (matière Mathématiques, ordre 3), puis un exercice
-            dans cette partie (difficulté Moyen, classes Terminale, spécialité D, session
-            « Suites et récurrence », actif). Renseigne le sujet et le corrigé, enregistre.
-            L&apos;exercice devient tirable dès qu&apos;il est actif et qu&apos;au moins
-            une classe le couvre.
+            Objectif : ajouter des exercices de suites en Terminale D pour la séquence 3.<br />
+            1) Dans « Paramètres », vérifier que « SEQUENCE 3 » existe dans la liste « Évaluations ».<br />
+            2) Dans « Banque », créer la partie « Suites » (matière Mathématiques, ordre 3).<br />
+            3) Nouvel exercice : sujet « Soit la suite (uₙ) définie par u₀ = 1 et uₙ₊₁ = 2uₙ + 1. Déterminer la limite de (uₙ). », corrigé complet, partie « Suites », session 3, difficulté Moyen, classes Terminale, spécialité D, actif.<br />
+            4) Enregistrer. L&apos;exercice est dès lors éligible pour les élèves de Terminale D dont la classe impose une spécialité (la question sera tirée dans l&apos;épreuve « Séquence 3 »). Si la classe n&apos;impose pas de spécialité, cochez « Aucune spécialité (toutes les séries) » pour l&apos;ouvrir à tous.
           </p>
         </div>
       </details>

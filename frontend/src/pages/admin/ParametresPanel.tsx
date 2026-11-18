@@ -5,6 +5,7 @@ import { ReferentielOption, ReferentielOptions, ReferentielScope } from "../../a
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { useContexteAdmin } from "../../lib/useAdminContexte";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 /** Métadonnées d'affichage par liste du référentiel (ordre du panneau). */
@@ -49,6 +50,34 @@ export function ParametresPanel({ token }: { token: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useContexteAdmin(
+    "parametres",
+    {
+      formulaire: enEdition ?? Object.fromEntries(Object.entries(ajouts).map(([scope, v]) => [scope, v])),
+      scopes: SCOPES.map((s) => s.scope),
+      options: data,
+    },
+    [
+      { cle: "scope", libelle: "Liste (niveau, classe, evaluation, matiere, serie)", options: SCOPES.map((s) => s.scope) },
+      { cle: "code", libelle: "Valeur (code)" },
+      { cle: "label", libelle: "Libellé affiché" },
+      { cle: "id", libelle: "Identifiant de l'option à modifier" },
+    ],
+    (editions) => {
+      for (const edition of editions) {
+        const { id, scope, code, label } = edition.champs as Record<string, unknown>;
+        if (id && typeof code === "string") {
+          setEnEdition({ id: String(id), code, label: typeof label === "string" ? label : "" });
+        } else if (typeof scope === "string" && typeof code === "string") {
+          setAjouts((etat) => ({
+            ...etat,
+            [scope]: { code, label: typeof label === "string" ? label : (etat[scope]?.label ?? "") },
+          }));
+        }
+      }
+    },
+  );
 
   function erreurServeur(err: unknown): string {
     if (err instanceof ApiError) {
@@ -153,7 +182,9 @@ export function ParametresPanel({ token }: { token: string }) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {SCOPES.map((meta) => {
-          const options = data[meta.scope] ?? [];
+          const options = [...(data[meta.scope] ?? [])].sort((a, b) =>
+            (a.label || a.code).localeCompare(b.label || b.code, "fr", { sensitivity: "base", numeric: true }),
+          );
           return (
             <div
               key={meta.scope}
