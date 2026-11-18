@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import {
   effacerContexteAdmin,
   enregistrerAppliqueurAdmin,
+  enregistrerOuvreurAdmin,
   publierContexteAdmin,
   type ChampAdmin,
   type ContexteOnglet,
@@ -16,10 +17,14 @@ export function useContexteAdmin(
   contexte: ContexteOnglet,
   champs: ChampAdmin[],
   appliqueur?: (editions: Record<string, unknown>[]) => void,
+  ouvreur?: (cible: string) => boolean,
 ): void {
   const ref = useRef(appliqueur);
   ref.current = appliqueur;
+  const ouvreurRef = useRef(ouvreur);
+  ouvreurRef.current = ouvreur;
   const present = Boolean(appliqueur);
+  const ouvrable = Boolean(ouvreur);
 
   useEffect(() => {
     publierContexteAdmin(onglet, contexte, champs);
@@ -29,6 +34,11 @@ export function useContexteAdmin(
     if (!present) return;
     return enregistrerAppliqueurAdmin(onglet, (editions) => ref.current?.(editions));
   }, [onglet, present]);
+
+  useEffect(() => {
+    if (!ouvrable) return;
+    return enregistrerOuvreurAdmin(onglet, (cible) => ouvreurRef.current?.(cible) ?? false);
+  }, [onglet, ouvrable]);
 
   useEffect(() => () => effacerContexteAdmin(onglet), [onglet]);
 }

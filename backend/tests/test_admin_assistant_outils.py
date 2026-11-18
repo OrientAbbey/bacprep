@@ -145,10 +145,11 @@ def test_invite_banque_propose_de_rediger_sujet_et_corrige_sans_fausse_action():
             "niveau_intrinseque": "Moyen",
         }},
     )
-    assert "rédige le contenu demandé directement dans ta réponse" in p
-    assert "ne peux pas aider au motif qu'aucun outil de création n'est disponible" in p
-    assert "prêt à copier dans les champs « Sujet » et « Corrigé »" in p
-    assert "Ne prétends jamais avoir rempli, enregistré ou créé l'exercice" in p
+    assert "rédige le contenu demandé et REMPLIS LE FORMULAIRE avec un bloc" in p
+    assert "Ne te contente pas de coller un texte ou un JSON dans la conversation" in p
+    assert "```formulaire {\"cible\": \"exercice\"}```" in p
+    assert "exercice_creer" in p and "explicitement d'enregistrer" in p
+    assert "Ne prétends jamais avoir enregistré un exercice" in p
     assert "formulaire_exercice.matieres : [\"Mathématiques\"]" in p
 
 

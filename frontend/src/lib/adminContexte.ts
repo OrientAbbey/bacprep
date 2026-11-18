@@ -21,6 +21,7 @@ interface EntreeOnglet {
   contexte: ContexteOnglet;
   champs: ChampAdmin[];
   appliqueur?: (editions: Record<string, unknown>[]) => void;
+  ouvreur?: (cible: string) => boolean;
 }
 
 const contexteParOnglet = new Map<string, EntreeOnglet>();
@@ -31,7 +32,12 @@ export function publierContexteAdmin(
   champs: ChampAdmin[] = [],
 ): void {
   const precedent = contexteParOnglet.get(onglet);
-  contexteParOnglet.set(onglet, { contexte, champs, appliqueur: precedent?.appliqueur });
+  contexteParOnglet.set(onglet, {
+    contexte,
+    champs,
+    appliqueur: precedent?.appliqueur,
+    ouvreur: precedent?.ouvreur,
+  });
 }
 
 export function lireContexteAdmin(onglet: string): ContexteOnglet | null {
@@ -52,11 +58,35 @@ export function enregistrerAppliqueurAdmin(
     contexte: precedent?.contexte ?? {},
     champs: precedent?.champs ?? [],
     appliqueur,
+    ouvreur: precedent?.ouvreur,
   });
   return () => {
     const actuel = contexteParOnglet.get(onglet);
     if (actuel?.appliqueur === appliqueur) actuel.appliqueur = undefined;
   };
+}
+
+/** Enregistre la fonction qui ouvre un formulaire (« Nouvel exercice »…). */
+export function enregistrerOuvreurAdmin(
+  onglet: string,
+  ouvreur: (cible: string) => boolean,
+): () => void {
+  const precedent = contexteParOnglet.get(onglet);
+  contexteParOnglet.set(onglet, {
+    contexte: precedent?.contexte ?? {},
+    champs: precedent?.champs ?? [],
+    appliqueur: precedent?.appliqueur,
+    ouvreur,
+  });
+  return () => {
+    const actuel = contexteParOnglet.get(onglet);
+    if (actuel?.ouvreur === ouvreur) actuel.ouvreur = undefined;
+  };
+}
+
+/** Ouvre le formulaire demandé par l'agent. Renvoie false si la cible est inconnue. */
+export function ouvrirFormulaireAdmin(onglet: string, cible: string): boolean {
+  return contexteParOnglet.get(onglet)?.ouvreur?.(cible) ?? false;
 }
 
 /** Applique les éditions reçues de l'agent au panneau courant, si elle existe. */
