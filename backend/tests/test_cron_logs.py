@@ -73,12 +73,14 @@ def test_formateur_json_exception():
 def test_journal_requete_json_sans_donnees_personnelles(client, monkeypatch, caplog):
     monkeypatch.setenv("LOG_FORMAT", "json")
     with caplog.at_level(logging.INFO, logger="bacprep.requete"):
-        r = client.get("/api/pricing?secret=abc", headers={"X-Forwarded-For": "1.2.3.4"})
+        # Un secret hors alphabet hexadécimal ne peut pas apparaître par hasard
+        # dans l'identifiant de requête aléatoire (ex. « 18abc8ee9e45 »).
+        r = client.get("/api/pricing?secret=secretxyz", headers={"X-Forwarded-For": "1.2.3.4"})
     assert r.headers.get("X-Request-ID")
     recs = [x for x in caplog.records if x.name == "bacprep.requete"]
     assert recs and recs[-1].chemin == "/api/pricing" and recs[-1].statut == 200
     texte = json.dumps({k: str(v) for k, v in recs[-1].__dict__.items()})
-    assert "abc" not in texte and "1.2.3.4" not in texte  # ni requête, ni IP
+    assert "secretxyz" not in texte and "1.2.3.4" not in texte  # ni requête, ni IP
     monkeypatch.delenv("LOG_FORMAT")
     assert "X-Request-ID" not in client.get("/api/pricing").headers  # mode texte : inchangé
 
