@@ -120,13 +120,14 @@ export const MarkdownContent = React.memo(function MarkdownContent({
     []
   );
 
-  // Les bulles de discussion gardent leur normalisation historique. Pour les
-  // épreuves, on convertit uniquement les blocs `\[ ... \]` isolés sur leurs
-  // lignes, à longueur identique : cela active KaTeX sans décaler les offsets
-  // de sélection du lecteur ni modifier le reste du Markdown.
+  // Le lecteur suit les offsets du Markdown brut : on n'y convertit que les
+  // blocs `\[ ... \]` à longueur identique. Partout ailleurs (aperçus admin,
+  // banque, formulaires, bulles), aucun offset n'est suivi : on normalise
+  // aussi `\( ... \)` et les environnements nus, sans quoi les formules
+  // générées par l'assistant restent du texte brut illisible.
   const normalized = useMemo(
-    () => normaliserPourRendu(content, { preserverOffsets: variant === "epreuve" }),
-    [content, variant]
+    () => normaliserPourRendu(content, { preserverOffsets: trackSourcePositions }),
+    [content, trackSourcePositions]
   );
 
   return (

@@ -67,6 +67,9 @@ export function BanquePanel({ token }: { token: string }) {
   const [operation, setOperation] = useState(false);
   const [operationLibelle, setOperationLibelle] = useState<string | null>(null);
   const [metaEnCours, setMetaEnCours] = useState<Record<string, boolean>>({});
+  const [champsAssistant, setChampsAssistant] = useState<string[]>([]);
+  const surligne = (cle: string, base: string) =>
+    champsAssistant.includes(cle) ? `${base} border-highlight ring-2 ring-highlight/50 bg-highlight-soft/40` : base;
 
   const charger = useCallback(async () => {
     setErreur(false);
@@ -158,6 +161,7 @@ export function BanquePanel({ token }: { token: string }) {
         }
         return suite;
       });
+      setChampsAssistant([...new Set(editions.flatMap((edition) => Object.keys(edition.champs as Record<string, unknown>)))]);
     });
     return () => { retrait(); retraitOuverture(); effacerContexteAdmin("banque"); };
   }, [exerciceForm, exerciceEnEdition, parties, data, partieSelectionnee]);
@@ -203,6 +207,7 @@ export function BanquePanel({ token }: { token: string }) {
       return;
     }
     setExerciceEnEdition(null);
+    setChampsAssistant([]);
     setExerciceForm({
       ...exerciceVide(partieActive),
       matieres: partieSelectionnee ? [partieSelectionnee.matiere] : [],
@@ -211,6 +216,7 @@ export function BanquePanel({ token }: { token: string }) {
   }
 
   function editerExercice(ex: BanqueExercice) {
+    setChampsAssistant([]);
     setExerciceEnEdition(ex.id);
     setExerciceForm({
       sujet: ex.sujet,
@@ -473,10 +479,15 @@ export function BanquePanel({ token }: { token: string }) {
         {exerciceForm && (
           <form className="space-y-4 rounded-lg border border-ink-soft/15 bg-paper-raised p-4" onSubmit={(e) => void enregistrerExercice(e)}>
             <h4 className="font-serif-brand">{exerciceEnEdition ? "Modifier l'exercice" : "Nouvel exercice"}</h4>
+            {champsAssistant.length > 0 && (
+              <p role="status" className="rounded border border-highlight/50 bg-highlight-soft/40 p-2 text-xs">
+                Champs remplis par l&apos;assistant (en surbrillance) : {champsAssistant.join(", ")}.
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs">Partie *<select required title="Partie qui contient l'exercice" value={exerciceForm.partie_id} onChange={(e) => setExerciceForm({ ...exerciceForm, partie_id: e.target.value })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{parties.map((p) => <option key={p.id} value={p.id}>{p.matiere} — {p.nom}</option>)}</select></label>
-              <label className="text-xs">Difficulté<select title="Niveau intrinsèque de l'exercice" value={exerciceForm.niveau_intrinseque} onChange={(e) => setExerciceForm({ ...exerciceForm, niveau_intrinseque: e.target.value as ExerciceForm["niveau_intrinseque"] })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm">{["Facile", "Moyen", "Difficile"].map((v) => <option key={v}>{v}</option>)}</select></label>
-              <label className="text-xs">Séquence (laisser vide si non applicable)<select title="Progression pédagogique ; vide = exercice hors séquence" value={exerciceForm.session} onChange={(e) => setExerciceForm({ ...exerciceForm, session: e.target.value, tag_examen: e.target.value ? exerciceForm.tag_examen : false })} className="mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm"><option value="">Aucune</option>{data.referentiel.sequences.map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+              <label className="text-xs">Partie *<select required title="Partie qui contient l'exercice" value={exerciceForm.partie_id} onChange={(e) => setExerciceForm({ ...exerciceForm, partie_id: e.target.value })} className={surligne("partie_id", "mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm")}>{parties.map((p) => <option key={p.id} value={p.id}>{p.matiere} — {p.nom}</option>)}</select></label>
+              <label className="text-xs">Difficulté<select title="Niveau intrinsèque de l'exercice" value={exerciceForm.niveau_intrinseque} onChange={(e) => setExerciceForm({ ...exerciceForm, niveau_intrinseque: e.target.value as ExerciceForm["niveau_intrinseque"] })} className={surligne("niveau_intrinseque", "mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm")}>{["Facile", "Moyen", "Difficile"].map((v) => <option key={v}>{v}</option>)}</select></label>
+              <label className="text-xs">Séquence (laisser vide si non applicable)<select title="Progression pédagogique ; vide = exercice hors séquence" value={exerciceForm.session} onChange={(e) => setExerciceForm({ ...exerciceForm, session: e.target.value, tag_examen: e.target.value ? exerciceForm.tag_examen : false })} className={surligne("session", "mt-1 min-h-[44px] w-full rounded border border-ink-soft/25 bg-paper px-2 text-sm")}><option value="">Aucune</option>{data.referentiel.sequences.map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
               <div className="flex flex-wrap items-end gap-4 pb-2 text-sm">
                 <label className="flex items-center gap-2" title="Nécessite une séquence choisie"><input type="checkbox" checked={exerciceForm.tag_examen} disabled={!exerciceForm.session} onChange={(e) => setExerciceForm({ ...exerciceForm, tag_examen: e.target.checked })} /> Épreuve d'examen</label>
                 <label className="flex items-center gap-2" title="Un exercice inactif n'est jamais tiré"><input type="checkbox" checked={exerciceForm.actif} onChange={(e) => setExerciceForm({ ...exerciceForm, actif: e.target.checked })} /> Exercice actif</label>
@@ -505,14 +516,14 @@ export function BanquePanel({ token }: { token: string }) {
               <div className="space-y-1">
                 <label className="block text-xs">Sujet *</label>
                 <FormulesToolbar textareaRef={sujetZoneRef} onChanger={(sujet) => setExerciceForm((f) => (f ? { ...f, sujet } : f))} />
-                <textarea ref={sujetZoneRef} required maxLength={100000} rows={9} value={exerciceForm.sujet} onChange={(e) => setExerciceForm({ ...exerciceForm, sujet: e.target.value })} className="w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" />
+                <textarea ref={sujetZoneRef} required maxLength={100000} rows={9} value={exerciceForm.sujet} onChange={(e) => setExerciceForm({ ...exerciceForm, sujet: e.target.value })} className={surligne("sujet", "w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm")} />
                 <p className="font-mono-tag text-[10px] text-ink-soft">Rendu en temps réel</p>
                 <div className="max-h-72 overflow-y-auto rounded border border-ink-soft/15 bg-paper p-2"><MarkdownContent content={exerciceForm.sujet} variant="epreuve" /></div>
               </div>
               <div className="space-y-1">
                 <label className="block text-xs">Corrigé *</label>
                 <FormulesToolbar textareaRef={corrigeZoneRef} onChanger={(corrige) => setExerciceForm((f) => (f ? { ...f, corrige } : f))} />
-                <textarea ref={corrigeZoneRef} required maxLength={100000} rows={9} value={exerciceForm.corrige} onChange={(e) => setExerciceForm({ ...exerciceForm, corrige: e.target.value })} className="w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm" />
+                <textarea ref={corrigeZoneRef} required maxLength={100000} rows={9} value={exerciceForm.corrige} onChange={(e) => setExerciceForm({ ...exerciceForm, corrige: e.target.value })} className={surligne("corrige", "w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm")} />
                 <p className="font-mono-tag text-[10px] text-ink-soft">Rendu en temps réel</p>
                 <div className="max-h-72 overflow-y-auto rounded border border-ink-soft/15 bg-paper p-2"><MarkdownContent content={exerciceForm.corrige} variant="epreuve" /></div>
               </div>
