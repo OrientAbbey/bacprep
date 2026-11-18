@@ -333,7 +333,7 @@ function PlanAction({ action, desactivee, ignoree, onEdit, onIgnore }: {
             <button onClick={() => setEdition((v) => !v)} aria-label="Éditer cette action" className="min-h-[44px] min-w-[44px] text-ink-soft">
               <Pencil size={14} className="mx-auto" />
             </button>
-            <button onClick={onIgnore} aria-label="Ignorer cette action" className="min-h-[44px] rounded-full border border-ink-soft/30 px-3 text-xs">
+            <button onClick={onIgnore} className="min-h-[44px] rounded-full border border-ink-soft/30 px-3 text-xs">
               Ignorer
             </button>
           </div>
