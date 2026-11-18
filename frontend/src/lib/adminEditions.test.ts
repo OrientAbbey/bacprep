@@ -28,6 +28,15 @@ describe("extraireEditions", () => {
     expect(r.editions).toEqual([{ champs: { libelle: "OK" } }]);
   });
 
+  it("accepte un bloc avec identifiant de langage (```json)", () => {
+    const r = extraireEditions(
+      '```json\nedition {"champs": {"libelle": "Annuel"}}\n```\nRésumé.',
+      CHAMPS,
+    );
+    expect(r.texte).toBe("Résumé.");
+    expect(r.editions).toEqual([{ champs: { libelle: "Annuel" } }]);
+  });
+
   it("accepte toutes les clés si aucun schéma n'est fourni", () => {
     const r = extraireEditions('```edition {"champs": {"a": 1}}```');
     expect(r.editions).toEqual([{ champs: { a: 1 } }]);

@@ -1,5 +1,6 @@
 import { Bot, Check, Loader2, Pencil, Plus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { api, ApiError } from "../../api/client";
 import { BoutonCopier } from "../../components/ChatParts";
 import { MarkdownContent } from "../../components/MarkdownContent";
@@ -102,7 +103,24 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
     }
 
     // L'agent peut demander l'ouverture d'un formulaire avant de le remplir.
-    const formulairesOuverts = ciblesRecues.filter((cible) => ouvrirFormulaireAdmin(onglet, cible));
+    // flushSync garantit que le panneau a bien rendu le formulaire (et publié
+    // son contexte) avant que les éditions ne soient appliquées.
+    const formulairesOuverts: string[] = [];
+    flushSync(() => {
+      for (const cible of ciblesRecues) {
+        if (ouvrirFormulaireAdmin(onglet, cible)) formulairesOuverts.push(cible);
+      }
+      // Le modèle peut envoyer les champs sans demander l'ouverture : on ouvre
+      // alors le formulaire principal du panneau pour ne pas perdre l'édition.
+      if (editionsRecues.length && formulairesOuverts.length === 0) {
+        for (const cible of ["exercice", "partie", "formule", "evenement", "notification", "option"]) {
+          if (ouvrirFormulaireAdmin(onglet, cible)) {
+            formulairesOuverts.push(cible);
+            break;
+          }
+        }
+      }
+    });
     if (formulairesOuverts.length || editionsRecues.length) {
       // Laisse React publier le contexte du formulaire fraîchement ouvert avant
       // de capturer l'état « avant » utilisé par le bouton Annuler.

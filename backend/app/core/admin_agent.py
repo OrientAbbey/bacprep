@@ -23,7 +23,11 @@ log = get_logger("admin_agent")
 
 MAX_ITERATIONS = 6
 MAX_ACTIONS_PAR_PLAN = 10
-_BLOC_RE = re.compile(r"```(edition|lecture|action|formulaire)[ \t]*\r?\n?([\s\S]*?)```", re.IGNORECASE)
+# Le modèle ajoute souvent un identifiant de langage (« ```json ») : on l'accepte.
+_BLOC_RE = re.compile(
+    r"```(?:[a-zA-Z]+\s*)?(edition|lecture|action|formulaire)[ \t]*\r?\n?([\s\S]*?)```",
+    re.IGNORECASE,
+)
 
 
 def analyser_blocs(texte: str) -> dict[str, list[dict]]:
@@ -73,6 +77,7 @@ PROTOCOLE DE L'AGENT (exécution transparente pour l'administrateur) :
 - Si le formulaire n'est pas encore ouvert (l'admin dit « crée un nouvel exercice », « nouvelle partie »…), écris d'abord ```formulaire {"cible": "exercice"}``` ou ```formulaire {"cible": "partie"}``` pour l'ouvrir, PUIS un bloc ```edition``` pour le remplir. Cibles possibles : partie, exercice. Ne clique pas toi-même sur « Enregistrer ».
 - Pour consulter l'état d'un autre module avant d'agir, écris ```lecture {"onglet": "formules"}```. Son résumé te sera fourni à l'étape suivante.
 - Les blocs ```action {"outil": "...", "args": {...}}``` sont RÉSERVÉS aux écritures serveur explicites (« enregistre dans la base », « publie », « bannis »). Ils sont regroupés en UN plan que l'admin approuvera en une seule fois. Ne dis jamais que tu as enregistré ou exécuté quoi que ce soit avant cette approbation.
+- Si une valeur manque, choisis un défaut raisonnable et annonce-le ; ne renvoie PAS une réponse uniquement faite de questions.
 - Garde tes réponses courtes et terminées : une réponse tronquée au milieu d'un bloc n'est pas exécutable. Termine toujours par une phrase en Markdown qui résume ce que l'admin va voir/approuver."""
     lignes = [prompt_de_base, protocole]
     if observations:
@@ -96,6 +101,7 @@ async def executer_agent(
     """
     observations: list[str] = []
     vues: set[str] = set()
+    formulaires_vus: set[str] = set()
     historique = list(messages)
 
     for iteration in range(MAX_ITERATIONS):
@@ -115,8 +121,14 @@ async def executer_agent(
         if not texte and not blocs["edition"] and not blocs["lecture"] and not blocs["action"] and not blocs["formulaire"]:
             break
 
+        nouvelles_ouvertures: list[str] = []
         for ouverture in blocs["formulaire"]:
-            yield {"type": "formulaire", "cible": ouverture["cible"]}
+            cible = ouverture["cible"]
+            if cible in formulaires_vus:
+                continue
+            formulaires_vus.add(cible)
+            nouvelles_ouvertures.append(cible)
+            yield {"type": "formulaire", "cible": cible}
 
         for edition in blocs["edition"]:
             yield {"type": "edition", "champs": edition["champs"]}
@@ -164,6 +176,18 @@ async def executer_agent(
                     {"role": "user", "content": "Voici les résultats des lectures. Poursuis."},
                 ]
                 continue
+
+        # Une ouverture de formulaire est une étape, pas une fin : l'agent doit
+        # enchaîner avec le remplissage des champs (nouvelle passe de la boucle).
+        if nouvelles_ouvertures:
+            historique = historique + [
+                {"role": "assistant", "content": cumul},
+                {"role": "user", "content": (
+                    f"Le formulaire « {', '.join(nouvelles_ouvertures)} » est ouvert. "
+                    "Remplis maintenant ses champs avec un bloc edition, puis résume en une phrase."
+                )},
+            ]
+            continue
         break
 
     if not observations:
