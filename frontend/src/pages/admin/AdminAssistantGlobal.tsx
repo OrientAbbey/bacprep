@@ -13,6 +13,7 @@ interface Plan {
   actions: ActionProposee[];
   jeton: string;
   etat: EtatAction;
+  ignorees?: number[];
   erreur?: string;
 }
 interface Message {
@@ -95,7 +96,7 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
           if (e.type === "chunk") cumul += e.text;
           else if (e.type === "edition") editionsRecues.push(e.champs);
           else if (e.type === "proposition") {
-            plan = { actions: e.actions, jeton: e.jeton, etat: "attente" };
+            plan = { actions: e.actions, jeton: e.jeton, etat: "attente", ignorees: [] };
           } else if (e.type === "error") erreur = e.message;
         },
       );
@@ -110,9 +111,11 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
     if (!plan && actionsTexte.length) {
       try {
         const reponse = await api.post<{ jeton: string }>("/api/admin/assistant/proposition", actionsTexte, authHeaders(token));
-        plan = { actions: actionsTexte, jeton: reponse.jeton, etat: "attente" };
+        plan = { actions: actionsTexte, jeton: reponse.jeton, etat: "attente", ignorees: [] };
       } catch {
-        erreur = "Impossible de préparer le plan d'actions.";
+        // On affiche quand même le plan : l'admin doit voir (et pouvoir rejeter)
+        // une action que le modèle a proposée, même si sa signature a échoué.
+        plan = { actions: actionsTexte, jeton: "", etat: "attente", ignorees: [] };
       }
     }
     const nomsEditions = editionsRecues.flatMap((champs) => Object.keys(champs));
@@ -150,11 +153,13 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
     const message = messages[mi];
     const plan = message?.plan;
     if (!plan || plan.etat !== "attente") return;
+    const ignorees = plan.ignorees ?? [];
+    const actions = plan.actions.filter((_, i) => !ignorees.includes(i));
     majPlan(mi, { etat: "en-cours" });
     try {
       const r = await api.post<{ ok: boolean; resultats: { ok: boolean; erreur?: string }[] }>(
         "/api/admin/assistant/commit",
-        { jeton: plan.jeton, actions: plan.actions },
+        { jeton: plan.jeton, actions },
         authHeaders(token),
       );
       const echecs = r.resultats.filter((x) => !x.ok);
@@ -167,6 +172,24 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
   };
 
   const rejeter = (mi: number) => majPlan(mi, { etat: "ignoree" });
+
+  /** Ignore une action du plan : elle reste affichée (« Ignorée. ») mais est
+   *  retirée du lot exécuté, et le jeton est renouvelé pour les actions restantes. */
+  const ignorerAction = async (mi: number, ai: number) => {
+    const plan = messages[mi]?.plan;
+    if (!plan) return;
+    const ignorees = [...new Set([...(plan.ignorees ?? []), ai])];
+    const actions = plan.actions.filter((_, i) => !ignorees.includes(i));
+    let jeton = plan.jeton;
+    if (actions.length) {
+      try {
+        jeton = (await api.post<{ jeton: string }>("/api/admin/assistant/proposition", actions, authHeaders(token))).jeton;
+      } catch {
+        jeton = "";
+      }
+    }
+    majPlan(mi, { ignorees, jeton });
+  };
 
   const editerAction = async (mi: number, ai: number, texte: string) => {
     const plan = messages[mi]?.plan;
@@ -247,7 +270,9 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
                       key={ai}
                       action={a}
                       desactivee={m.plan!.etat !== "attente"}
+                      ignoree={(m.plan!.ignorees ?? []).includes(ai)}
                       onEdit={(texte) => void editerAction(mi, ai, texte)}
+                      onIgnore={() => void ignorerAction(mi, ai)}
                     />
                   ))}
                 </ul>
@@ -290,19 +315,31 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
   );
 }
 
-function PlanAction({ action, desactivee, onEdit }: { action: ActionProposee; desactivee: boolean; onEdit: (texte: string) => void }) {
+function PlanAction({ action, desactivee, ignoree, onEdit, onIgnore }: {
+  action: ActionProposee;
+  desactivee: boolean;
+  ignoree: boolean;
+  onEdit: (texte: string) => void;
+  onIgnore: () => void;
+}) {
   const [edition, setEdition] = useState(false);
   const [texte, setTexte] = useState(JSON.stringify(action, null, 2));
   return (
     <li className="rounded border border-ink-soft/20 p-2">
       <div className="flex items-center justify-between gap-2">
         <p className="font-medium text-xs">{LIBELLES_OUTILS[action.outil] ?? action.outil}</p>
-        {!desactivee && (
-          <button onClick={() => setEdition((v) => !v)} aria-label="Éditer cette action" className="min-h-[44px] min-w-[44px] text-ink-soft">
-            <Pencil size={14} className="mx-auto" />
-          </button>
+        {!desactivee && !ignoree && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => setEdition((v) => !v)} aria-label="Éditer cette action" className="min-h-[44px] min-w-[44px] text-ink-soft">
+              <Pencil size={14} className="mx-auto" />
+            </button>
+            <button onClick={onIgnore} aria-label="Ignorer cette action" className="min-h-[44px] rounded-full border border-ink-soft/30 px-3 text-xs">
+              Ignorer
+            </button>
+          </div>
         )}
       </div>
+      {ignoree && <p role="status" className="mt-1 text-xs text-slate">Ignorée.</p>}
       {edition ? (
         <div className="mt-1">
           <textarea

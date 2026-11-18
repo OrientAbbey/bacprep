@@ -350,19 +350,16 @@ def admin_proposition(
     C'est le « return of control » : dès que l'admin modifie une action, le
     jeton d'origine est invalidé et un nouveau jeton, lié aux nouvelles
     actions, est émis. Aucun outil n'est exécuté ici."""
-    from ..core import admin_approbation, admin_tools
+    from ..core import admin_approbation
 
     if not payload or len(payload) > 10:
         raise HTTPException(422, "Le plan doit contenir entre 1 et 10 actions")
     actions = [a.model_dump() for a in payload]
-    for action in actions:
-        spec = admin_tools.TOOLS.get(action["outil"])
-        if spec is None or spec.risque != "commit":
-            raise HTTPException(422, f"Outil non autorisé : {action['outil']}")
-        try:
-            spec.schema.model_validate(action["args"], strict=False)
-        except ValidationError as exc:
-            raise HTTPException(422, "Arguments invalides : " + "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()))
+    # La signature porte sur les actions TELLES QUE L'ADMIN LES VOIT, y compris
+    # un outil hors liste blanche : la validation est faite à l'exécution par
+    # `admin_tools.executer`, qui refusera cette action et la tracera. On ne
+    # cache pas ici une action que le modèle a proposée — l'admin doit pouvoir
+    # la voir et la rejeter explicitement.
     return {"jeton": admin_approbation.creer(lock.email, actions)}
 
 

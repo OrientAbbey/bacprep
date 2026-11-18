@@ -105,7 +105,7 @@ export function ExportPdf({
       </div>
       {choix &&
         createPortal(
-          <div className="print-zone">
+          <div className="print-zone print-zone--actif">
             <h1>{titre}</h1>
             {(choix === "sujet" || choix === "les-deux") && <MarkdownContent content={sujet} variant="epreuve" />}
             {choix === "les-deux" && <hr />}
