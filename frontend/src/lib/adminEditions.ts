@@ -7,7 +7,7 @@ export interface EditionFormulaire {
   champs: Record<string, unknown>;
 }
 
-const BLOC = /```edition[ \t]*\r?\n?([\s\S]*?)```/g;
+const BLOC = /```(?:[a-zA-Z]+\s*)?edition[ \t]*\r?\n?([\s\S]*?)```/g;
 
 /** Sépare le texte affichable des éditions ; un bloc invalide est ignoré.
  *  Quand `champs` est fourni, seules les clés déclarées par le panneau sont

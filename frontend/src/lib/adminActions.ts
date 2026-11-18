@@ -32,7 +32,7 @@ export const LIBELLES_OUTILS: Record<string, string> = {
   sauvegarde_lancer: "Lancer une sauvegarde",
 };
 
-const BLOC = /```action[ \t]*\r?\n?([\s\S]*?)```/g;
+const BLOC = /```(?:[a-zA-Z]+\s*)?action[ \t]*\r?\n?([\s\S]*?)```/g;
 
 /** Sépare le texte affichable des actions proposées ; un bloc JSON invalide est ignoré. */
 export function extraireActions(texte: string): { texte: string; actions: ActionProposee[] } {

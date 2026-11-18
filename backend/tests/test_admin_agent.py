@@ -36,6 +36,18 @@ def test_bloc_formulaire_et_troncature_sont_geres():
     assert admin_agent.analyser_blocs(tronque)["action"] == []
 
 
+def test_blocs_avec_identifiant_de_langage_sont_reconnus():
+    blocs = admin_agent.analyser_blocs(
+        '```json\nformulaire {"cible": "exercice"}\n```\n'
+        '```json\nedition {"champs": {"sujet": "S", "corrige": "C"}}\n```\n'
+        '```json\naction {"outil": "plan_creer", "args": {}}\n```'
+    )
+    assert blocs["formulaire"] == [{"cible": "exercice"}]
+    assert blocs["edition"] == [{"champs": {"sujet": "S", "corrige": "C"}}]
+    assert blocs["action"] == [{"outil": "plan_creer", "args": {}}]
+    assert admin_agent._nettoyer_affichage('```json\nedition {"champs": {}}\n```\nRésumé.') == "Résumé."
+
+
 def test_prompt_agent_contient_le_protocole_et_les_observations():
     p = admin_agent.prompt_agent("Base", ["Onglet formules : 3 formules."])
     assert "```edition" in p and "```lecture" in p and "```action" in p
@@ -103,6 +115,36 @@ def test_agent_emet_edition_et_plan(admin, monkeypatch):
     assert proposition[0]["actions"][0]["outil"] == "plan_creer"
     # Le texte affiché ne contient pas les blocs techniques.
     assert all("```" not in e.get("text", "") for e in evenements)
+
+
+def test_agent_ouvre_puis_remplit_le_formulaire_en_deux_etapes(admin, monkeypatch):
+    appels = []
+
+    async def faux(prompt, images):
+        appels.append(prompt)
+        if len(appels) == 1:
+            yield '```formulaire {"cible": "exercice"}```\n'
+        else:
+            yield '```edition {"champs": {"sujet": "Suite u0=1", "corrige": "u_n=2^n-1"}}```\nFormulaire rempli.'
+
+    from app.core import assistant as llm
+
+    monkeypatch.setattr(llm, "_stream_gemini", faux)
+    import asyncio
+
+    async def run():
+        return [e async for e in admin_agent.executer_agent(
+            epreuve={}, question="Crée un exercice et remplis les champs",
+            messages=[], prompt_de_base="Prompt", admin="admin@test.cm"
+        )]
+
+    evenements = asyncio.run(run())
+    assert len(appels) == 2, "l'agent doit enchaîner une seconde étape après l'ouverture"
+    assert any(e["type"] == "formulaire" and e["cible"] == "exercice" for e in evenements)
+    edition = [e for e in evenements if e["type"] == "edition"]
+    assert len(edition) == 1
+    assert edition[0]["champs"]["sujet"] == "Suite u0=1"
+    assert any(e["type"] == "chunk" and "Formulaire rempli" in e["text"] for e in evenements)
 
 
 def test_agent_ignore_un_outil_hors_liste_blanche(admin, monkeypatch):

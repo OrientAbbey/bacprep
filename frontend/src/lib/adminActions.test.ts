@@ -20,6 +20,11 @@ describe("extraireActions", () => {
     expect(r.actions).toEqual([]);
     expect(r.texte).toContain("```json");
   });
+  it("accepte ```json action (identifiant de langage)", () => {
+    const r = extraireActions('```json\naction {"outil":"plan_creer","args":{"prix":900}}\n```\nRésumé.');
+    expect(r.actions).toEqual([{ outil: "plan_creer", args: { prix: 900 } }]);
+    expect(r.texte).toBe("Résumé.");
+  });
   it("gère plusieurs actions dans une même réponse", () => {
     const r = extraireActions('```action\n{"outil":"a","args":{}}\n```\n```action\n{"outil":"b","args":{}}\n```');
     expect(r.actions.map((a) => a.outil)).toEqual(["a", "b"]);
