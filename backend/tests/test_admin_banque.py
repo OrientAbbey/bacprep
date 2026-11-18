@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from app.db_models import BanqueJournalORM
+from app.db_models import BanqueClasseMetaORM, BanqueJournalORM, ReferentielOptionORM
 
 
 def _option_id(admin, scope: str, code: str) -> str:
@@ -18,6 +18,16 @@ def _cree_matiere(admin, code: str) -> None:
 
 
 def test_admin_banque_crud_et_garde_fous(admin, db):
+    # Le référentiel est conservé entre tests ; repartir d'un état connu même
+    # si une exécution précédente a été interrompue avant son nettoyage.
+    db.query(ReferentielOptionORM).filter_by(scope="evaluation", code="SEQUENCE 4").delete()
+    db.commit()
+    meta_initiale = db.get(BanqueClasseMetaORM, "terminale")
+    meta_initiale_valeurs = (
+        (meta_initiale.a_examen, meta_initiale.specialite_obligatoire)
+        if meta_initiale is not None
+        else None
+    )
     matiere = "Banque Test"
     _cree_matiere(admin, matiere)
     part = admin.post("/api/admin/banque/parties", json={"matiere": matiere, "nom": "Partie A"})
@@ -41,11 +51,20 @@ def test_admin_banque_crud_et_garde_fous(admin, db):
     assert exercise["matieres"] == [matiere]
     assert exercise["classes"] == ["terminale"]
     assert admin.get("/api/admin/banque").json()["referentiel"]["sequences"] == [1, 2, 3]
-    invalid_session = admin.post("/api/admin/banque/exercices", json={**body, "session": 4})
+    added_sequence = admin.post(
+        "/api/admin/referentiel-options",
+        json={"scope": "evaluation", "code": "SEQUENCE 4"},
+    )
+    assert added_sequence.status_code == 200, added_sequence.text
+    assert admin.get("/api/admin/banque").json()["referentiel"]["sequences"] == [1, 2, 3, 4]
+    fourth_sequence = admin.post("/api/admin/banque/exercices", json={**body, "session": 4})
+    assert fourth_sequence.status_code == 200, fourth_sequence.text
+    invalid_session = admin.post("/api/admin/banque/exercices", json={**body, "session": 5})
     assert invalid_session.status_code == 422
     assert admin.put(f"/api/admin/banque/exercices/{exercise['id']}", json={**body, "sujet": "Nouvelle question"}).status_code == 200
     assert admin.delete(f"/api/admin/banque/parties/{partie_id}").status_code == 409
     assert admin.delete(f"/api/admin/banque/exercices/{exercise['id']}").status_code == 200
+    assert admin.delete(f"/api/admin/banque/exercices/{fourth_sequence.json()['id']}").status_code == 200
     assert admin.delete(f"/api/admin/banque/parties/{partie_id}").status_code == 409  # dernière partie
     second = admin.post("/api/admin/banque/parties", json={"matiere": matiere, "nom": "Partie B"})
     assert second.status_code == 200
@@ -56,6 +75,16 @@ def test_admin_banque_crud_et_garde_fous(admin, db):
     assert "banque_partie_creee" in actions
     assert "banque_exercice_cree" in actions
     assert "banque_classe_meta_modifiee" in actions
+    # Les référentiels sont préservés entre les tests ; supprimer l'option
+    # ajoutée ici pour éviter de polluer les tests suivants.
+    db.query(ReferentielOptionORM).filter_by(scope="evaluation", code="SEQUENCE 4").delete()
+    meta_finale = db.get(BanqueClasseMetaORM, "terminale")
+    if meta_initiale_valeurs is None:
+        if meta_finale is not None:
+            db.delete(meta_finale)
+    elif meta_finale is not None:
+        meta_finale.a_examen, meta_finale.specialite_obligatoire = meta_initiale_valeurs
+    db.commit()
 
 
 def test_admin_banque_rejette_referentiel_inconnu_et_tag_session_vide(admin):

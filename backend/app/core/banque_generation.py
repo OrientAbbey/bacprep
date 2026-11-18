@@ -69,8 +69,8 @@ class ClasseMeta:
 class ExerciceBanque:
     """Un exercice de la banque, réduit à ce dont l'algorithme a besoin.
 
-    `session` est un entier 1-based dans `sequences_connues` (cahier 7.2 :
-    « session ∈ {1..6, null} »), ou None pour un exercice hors séquence.
+    `session` est le numéro d'une séquence du référentiel (cahier 7.2), ou
+    None pour un exercice hors séquence.
     """
 
     id: str
@@ -141,7 +141,26 @@ def poids(difficulte: str, niveau: str) -> int:
 def seuil_sequences_basses(sequences_connues: Sequence[str]) -> int:
     """Première « séquence basse » (5 dans un référentiel à 6, 2 dans un
     référentiel à 3) : les classes inférieures n'y ont accès qu'à partir de là."""
-    return max(1, len(sequences_connues) - 1)
+    numeros = sorted(
+        int(morceaux[1])
+        for code in sequences_connues
+        if len(morceaux := code.strip().split()) == 2
+        and morceaux[0].upper() == "SEQUENCE"
+        and morceaux[1].isdigit()
+    )
+    return numeros[-2] if len(numeros) >= 2 else (numeros[0] if numeros else 1)
+
+
+def _derniere_sequence_connue(sequences_connues: Sequence[str]) -> int:
+    """Numéro le plus élevé réellement configuré (les numéros peuvent avoir des trous)."""
+    numeros = [
+        int(morceaux[1])
+        for code in sequences_connues
+        if len(morceaux := code.strip().split()) == 2
+        and morceaux[0].upper() == "SEQUENCE"
+        and morceaux[1].isdigit()
+    ]
+    return max(numeros, default=0)
 
 
 def _meta(p: Parametres, classe: str) -> ClasseMeta:
@@ -212,7 +231,7 @@ def _session_ok_inferieure(exercice: ExerciceBanque, p: Parametres) -> bool:
     seuil = seuil_sequences_basses(p.sequences_connues)
     if p.difficulte == "Moyen":
         # 4.k renforce : séquence la plus haute uniquement.
-        return exercice.session == len(p.sequences_connues)
+        return exercice.session == _derniere_sequence_connue(p.sequences_connues)
     return exercice.session >= seuil
 
 

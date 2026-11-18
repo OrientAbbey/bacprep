@@ -208,6 +208,7 @@ function ComposerBanque() {
     try {
       const values = await api.get<OptionsBanque>("/api/banque/options", undefined, signal);
       setOptions(values);
+      setSequence((current) => values.sequences.includes(current) ? current : values.sequences[0] ?? 1);
       setMatiere((current) => values.matieres.includes(current) ? current : values.matieres[0] || "");
       setClasse((current) => values.classes.includes(current) ? current : values.classes[0] || "");
       setSerie((current) => current && values.series.includes(current) ? current : "");

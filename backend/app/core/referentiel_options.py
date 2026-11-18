@@ -107,3 +107,22 @@ def ensure_option(db: Session, scope: str, code: str, label: Optional[str] = Non
     db.add(ReferentielOptionORM(scope=scope, code=code, label=label, position=position))
     db.commit()
     return True
+
+
+def sequences_du_referentiel(db: Session) -> list[int]:
+    """Numéros des séquences configurées dans le référentiel (scope
+    ``evaluation``, codes « SEQUENCE <n> »), triés. Source unique de vérité :
+    ajouter une séquence via l'onglet « Paramètres » se répercute partout
+    (banque, validation, import/export)."""
+    codes = [
+        row.code
+        for row in db.query(ReferentielOptionORM)
+        .filter(ReferentielOptionORM.scope == "evaluation")
+        .all()
+    ]
+    numeros: set[int] = set()
+    for code in codes:
+        morceaux = (code or "").strip().split()
+        if len(morceaux) == 2 and morceaux[0].upper() == "SEQUENCE" and morceaux[1].isdigit():
+            numeros.add(int(morceaux[1]))
+    return sorted(numeros)

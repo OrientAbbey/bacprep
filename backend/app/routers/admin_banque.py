@@ -17,7 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..core import referentiel
+from ..core import referentiel_options
 from ..core.banque_generation import DIFFICULTES, SPECIAL_AUCUNE
 from ..core.logging_config import get_logger
 from ..core.storage import get_storage
@@ -34,7 +34,6 @@ from .deps import log_admin_event, require_admin
 router = APIRouter(prefix="/api/admin/banque", tags=["admin-banque"])
 log = get_logger("admin_banque")
 
-SESSIONS_CONNNUES = sum(1 for v in referentiel.EVALUATIONS if v.startswith("SEQUENCE "))
 ID_32 = re.compile(r"^[0-9a-f]{32}$")
 
 
@@ -131,8 +130,10 @@ def _validate_exercise(db: Session, data: dict[str, Any]) -> dict[str, Any]:
     known_series = _codes_referentiel(db, "serie")
     if not (set(series) - {SPECIAL_AUCUNE}) <= known_series:
         raise HTTPException(422, "Une spécialité est inconnue du référentiel")
-    if data.get("session") is not None and not 1 <= data["session"] <= SESSIONS_CONNNUES:
-        raise HTTPException(422, "La session est hors des séquences du référentiel")
+    if data.get("session") is not None:
+        sessions = referentiel_options.sequences_du_referentiel(db)
+        if data["session"] not in sessions:
+            raise HTTPException(422, "La session est hors des séquences du référentiel")
     if part.matiere not in matieres:
         raise HTTPException(422, "La matière de la partie doit être présente dans l'exercice")
     if data.get("session") is None and data.get("tag_examen"):
@@ -160,7 +161,7 @@ class ExerciceIn(BaseModel):
     sujet: str = Field(min_length=1, max_length=100_000)
     corrige: str = Field(min_length=1, max_length=100_000)
     partie_id: str
-    session: int | None = Field(default=None, ge=1, le=6)
+    session: int | None = Field(default=None, ge=1)
     niveau_intrinseque: str = "Moyen"
     tag_examen: bool = False
     actif: bool = True
@@ -222,7 +223,7 @@ def lister(
     matiere: str | None = Query(default=None, max_length=120),
     classe: str | None = Query(default=None, max_length=80),
     partie_id: str | None = Query(default=None, max_length=40),
-    session: int | None = Query(default=None, ge=1, le=SESSIONS_CONNNUES),
+    session: int | None = Query(default=None, ge=1),
     recherche: str | None = Query(default=None, max_length=200),
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
@@ -259,7 +260,7 @@ def lister(
                 scope: [r.code for r in db.query(ReferentielOptionORM).filter(ReferentielOptionORM.scope == scope).order_by(ReferentielOptionORM.position).all()]
                 for scope in ("matiere", "classe", "serie")
             },
-            "sequences": [int(value[len("SEQUENCE "):]) for value in referentiel.EVALUATIONS if value.startswith("SEQUENCE ")],
+            "sequences": referentiel_options.sequences_du_referentiel(db),
         },
     }
 
@@ -503,7 +504,8 @@ def _validate_snapshot(db: Session, snapshot: dict[str, Any]) -> dict[str, list[
         if part_source["matiereId"] not in matieres:
             raise HTTPException(422, "La matière de la partie doit être présente dans l'exercice")
         session = exercise.get("session")
-        if session is not None and (isinstance(session, bool) or not isinstance(session, int) or not 1 <= session <= SESSIONS_CONNNUES):
+        sequences = referentiel_options.sequences_du_referentiel(db)
+        if session is not None and (isinstance(session, bool) or not isinstance(session, int) or session not in sequences):
             raise HTTPException(422, "Session hors du référentiel")
         tag_examen = exercise.get("tagExamen", False)
         actif = exercise.get("actif", True)

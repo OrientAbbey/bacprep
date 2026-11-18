@@ -131,6 +131,7 @@ def test_seuil_sequences_basses_suit_le_referentiel():
     assert seuil_sequences_basses(SEQ3) == 2
     assert seuil_sequences_basses(("SEQUENCE 1",)) == 1
     assert seuil_sequences_basses(()) == 1
+    assert seuil_sequences_basses(("SEQUENCE 1", "SEQUENCE 2", "SEQUENCE 4")) == 2
 
 
 # ---------------------------------------------------------------------------
