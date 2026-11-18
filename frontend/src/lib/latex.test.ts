@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { normalizeDisplayMathDelimitersPreservingOffsets, normalizeLatexDelimiters } from "./latex";
 
 describe("normalizeLatexDelimiters", () => {
+  it("convertit les délimiteurs \( \) et \[ \] des formules générées par l'assistant", () => {
+    const out = normalizeLatexDelimiters("Étudier \\(u_n\\) puis \\[\nx=1\n\\].");
+    expect(out).toContain("$u_n$");
+    expect(out).toContain("$$\nx=1\n$$");
+    expect(out).not.toContain("\\(");
+    // Le mode « offsets préservés » du lecteur ne touche pas aux formules en ligne.
+    const offsets = normalizeDisplayMathDelimitersPreservingOffsets("Étudier \\(u_n\\).");
+    expect(offsets).toContain("\\(u_n\\)");
+  });
+
   it("normalise une formule LaTeX complétée par fragments SSE sans perdre le contenu", () => {
     const fragments = [
       "### 2. Acide 2-aminohexanoïque\n\n\\[\n\\begin{array}{cccccccc}\n&&NH_2&&&&&",

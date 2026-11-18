@@ -126,6 +126,10 @@ def test_arguments_structure_recuperes_depuis_une_generation_groq_invalide():
     brut = r'{"corrige": "u_{10}=49\,207", "sujet": "Suite"}'
     assert admin_agent_struct._reparer_json(brut) == {"corrige": "u_{10}=49\\,207", "sujet": "Suite"}
 
+    latex = r'{"corrige": "$\nu_0=2$ et $\begin{aligned}u_1&=3\cdot2+1\end{aligned}$"}'
+    repare = admin_agent_struct._reparer_json(latex)
+    assert repare == {"corrige": "$\\nu_0=2$ et $\\begin{aligned}u_1&=3\\cdot2+1\\end{aligned}$"}
+
     generation = r'{"name": "remplir_champs", "arguments": {"champs": {"corrige": "49\,207"}}}'
     erreur = json.dumps({"error": {"failed_generation": generation}})
     args = admin_agent_struct._arguments_depuis_echec(erreur)
