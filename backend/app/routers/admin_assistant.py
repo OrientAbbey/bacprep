@@ -255,6 +255,8 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
                     messages=messages,
                     prompt_de_base=prompt_onglet,
                     admin=lock.email,
+                    onglet=payload.onglet,
+                    contexte=payload.contexte or None,
                 ):
                     if event["type"] == "chunk":
                         accumulated += event["text"]
