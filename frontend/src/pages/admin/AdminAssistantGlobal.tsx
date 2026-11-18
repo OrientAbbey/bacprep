@@ -5,7 +5,7 @@ import { api, ApiError } from "../../api/client";
 import { BoutonCopier } from "../../components/ChatParts";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { extraireActions, LIBELLES_OUTILS, type ActionProposee } from "../../lib/adminActions";
-import { appliquerEditionsAdmin, lireContexteAdmin, ouvrirFormulaireAdmin } from "../../lib/adminContexte";
+import { appliquerChampsAdmin, lireContexteAdmin, ouvrirFormulaireAdmin } from "../../lib/adminContexte";
 import { chargerConversationAdmin, effacerConversationAdmin, streamAdminAsk } from "../../lib/streaming";
 import { authHeaders } from "./shared";
 
@@ -132,7 +132,8 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
         }
       }
     }
-    const editionsAppliquees = editionsRecues.length > 0 && appliquerEditionsAdmin(onglet, editionsRecues);
+    const editionsAppliquees = editionsRecues.length > 0
+      && appliquerChampsAdmin(onglet, editionsRecues);
     if (editionsRecues.length && !editionsAppliquees) {
       erreur = erreur || "Champs proposés, mais aucun formulaire n'est ouvert dans ce panneau.";
     }
@@ -290,7 +291,7 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
                 <p className="font-medium">Champs remplis dans le formulaire : {m.editions.join(", ")}.</p>
                 <p className="mt-1 text-xs text-ink-soft">Rien n'est enregistré. Vérifie puis clique sur « Enregistrer » dans le panneau.</p>
                 {m.annulerEditions && (
-                  <button onClick={() => { if (m.annulerEditions) appliquerEditionsAdmin(onglet, [{ champs: m.annulerEditions }]); annulerEditions(mi); }} className="mt-2 min-h-[44px] rounded-full border border-ink-soft/30 px-4 text-xs">
+                  <button onClick={() => { if (m.annulerEditions) appliquerChampsAdmin(onglet, [m.annulerEditions]); annulerEditions(mi); }} className="mt-2 min-h-[44px] rounded-full border border-ink-soft/30 px-4 text-xs">
                     Annuler ces modifications
                   </button>
                 )}

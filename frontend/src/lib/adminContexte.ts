@@ -90,6 +90,14 @@ export function ouvrirFormulaireAdmin(onglet: string, cible: string): boolean {
 }
 
 /** Applique les éditions reçues de l'agent au panneau courant, si elle existe. */
+/** Applique des champs bruts (tels que reçus dans un événement SSE `edition`). */
+export function appliquerChampsAdmin(
+  onglet: string,
+  champsList: Record<string, unknown>[],
+): boolean {
+  return appliquerEditionsAdmin(onglet, champsList.map((champs) => ({ champs })));
+}
+
 export function appliquerEditionsAdmin(
   onglet: string,
   editions: Record<string, unknown>[],

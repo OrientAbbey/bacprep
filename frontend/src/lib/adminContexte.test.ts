@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appliquerChampsAdmin,
   appliquerEditionsAdmin,
   effacerContexteAdmin,
   enregistrerAppliqueurAdmin,
@@ -24,6 +25,9 @@ describe("contexte partagé admin", () => {
     expect(appliquerEditionsAdmin("banque-test", [{ champs: { sujet: "S" } }])).toBe(true);
     expect(champs).toEqual([{ champs: { sujet: "S" } }]);
     expect(lireContexteAdmin("banque-test")?.formulaire).toEqual({ sujet: "" });
+    champs.length = 0;
+    expect(appliquerChampsAdmin("banque-test", [{ sujet: "Brut" }])).toBe(true);
+    expect(champs).toEqual([{ champs: { sujet: "Brut" } }]);
     effacerContexteAdmin("banque-test");
   });
 });

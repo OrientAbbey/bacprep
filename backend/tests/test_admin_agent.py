@@ -1,6 +1,9 @@
 """Agent admin transverse : protocole, approbation signée, exécution groupée."""
 from __future__ import annotations
 
+import asyncio
+import json
+
 import pytest
 
 from app.core import admin_agent, admin_approbation, admin_tools
@@ -115,6 +118,81 @@ def test_agent_emet_edition_et_plan(admin, monkeypatch):
     assert proposition[0]["actions"][0]["outil"] == "plan_creer"
     # Le texte affiché ne contient pas les blocs techniques.
     assert all("```" not in e.get("text", "") for e in evenements)
+
+
+def test_arguments_structure_recuperes_depuis_une_generation_groq_invalide():
+    from app.core import admin_agent_struct
+
+    brut = r'{"corrige": "u_{10}=49\,207", "sujet": "Suite"}'
+    assert admin_agent_struct._reparer_json(brut) == {"corrige": "u_{10}=49\\,207", "sujet": "Suite"}
+
+    generation = r'{"name": "remplir_champs", "arguments": {"champs": {"corrige": "49\,207"}}}'
+    erreur = json.dumps({"error": {"failed_generation": generation}})
+    args = admin_agent_struct._arguments_depuis_echec(erreur)
+    assert args == {"champs": {"corrige": "49\\,207"}}
+
+
+def test_chemin_structure_ouvre_et_remplit_sans_markdown(monkeypatch):
+    from app.core import admin_agent_struct
+
+    class FakeResp:
+        def __init__(self, data):
+            self._data = data
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._data
+
+    class FakeClient:
+        def __init__(self, appels):
+            self.appels = appels
+            self.i = 0
+
+        async def post(self, *args, **kwargs):
+            data = self.appels[self.i]
+            self.i += 1
+            return FakeResp(data)
+
+    def repondre(outil, args):
+        return {"choices": [{"message": {"tool_calls": [{"function": {
+            "name": outil, "arguments": json.dumps(args),
+        }}]}}]}
+
+    client = FakeClient([
+        repondre("ouvrir_formulaire", {"cible": "exercice"}),
+        repondre("remplir_champs", {"champs": {"sujet": "Suite à compléter", "corrige": "Résolution détaillée", "classes": ["terminale"]}}),
+    ])
+    monkeypatch.setattr(admin_agent_struct.llm, "_get_http_client", lambda: client)
+    monkeypatch.setenv("GROQ_API_KEY", "test")
+
+    async def run():
+        return [e async for e in admin_agent_struct.executer(
+            question="Peux-tu créer un nouvel exercice et remplir les champs ?",
+            contexte={"partie_active": {"nom": "Suites"}}, onglet="banque", admin="a@b.c",
+        )]
+
+    evenements = asyncio.run(run())
+    assert [e["type"] for e in evenements] == ["formulaire", "edition", "chunk"]
+    assert evenements[0]["cible"] == "exercice"
+    assert evenements[1]["champs"]["classes"] == ["terminale"]
+    assert "```" not in evenements[-1]["text"]
+    assert client.i == 2
+
+
+def test_chemin_structure_sans_cle_ne_rend_rien(monkeypatch):
+    from app.core import admin_agent_struct
+
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    async def run():
+        return [e async for e in admin_agent_struct.executer(
+            question="Remplis les champs", contexte={}, onglet="banque", admin="a@b.c",
+        )]
+
+    assert asyncio.run(run()) == []
 
 
 def test_agent_ouvre_puis_remplit_le_formulaire_en_deux_etapes(admin, monkeypatch):

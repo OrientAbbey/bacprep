@@ -15,7 +15,7 @@ import json
 import re
 from typing import Any, AsyncIterator
 
-from . import admin_approbation, admin_tools
+from . import admin_approbation, admin_agent_struct, admin_tools
 from .admin_assistant import ask_admin_assistant_stream
 from .logging_config import get_logger
 
@@ -93,6 +93,8 @@ async def executer_agent(
     messages: list[dict],
     prompt_de_base: str,
     admin: str = "",
+    onglet: str | None = None,
+    contexte: dict | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Exécute la boucle et émet des événements SSE déjà sérialisables.
 
@@ -103,6 +105,17 @@ async def executer_agent(
     vues: set[str] = set()
     formulaires_vus: set[str] = set()
     historique = list(messages)
+
+    # Chemin déterministe (function calling) pour « ouvrir et remplir ».
+    # S'il ne produit rien, on retombe sur le protocole Markdown ci-dessous.
+    structures: list[dict[str, Any]] = []
+    async for evenement in admin_agent_struct.executer(
+        question=question, contexte=contexte, onglet=onglet or "", admin=admin
+    ):
+        structures.append(evenement)
+        yield evenement
+    if structures:
+        return
 
     for iteration in range(MAX_ITERATIONS):
         if iteration:
