@@ -2781,7 +2781,7 @@ console.log("\nBack-office : navigation, listes bornées et filtrées");
     await page.getByLabel("Rechercher dans les titres et messages…").fill(`ZZE2E-${RUN}-34`);
     await page.waitForFunction(() => document.querySelectorAll("ul[data-liste-admin] > li").length === 1, null, { timeout: 8000 });
     await page.getByLabel("Rechercher dans les titres et messages…").fill(`ZZE2E-${RUN}`);
-    await page.getByLabel("État").selectOption("inactive");
+    await page.getByLabel("État", { exact: true }).selectOption("inactive");
     // On attend le résultat FILTRÉ (et non le résultat périmé de la recherche précédente).
     await page.waitForFunction(() => { const li = document.querySelectorAll("ul[data-liste-admin] > li"); return li.length === 1 && /ZZE2E-.*-00/.test(li[0].textContent); }, null, { timeout: 8000 });
   });
