@@ -1,8 +1,6 @@
 """Agent admin transverse : protocole, approbation signée, exécution groupée."""
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from app.core import admin_agent, admin_approbation, admin_tools
