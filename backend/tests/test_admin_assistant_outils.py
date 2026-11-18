@@ -131,6 +131,27 @@ def test_invite_onglet_contient_etat_et_outils_et_interdits():
     assert "Formules : (x)" in p and "plan_modifier" in p and "N'invente JAMAIS" in p and "ni supprimer" in p
 
 
+def test_invite_banque_propose_de_rediger_sujet_et_corrige_sans_fausse_action():
+    p = admin_tools.prompt_onglet(
+        "banque",
+        "Banque d'exercices : 2 exercices.",
+        "Peux-tu m'aider à générer l'exercice ?",
+        [],
+        contexte={"formulaire_exercice": {
+            "sujet": "",
+            "corrige": "",
+            "matieres": ["Mathématiques"],
+            "classes": ["Terminale"],
+            "niveau_intrinseque": "Moyen",
+        }},
+    )
+    assert "rédige le contenu demandé directement dans ta réponse" in p
+    assert "ne peux pas aider au motif qu'aucun outil de création n'est disponible" in p
+    assert "prêt à copier dans les champs « Sujet » et « Corrigé »" in p
+    assert "Ne prétends jamais avoir rempli, enregistré ou créé l'exercice" in p
+    assert "formulaire_exercice.matieres : [\"Mathématiques\"]" in p
+
+
 def test_flux_onglet_utilise_le_resume_sans_persister(admin, monkeypatch):
     vus = {}
 
@@ -141,17 +162,23 @@ def test_flux_onglet_utilise_le_resume_sans_persister(admin, monkeypatch):
     from app.core import assistant as llm
 
     monkeypatch.setattr(llm, "_stream_gemini", faux)
-    r = admin.post("/api/admin/assistant/ask", json={"question": "Combien de formules ?", "onglet": "formules", "epreuve_id": "ignore"})
+    r = admin.post("/api/admin/assistant/ask", json={
+        "question": "Complète le sujet commencé.",
+        "onglet": "banque",
+        "contexte": {"formulaire_exercice": {"sujet": "Une suite commence par u₀ = 1."}},
+        "epreuve_id": "ignore",
+    })
     assert r.status_code == 200
-    assert "Formules d'abonnement" in vus["prompt"] and "Combien de formules ?" in vus["prompt"]
+    assert "Banque d'exercices" in vus["prompt"] and "Complète le sujet commencé." in vus["prompt"]
+    assert "Une suite commence par u₀ = 1." in vus["prompt"]
     # La conversation est mémorisée par onglet (clé `onglet:formules`) et restituée à la réouverture.
     assert '"conversation": null' not in r.text
-    conv = admin.get("/api/admin/assistant/conversation/onglet:formules").json()["conversation"]
+    conv = admin.get("/api/admin/assistant/conversation/onglet:banque").json()["conversation"]
     assert [m["role"] for m in conv["messages"]] == ["user", "assistant"]
     assert conv["messages"][1]["content"] == "Réponse"
     assert admin.get("/api/admin/assistant/conversation/onglet:calendrier").json()["conversation"] is None  # une par onglet
-    admin.delete("/api/admin/assistant/conversation/onglet:formules")
-    assert admin.get("/api/admin/assistant/conversation/onglet:formules").json()["conversation"] is None
+    admin.delete("/api/admin/assistant/conversation/onglet:banque")
+    assert admin.get("/api/admin/assistant/conversation/onglet:banque").json()["conversation"] is None
 
 
 def test_onglet_inconnu_retombe_sur_la_voie_epreuve(admin, monkeypatch):
