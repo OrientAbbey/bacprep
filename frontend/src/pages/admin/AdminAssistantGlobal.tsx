@@ -4,7 +4,7 @@ import { api, ApiError } from "../../api/client";
 import { BoutonCopier } from "../../components/ChatParts";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { extraireActions, LIBELLES_OUTILS, type ActionProposee } from "../../lib/adminActions";
-import { appliquerEditionsAdmin, lireContexteAdmin } from "../../lib/adminContexte";
+import { appliquerEditionsAdmin, lireContexteAdmin, ouvrirFormulaireAdmin } from "../../lib/adminContexte";
 import { chargerConversationAdmin, effacerConversationAdmin, streamAdminAsk } from "../../lib/streaming";
 import { authHeaders } from "./shared";
 
@@ -20,6 +20,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   plan?: Plan;
+  formulaires?: string[];
   editions?: string[];
   annulerEditions?: Record<string, unknown>;
 }
@@ -80,13 +81,8 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
     let erreur = "";
     let plan: Plan | null = null;
     const editionsRecues: Record<string, unknown>[] = [];
+    const ciblesRecues: string[] = [];
     const avant: Record<string, unknown> = {};
-    const contexteAvant = lireContexteAdmin(onglet)?.formulaire as Record<string, unknown> | undefined;
-    if (contexteAvant && typeof contexteAvant === "object") {
-      for (const [cle, valeur] of Object.entries(contexteAvant)) {
-        if (["string", "number", "boolean"].includes(typeof valeur)) avant[cle] = valeur;
-      }
-    }
 
     try {
       const contexte = lireContexteAdmin(onglet);
@@ -94,6 +90,7 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
         { question, historique, epreuve: {}, onglet, agent: true, ...(contexte ? { contexte } : {}) },
         (e) => {
           if (e.type === "chunk") cumul += e.text;
+          else if (e.type === "formulaire") ciblesRecues.push(e.cible);
           else if (e.type === "edition") editionsRecues.push(e.champs);
           else if (e.type === "proposition") {
             plan = { actions: e.actions, jeton: e.jeton, etat: "attente", ignorees: [] };
@@ -104,7 +101,23 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
       erreur = e instanceof ApiError && e.status === 429 ? "Trop de demandes — réessaie dans quelques minutes." : "L'assistant n'a pas pu répondre.";
     }
 
-    if (editionsRecues.length) appliquerEditionsAdmin(onglet, editionsRecues);
+    // L'agent peut demander l'ouverture d'un formulaire avant de le remplir.
+    const formulairesOuverts = ciblesRecues.filter((cible) => ouvrirFormulaireAdmin(onglet, cible));
+    if (formulairesOuverts.length || editionsRecues.length) {
+      // Laisse React publier le contexte du formulaire fraîchement ouvert avant
+      // de capturer l'état « avant » utilisé par le bouton Annuler.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const contexteAvant = lireContexteAdmin(onglet)?.formulaire as Record<string, unknown> | undefined;
+      if (contexteAvant && typeof contexteAvant === "object") {
+        for (const [cle, valeur] of Object.entries(contexteAvant)) {
+          if (["string", "number", "boolean"].includes(typeof valeur)) avant[cle] = valeur;
+        }
+      }
+    }
+    const editionsAppliquees = editionsRecues.length > 0 && appliquerEditionsAdmin(onglet, editionsRecues);
+    if (editionsRecues.length && !editionsAppliquees) {
+      erreur = erreur || "Champs proposés, mais aucun formulaire n'est ouvert dans ce panneau.";
+    }
     // Compatibilité : une réponse « historique » peut encore contenir des
     // blocs ```action``` ; on les regroupe alors en plan avec un jeton neuf.
     const actionsTexte = extraireActions(cumul).actions;
@@ -126,8 +139,9 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
         ...m.slice(0, -1),
         {
           role: "assistant",
-          content: erreur ? `⚠️ ${erreur}` : texteAffiche || (plan ? "(plan d'actions proposé)" : "(réponse vide)"),
+          content: erreur ? `⚠️ ${erreur}` : texteAffiche || (plan ? "(plan d'actions proposé)" : nomsEditions.length ? "(champs du formulaire remplis)" : "(réponse vide)"),
           plan: plan ?? undefined,
+          formulaires: formulairesOuverts.length ? formulairesOuverts : undefined,
           editions: nomsEditions.length ? nomsEditions : undefined,
           annulerEditions: nomsEditions.length ? avant : undefined,
         },
@@ -246,6 +260,12 @@ export function AdminAssistantGlobal({ token, onglet, onAction }: { token: strin
             {m.role === "user" ? m.content : m.content ? <MarkdownContent content={m.content} variant="chat" /> : <Loader2 size={14} className="animate-spin" aria-label="L'assistant réfléchit" />}
             {m.content.trim() && !m.content.startsWith("⚠️") && (
               <div className="mt-0.5"><BoutonCopier texte={m.content} /></div>
+            )}
+            {m.formulaires && m.formulaires.length > 0 && (
+              <div className="mt-2 rounded-lg border border-highlight/50 bg-highlight-soft/40 p-3">
+                <p className="font-medium">Formulaire ouvert : {m.formulaires.join(", ")}.</p>
+                <p className="mt-1 text-xs text-ink-soft">Les champs sont prêts dans le panneau ; rien n'est enregistré.</p>
+              </div>
             )}
             {m.editions && m.editions.length > 0 && (
               <div className="mt-2 rounded-lg border border-highlight/50 bg-highlight-soft/40 p-3">

@@ -15,7 +15,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { formatRelativeTime } from "../../lib/time";
 import { authHeaders, erreurDetail, purgerSessionExpiree } from "./shared";
-import { effacerContexteAdmin, enregistrerAppliqueurAdmin, publierContexteAdmin } from "../../lib/adminContexte";
+import { effacerContexteAdmin, enregistrerAppliqueurAdmin, enregistrerOuvreurAdmin, publierContexteAdmin } from "../../lib/adminContexte";
 
 type PartieForm = { matiere: string; nom: string; ordre: string };
 type ExerciceForm = {
@@ -144,6 +144,11 @@ export function BanquePanel({ token }: { token: string }) {
         { cle: "series", libelle: "Séries" },
       ],
     );
+    const retraitOuverture = enregistrerOuvreurAdmin("banque", (cible) => {
+      if (cible === "partie") { nouvellePartie(); return true; }
+      if (cible === "exercice") { nouveauExercice(); return true; }
+      return false;
+    });
     const retrait = enregistrerAppliqueurAdmin("banque", (editions) => {
       setExerciceForm((formulaire) => {
         if (!formulaire) return formulaire;
@@ -154,7 +159,7 @@ export function BanquePanel({ token }: { token: string }) {
         return suite;
       });
     });
-    return () => { retrait(); effacerContexteAdmin("banque"); };
+    return () => { retrait(); retraitOuverture(); effacerContexteAdmin("banque"); };
   }, [exerciceForm, exerciceEnEdition, parties, data, partieSelectionnee]);
 
   function erreurAction(err: unknown, message: string) {

@@ -195,6 +195,7 @@ export interface AdminAskPayload {
 export type AdminStreamEvent =
   | { type: "chunk"; text: string }
   | { type: "etape"; numero: number }
+  | { type: "formulaire"; cible: string }
   | { type: "edition"; champs: Record<string, unknown> }
   | { type: "proposition"; actions: { outil: string; args: Record<string, unknown> }[]; jeton: string }
   | { type: "done"; conversation: AdminConversation | null }

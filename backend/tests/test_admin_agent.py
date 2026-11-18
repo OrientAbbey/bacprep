@@ -24,6 +24,18 @@ def test_analyser_blocs_ignore_les_blocs_invalides():
     assert "```" not in admin_agent._nettoyer_affichage(reponse)
 
 
+def test_bloc_formulaire_et_troncature_sont_geres():
+    blocs = admin_agent.analyser_blocs(
+        '```formulaire {"cible": "exercice"}```\n```edition {"champs": {"sujet": "..."}}```'
+    )
+    assert blocs["formulaire"] == [{"cible": "exercice"}]
+    assert blocs["edition"] == [{"champs": {"sujet": "..."}}]
+    # Une réponse coupée au milieu d'un JSON ne doit pas laisser de fragment brut.
+    tronque = 'Voici le sujet.\n```action {"outil": "exercice_creer", "args": {"sujet": "A = '
+    assert admin_agent._nettoyer_affichage(tronque) == "Voici le sujet."
+    assert admin_agent.analyser_blocs(tronque)["action"] == []
+
+
 def test_prompt_agent_contient_le_protocole_et_les_observations():
     p = admin_agent.prompt_agent("Base", ["Onglet formules : 3 formules."])
     assert "```edition" in p and "```lecture" in p and "```action" in p
