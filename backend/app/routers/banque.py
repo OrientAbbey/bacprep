@@ -12,6 +12,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,7 @@ from ..core.rate_limit import SlidingWindowLimiter, client_ip
 from ..db import get_db, utc_now
 from ..db_models import (
     BanqueClasseMetaORM,
+    BanqueImageORM,
     BanqueExerciceORM,
     BanqueGenerationORM,
     BanqueJournalORM,
@@ -39,6 +41,30 @@ from .auth import require_user
 
 router = APIRouter(prefix="/api/banque", tags=["banque"])
 RETENTION = timedelta(days=365)
+
+
+@router.get("/images/{image_id}")
+def image_banque(image_id: str, db: Session = Depends(get_db)) -> Response:
+    """Illustration d'un exercice de la Banque (figure, graphique, schéma).
+
+    Les identifiants sont aléatoires et l'URL est publique : l'image doit
+    pouvoir s'afficher dans l'épreuve générée, y compris pour un élève qui
+    n'a pas de session. Aucune donnée personnelle n'est exposée.
+    """
+    ligne = db.get(BanqueImageORM, image_id)
+    if ligne is None:
+        raise HTTPException(404, "Image introuvable")
+    from ..core.storage import StorageError, get_storage
+
+    try:
+        data = get_storage().get_bytes(ligne.storage_key)
+    except StorageError:
+        raise HTTPException(404, "Image introuvable")
+    return Response(
+        content=data,
+        media_type=ligne.mime_type or "application/octet-stream",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 def _retention_configurable(nom_env: str, defaut_jours: int) -> timedelta | None:

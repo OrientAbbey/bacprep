@@ -785,3 +785,21 @@ class BanqueJournalORM(Base):
     params_json = Column(Text, nullable=False, default="{}")
     details_json = Column(Text, nullable=False, default="{}")
     created_at = Column(UTCDateTime, default=utc_now, index=True)
+
+
+class BanqueImageORM(Base):
+    """Illustration (figure, graphique, schéma) insérée dans un exercice de la
+    Banque. Le Markdown de l'exercice référence `/api/banque/images/{id}` ;
+    l'objet binaire vit dans le stockage objet, la base ne garde que les
+    métadonnées (comme pour `EpreuveFileORM`)."""
+
+    __tablename__ = "banque_images"
+
+    id = Column(String, primary_key=True, default=_uid)
+    filename = Column(String, nullable=False)
+    storage_key = Column(String, nullable=False, unique=True, index=True)
+    mime_type = Column(String, nullable=False, default="")
+    size_bytes = Column(Integer, nullable=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    uploaded_at = Column(UTCDateTime, default=utc_now, index=True)

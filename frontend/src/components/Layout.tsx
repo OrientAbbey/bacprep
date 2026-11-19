@@ -63,10 +63,14 @@ export function Layout({ children }: { children?: React.ReactNode }) {
         {/* Conteneur PLEINE LARGEUR (plus de max-w-6xl) : le site profite de
             tout l'écran, le contenu n'est limé au centre que par la grille de
             sa propre page. */}
-        <div className="flex w-full items-center gap-3 px-4 py-3 md:px-6 lg:px-8">
-          <Link to="/" aria-label={t("Accueil")} className="flex items-center gap-2">
+        <div className="flex w-full min-w-0 items-center gap-2 px-3 py-3 md:gap-3 md:px-6 lg:px-8">
+          <Link to="/" aria-label={t("Accueil")} className="flex shrink-0 items-center gap-2">
             <Logo size={32} />
-            <span className="hidden font-serif-brand text-lg sm:inline">{t("Copies & Corrigés")}</span>
+            {/* Le texte de marque n'apparaît qu'en très grand écran : à 1280 px,
+                la navigation complète (liens + cloche + profil + langues + partage
+                + thème) occupe déjà toute la barre. Le logo seul garde l'accès
+                à l'accueil (aria-label) sans faire déborder l'en-tête. */}
+            <span className="hidden font-serif-brand text-lg 2xl:inline">{t("Copies & Corrigés")}</span>
           </Link>
 
           {/* Recherche d'en-tête : masquée sous xl pour laisser la place aux
@@ -90,7 +94,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
             </div>
           </form>
 
-          <nav className="ml-auto flex items-center gap-2 text-sm sm:gap-4">
+          <nav className="ml-auto flex min-w-0 shrink-0 items-center gap-1 text-sm sm:gap-2 xl:gap-4">
             {/* Burger MOBILE : regroupe la navigation + compte dans un tiroir */}
             <button
               type="button"
@@ -112,7 +116,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                   to={to}
                   end={end}
                   className={({ isActive }) =>
-                    `rounded-full px-3 py-2 transition-colors ${
+                    `rounded-full px-2 py-2 transition-colors xl:px-3 ${
                       isActive
                         ? "bg-highlight-soft font-medium text-highlight-text"
                         : "text-ink-soft hover:bg-paper hover:text-ink"
@@ -142,7 +146,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 <NavLink
                   to="/admin"
                   className={({ isActive }) =>
-                    `rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                    `rounded-full border px-2 py-2 text-xs font-semibold uppercase tracking-wider transition-colors xl:px-3 ${
                       isActive
                         ? "border-highlight bg-highlight text-highlight-ink"
                         : "border-highlight/50 text-highlight-text hover:bg-highlight-soft"
@@ -180,13 +184,13 @@ export function Layout({ children }: { children?: React.ReactNode }) {
             <LangSwitch />
             <BoutonInviter
               variante="icone"
-              className="relative hidden h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-[''] sm:flex"
+              className="relative hidden h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-[''] xl:flex"
             />
             <button
               type="button"
               onClick={toggleTheme}
               aria-label={t("Changer de thème")}
-              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
+              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-highlight-soft after:absolute after:-inset-1 after:rounded-full after:content-['']"
             >
               {theme === "dark" ? (
                 <Sun size={20} strokeWidth={1.75} aria-hidden="true" />

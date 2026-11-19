@@ -170,9 +170,12 @@ export const GROUPES_OUTILS: GroupeOutils[] = [
   {
     nom: "Structures",
     outils: [
-      outil("🧪", "Structure topologique (SMILES)", "\n```mol topologique\n§CCO éthanol§\n```\n"),
-      outil("🧪↔", "Structure développée (SMILES)", "\n```mol developpee\n§CCO éthanol§\n```\n"),
-      outil("🧪◐", "Structure de Cram (SMILES)", "\n```mol cram\n§C[C@H](O)Cl chlorobutane§\n```\n"),
+      outil("🧪", "Structure topologique (SMILES, rendu 2D)", "\n```mol topologique\n§CCO éthanol§\n```\n"),
+      outil("🧪↔", "Structure développée (SMILES, rendu 2D avec tous les carbones)", "\n```mol developpee\n§CCO éthanol§\n```\n"),
+      // SmilesDrawer dessine en 2D et gère la stéréochimie de Cram (coins/silicons
+      // stéréochimiques SMILES) ; il ne produit PAS de vue 3D rotative. La vraie 3D
+      // demanderait un viewer moléculaire dédié (3Dmol.js) et des coordonnées 3D.
+      outil("🧪◐", "Structure de Cram — stéréochimie 2D (la vue 3D n'est pas prise en charge)", "\n```mol cram\n§C[C@H](O)Cl chlorobutane§\n```\n"),
     ],
   },
 ];
