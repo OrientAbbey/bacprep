@@ -81,7 +81,7 @@ Les prompts LLM, les garanties de sécurité et les deux stratégies d'édition 
 - [x] E2E complète (`e2e.mjs`) + recette Banque (`banque-e2e.mjs`) sur le build final.
 - [x] `git diff --check`.
 - [x] Test navigateur intégré : un seul bouton Assistant, tiroir Épreuves et tiroir Banque avec les bons contenus, aucun débordement à 1280 px.
-- [ ] Commit atomique, branche dédiée, PR, vérification CI au vert, fusion, synchronisation de `refonte`.
+- [x] Commit atomique, branche dédiée, PR, vérification CI au vert, fusion, synchronisation de `refonte`.
 
 ## Fichiers concernés
 
