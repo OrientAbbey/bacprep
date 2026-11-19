@@ -73,12 +73,16 @@ export function EpreuvesPanel({
   detailAOpenir,
   onDetailOuvert,
   onEpreuvesChange,
+  actif = true,
 }: {
   token: string;
   onSessionExpiree: () => void;
   detailAOpenir?: string | null;
   onDetailOuvert?: () => void;
   onEpreuvesChange?: () => void;
+  /** L'onglet Épreuves est masqué (div `hidden`) quand un autre onglet est
+   *  actif : fermer le tiroir pour ne pas laisser un second dialogue monté. */
+  actif?: boolean;
 }) {
   const { showToast } = useToast();
   const [epreuves, setEpreuves] = useState<AdminEpreuveSummary[]>([]);
@@ -116,6 +120,9 @@ export function EpreuvesPanel({
   const [statutForm, setStatutForm] = useState("brouillon");
   // État du tiroir droit de l'assistant admin.
   const [assistantOuvert, setAssistantOuvert] = useState(false);
+  useEffect(() => {
+    if (!actif) setAssistantOuvert(false);
+  }, [actif]);
   // Atelier d'exercices (génération d'un brouillon sujet + corrigé).
   const [atelierOuvert, setAtelierOuvert] = useState(false);
   // Clé de la discussion de l'assistant tant que l'épreuve n'est pas enregistrée ; renouvelée à chaque nouveau brouillon.
@@ -1307,6 +1314,7 @@ export function EpreuvesPanel({
           formulaire d'édition courant. */}
       {assistantOuvert && (
         <AdminAssistantPanel
+          onglet="epreuves"
           form={form}
           statut={statutForm}
           conversationId={form.id ?? `brouillon:${brouillonId}`}

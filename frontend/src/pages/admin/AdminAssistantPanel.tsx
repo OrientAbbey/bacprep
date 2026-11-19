@@ -1,7 +1,18 @@
-import { Bot, Check, Plus, X } from "lucide-react";
+import { Bot, Check, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ASSISTANT_SIGNATURE, ASSISTANT_TITRE, Avatar, ChatBubble, INPUT_MAX_HEIGHT_PX, MessageComposer, type Message } from "../../components/ChatParts";
-import { chargerConversationAdmin, delaiReconnexion, effacerConversationAdmin, streamAdminAsk } from "../../lib/streaming";
+import { flushSync } from "react-dom";
+import { api, ApiError } from "../../api/client";
+import {
+  ASSISTANT_SIGNATURE,
+  ASSISTANT_TITRE,
+  Avatar,
+  ChatBubble,
+  INPUT_MAX_HEIGHT_PX,
+  MessageComposer,
+  type Message as MessageChat,
+} from "../../components/ChatParts";
+import { extraireActions, LIBELLES_OUTILS, type ActionProposee } from "../../lib/adminActions";
+import { appliquerChampsAdmin, lireContexteAdmin, ouvrirFormulaireAdmin } from "../../lib/adminContexte";
 import {
   aDesModifications,
   applicationAutoInitiale,
@@ -12,45 +23,76 @@ import {
   type AdminEpreuveSnapshot,
   type ModificationsEpreuve,
 } from "../../lib/adminAssistant";
+import {
+  chargerConversationAdmin,
+  delaiReconnexion,
+  effacerConversationAdmin,
+  streamAdminAsk,
+} from "../../lib/streaming";
+import { authHeaders } from "./shared";
 
+type EtatAction = "attente" | "en-cours" | "fait" | "ignoree" | "erreur";
+
+interface Plan {
+  actions: ActionProposee[];
+  jeton: string;
+  etat: EtatAction;
+  ignorees?: number[];
+  erreur?: string;
+}
+
+interface MessageAdmin extends MessageChat {
+  plan?: Plan;
+  formulaires?: string[];
+  editions?: string[];
+  annulerEditions?: Record<string, unknown>;
+}
 
 /**
- * Tiroir droit de l'assistant du back-office, ouvert depuis l'onglet Épreuves. La conversation « roulante » de CET
- * admin est mémorisée sous `conversationId` (l'id de l'épreuve enregistrée, ou `brouillon:<id>` tant qu'elle ne l'est
- * pas) : rechargée à l'ouverture, réécrite à chaque `done` du flux, purgée par « Nouvelle conversation ».
+ * Assistant unique du back-office. DEUX modes, UNE interface :
  *
- * Le formulaire d'édition est resnapshotté à CHAQUE envoi : la prop `form` (réactualisée par EpreuvesPanel à chaque
- * frappe) est lue au moment de l'appel de l'envoi — jamais un instantané figé au moment de l'ouverture.
+ * - `onglet === "epreuves"` : co-rédaction de l'épreuve en cours. Le formulaire
+ *   est re-snapshotté à chaque envoi ; les blocs `modification-*` sont appliqués
+ *   automatiquement (bascule) ou via « Appliquer au sujet/corrigé/formulaire ».
+ * - tous les autres onglets : agent transverse. Il ouvre et remplit un
+ *   formulaire (`formulaire`/`edition`) et propose un plan d'actions signé
+ *   soumis à l'approbation de l'admin (`/proposition` + `/commit`).
  *
- * Fonctionnalités communes aux deux assistants : streaming SSE avec RECONNEXION AUTOMATIQUE (le flux est relancé tel
- * quel, délai croissant, si la connexion s'interrompt sans `done`), horodatage HH:MM des messages (date complète au
- * survol), file d'attente (envoyer pendant une réponse met la question en attente), édition inline d'une question +
- * régénération depuis ce point, et relance de la dernière question en un clic.
+ * Fonctionnalités communes : streaming SSE avec reconnexion automatique,
+ * file d'attente, horodatage, édition inline d'une question + régénération,
+ * relance de la dernière question, mémorisation de la discussion par clé.
  */
 export function AdminAssistantPanel({
+  token,
+  onglet,
+  onClose,
+  onAction,
   form,
   statut,
   conversationId,
-  onClose,
   onAppliquer,
   onAnnuler,
   sujetActifRang,
 }: {
-  /** Formulaire d'édition COURANT (hors `statut`, porté par la prop éponyme). */
-  form: Omit<AdminEpreuveSnapshot, "statut">;
-  statut: string;
-  /** Clé de la conversation mémorisée côté serveur. */
-  conversationId: string;
+  /** Jeton admin, nécessaire au mode agent (plan /commit). */
+  token?: string;
+  /** Onglet courant du back-office. Détermine le mode. */
+  onglet: string;
   onClose: () => void;
-  /** Applique au formulaire d'édition une modification proposée par l'assistant (blocs `modification-*` et
-   * `remplacer-*`). Renvoie `true` si le formulaire a changé. */
-  onAppliquer: (modifications: ModificationsEpreuve) => boolean;
-  /** Présent tant que la dernière application peut être annulée. */
+  /** Rafraîchit le panneau après l'exécution d'un plan (mode agent). */
+  onAction?: () => void;
+  /** Mode édition uniquement : instantané du formulaire et callbacks. */
+  form?: Omit<AdminEpreuveSnapshot, "statut">;
+  statut?: string;
+  conversationId?: string;
+  onAppliquer?: (modifications: ModificationsEpreuve) => boolean;
   onAnnuler?: () => void;
-  /** Rang (à partir de 1) du sujet affiché dans l'éditeur, transmis à l'assistant. */
   sujetActifRang?: number;
 }) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const estEdition = onglet === "epreuves";
+  const cle = estEdition ? conversationId ?? "brouillon:epreuves" : `onglet:${onglet}`;
+
+  const [messages, setMessages] = useState<MessageAdmin[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [erreurStream, setErreurStream] = useState<string | null>(null);
@@ -58,20 +100,15 @@ export function AdminAssistantPanel({
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [enChargement, setEnChargement] = useState(false);
   const [auto, setAuto] = useState(applicationAutoInitiale);
-  // La réponse en cours a été appliquée toute seule (remplace les boutons manuels).
   const [appliqueAuto, setAppliqueAuto] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Ref miroir de `messages` : les effects de file d'attente / reconnexion
-  // doivent lire l'état le plus récent, jamais une closure figée.
-  const messagesRef = useRef<Message[]>([]);
+  const messagesRef = useRef<MessageAdmin[]>([]);
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  // `applyExchange` dure le temps d'une réponse : il lit ces refs pour appliquer avec le formulaire ET la case
-  // du moment de la fin de réponse, pas ceux du début.
   const onAppliquerRef = useRef(onAppliquer);
   const autoRef = useRef(auto);
   useEffect(() => {
@@ -79,8 +116,6 @@ export function AdminAssistantPanel({
     autoRef.current = auto;
   });
 
-  // Annulation de l'échange en cours + frame de fragments en attente, à
-  // nettoyer au démontage (même raison que l'assistant élève).
   const abortRef = useRef<AbortController | null>(null);
   const chunkRafRef = useRef<number | null>(null);
 
@@ -91,45 +126,48 @@ export function AdminAssistantPanel({
     };
   }, []);
 
-  // Recharge la conversation de CET admin (id, horodatages inclus) : le tiroir rouvre là où on l'avait laissé.
+  // Recharge la discussion de CET onglet / CETTE épreuve ; le changement de
+  // brouillon vers épreuve enregistrée change la clé et recharge la mémoire.
   useEffect(() => {
     let annule = false;
     setEnChargement(true);
-    void chargerConversationAdmin(conversationId).then((conversation) => {
+    setMessages([]);
+    setErreurStream(null);
+    void chargerConversationAdmin(cle).then((conversation) => {
       if (annule) return;
       if (conversation) {
-        setMessages(conversation.messages.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content, ts: m.ts })));
+        setMessages(
+          conversation.messages.map((m) => ({
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: estEdition ? m.content : extraireActions(m.content).texte || "(action proposée)",
+            ts: m.ts,
+          }))
+        );
       }
       setEnChargement(false);
     });
     return () => {
       annule = true;
     };
-  }, [conversationId]);
-  // Échap ferme le tiroir (même ergonomie que le panneau de l'élève).
+  }, [cle, estEdition]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      onClose();
+      if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Focus du champ de saisie dès l'ouverture — la frappe immédiate répond
-  // sans clic supplémentaire.
   useEffect(() => {
     const raf = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Descente automatique du fil à chaque renvoi/nouvel arrivage.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
-  // Le champ de saisie grandit avec son contenu (jusqu'à une hauteur
-  // maximale, au-delà de laquelle il devient défilable).
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -142,14 +180,10 @@ export function AdminAssistantPanel({
     setMessages([]);
     setErreurStream(null);
     setQueue([]);
-    // Best-effort : un échec réseau n'empêche pas d'effacer l'écran.
-    void effacerConversationAdmin(conversationId);
+    void effacerConversationAdmin(cle);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  /** Soumission depuis le champ de saisie : si une réponse est déjà en
-   * cours, la question part en FILE D'ATTENTE (envoyée automatiquement dès
-   * la fin de la réponse en cours) au lieu d'être ignorée. */
   function submitQuestion() {
     const text = input.trim();
     if (!text) return;
@@ -162,7 +196,6 @@ export function AdminAssistantPanel({
     void applyExchange(text, messagesRef.current);
   }
 
-  // Dépilement automatique de la file d'attente.
   useEffect(() => {
     if (sending || queue.length === 0) return;
     const [prochaine, ...restantes] = queue;
@@ -171,25 +204,37 @@ export function AdminAssistantPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sending, queue]);
 
-  /** Exécute UN échange complet (question → réponse streamée). `base` =
-   * l'état des messages AVANT la question. Rejoignable automatiquement :
-   * si le flux s'interrompt SANS `done`, la charge utile FIGÉE du premier
-   * envoi (instantané du formulaire inclus) est relancée telle quelle
-   * après un délai croissant, jusqu'à 3 tentatives. Les erreurs
-   * applicatives du flux et les 4xx ne sont pas relancées. */
-  async function applyExchange(question: string, base: Message[]) {
+  async function applyExchange(question: string, base: MessageAdmin[]) {
     if (sending) return;
-    const payload = buildAdminAskPayload({ ...form, statut }, base, question, conversationId, sujetActifRang);
-    const nowIso = new Date().toISOString();
+    const contexte = estEdition ? null : lireContexteAdmin(onglet);
+    const historique = base.map(({ role, content }) => ({ role, content }));
+    const payload = estEdition
+      ? buildAdminAskPayload(
+          { ...(form as Omit<AdminEpreuveSnapshot, "statut">), statut: statut ?? "" },
+          historique,
+          question,
+          conversationId,
+          sujetActifRang
+        )
+      : {
+          question,
+          historique,
+          epreuve: {},
+          onglet,
+          agent: true,
+          ...(contexte ? { contexte } : {}),
+        };
 
-    setMessages([...base, { role: "user", content: question, ts: nowIso }, { role: "assistant", content: "", ts: nowIso }]);
+    const nowIso = new Date().toISOString();
+    setMessages([
+      ...base,
+      { role: "user", content: question, ts: nowIso },
+      { role: "assistant", content: "", ts: nowIso },
+    ]);
     setSending(true);
     setErreurStream(null);
     setAppliqueAuto(false);
 
-    // Échange annulable : quitter la page admin pendant une réponse stoppait
-    // la boucle de réécriture d'état et laissait le serveur produire un
-    // échange sans personne pour le recevoir.
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -200,6 +245,9 @@ export function AdminAssistantPanel({
     let reponse = "";
     let aReussi = false;
     let annule = false;
+    let plan: Plan | null = null;
+    const ciblesRecues: string[] = [];
+    const editionsRecues: Record<string, unknown>[] = [];
 
     for (let tentative = 1; tentative <= MAX_ATTEMPTES; tentative++) {
       if (signal.aborted) {
@@ -211,9 +259,6 @@ export function AdminAssistantPanel({
       let pendingChunkText = "";
       let chunkRaf: number | null = null;
 
-      // Fragments SSE tamponnés : appliqués une fois par frame (rAF) au
-      // lieu de re-rendre à CHAQUE paquet réseau (même garde que
-      // l'assistant élève). `flushChunk` est forcé avant la clôture.
       function flushChunk() {
         chunkRaf = null;
         chunkRafRef.current = null;
@@ -230,7 +275,6 @@ export function AdminAssistantPanel({
 
       reponse = "";
       if (tentative > 1) {
-        // Nouvelle tentative : toute réponse partielle est remise à zéro.
         setMessages((prev) => [
           ...prev.slice(0, -1),
           { role: "assistant", content: "", ts: new Date().toISOString() },
@@ -239,42 +283,47 @@ export function AdminAssistantPanel({
       }
 
       try {
-        await streamAdminAsk(payload, (event) => {
-          if (event.type === "chunk") {
-            reponse += event.text;
-            pendingChunkText += event.text;
-            if (chunkRaf === null) {
-              chunkRaf = requestAnimationFrame(flushChunk);
-              chunkRafRef.current = chunkRaf;
+        await streamAdminAsk(
+          payload,
+          (event) => {
+            if (event.type === "chunk") {
+              reponse += event.text;
+              pendingChunkText += event.text;
+              if (chunkRaf === null) {
+                chunkRaf = requestAnimationFrame(flushChunk);
+                chunkRafRef.current = chunkRaf;
+              }
+            } else if (event.type === "formulaire") {
+              ciblesRecues.push(event.cible);
+            } else if (event.type === "edition") {
+              editionsRecues.push(event.champs);
+            } else if (event.type === "proposition") {
+              plan = { actions: event.actions, jeton: event.jeton, etat: "attente", ignorees: [] };
+            } else if (event.type === "done") {
+              gotDone = true;
+              if (chunkRaf !== null) {
+                cancelAnimationFrame(chunkRaf);
+                chunkRafRef.current = null;
+              }
+              flushChunk();
+              if (event.conversation) {
+                reponse = event.conversation.messages[event.conversation.messages.length - 1]?.content ?? reponse;
+                setMessages(
+                  event.conversation.messages.map((m) => ({
+                    role: m.role === "assistant" ? "assistant" : "user",
+                    content: estEdition ? m.content : extraireActions(m.content).texte || "(action proposée)",
+                    ts: m.ts,
+                  }))
+                );
+              }
+            } else if (event.type === "error") {
+              gotErrorEvent = true;
+              erreurFinale = event.message;
             }
-          } else if (event.type === "done") {
-            gotDone = true;
-            if (chunkRaf !== null) {
-              cancelAnimationFrame(chunkRaf);
-              chunkRafRef.current = null;
-            }
-            flushChunk();
-            // Mode persisté : le serveur renvoie la conversation mise à jour ;
-            // les messages sont la source de vérité (question + réponse, ts
-            // inclus). Le remplacement est immédiat et écrase l'état local.
-            if (event.conversation) {
-              reponse = event.conversation.messages[event.conversation.messages.length - 1]?.content ?? reponse;
-              setMessages(
-                event.conversation.messages.map((m) => ({
-                  role: m.role === "assistant" ? "assistant" : "user",
-                  content: m.content,
-                  ts: m.ts,
-                }))
-              );
-            }
-          } else if (event.type === "error") {
-            gotErrorEvent = true;
-            erreurFinale = event.message;
-          }
-        }, signal);
+          },
+          signal
+        );
       } catch (err) {
-        // Annulation volontaire (démontage) : ni erreur affichée ni
-        // nouvelle tentative — ce n'est pas une panne de transport.
         if (signal.aborted || (err as Error)?.name === "AbortError") {
           annule = true;
           break;
@@ -285,7 +334,11 @@ export function AdminAssistantPanel({
           break;
         }
         erreurFinale =
-          err instanceof TypeError ? "Connexion au serveur interrompue." : err instanceof Error ? err.message : "Connexion interrompue pendant la réponse.";
+          err instanceof TypeError
+            ? "Connexion au serveur interrompue."
+            : err instanceof Error
+              ? err.message
+              : "Connexion interrompue pendant la réponse.";
       }
 
       if (gotDone) {
@@ -293,29 +346,106 @@ export function AdminAssistantPanel({
         break;
       }
       if (gotErrorEvent) break;
-
       if (tentative < MAX_ATTEMPTES) {
         await new Promise((r) => setTimeout(r, delaiReconnexion(tentative)));
       }
     }
 
-    // Annulé : le composant peut être parti, ou un autre envoi avoir pris
-    // le relais — ne surtout pas réécrire `sending` par-dessus.
     if (annule) return;
     if (abortRef.current === controller) abortRef.current = null;
-
     setReconnectAttempt(0);
     setSending(false);
     if (!aReussi) {
       setErreurStream(erreurFinale ?? "La réponse n'a pas pu être reçue — réessaie.");
-    } else if (autoRef.current) {
-      const modifications = extraireModifications(reponse);
-      if (aDesModifications(modifications)) setAppliqueAuto(onAppliquerRef.current(modifications));
+      return;
     }
+
+    let planFinal: Plan | null = plan;
+    let formulairesOuverts: string[] = [];
+    let nomsEditions: string[] = [];
+    let avant: Record<string, unknown> = {};
+    let erreurAgent = "";
+
+    if (estEdition) {
+      if (autoRef.current) {
+        const modifications = extraireModifications(reponse);
+        if (aDesModifications(modifications)) setAppliqueAuto(onAppliquerRef.current?.(modifications) ?? false);
+      }
+    } else {
+      // L'agent peut ouvrir un formulaire avant de le remplir. flushSync
+      // garantit que le panneau a rendu le formulaire (et publié son contexte)
+      // avant que les éditions ne soient appliquées.
+      flushSync(() => {
+        for (const cible of ciblesRecues) {
+          if (ouvrirFormulaireAdmin(onglet, cible)) formulairesOuverts.push(cible);
+        }
+        if (editionsRecues.length && formulairesOuverts.length === 0) {
+          for (const cible of ["exercice", "partie", "formule", "evenement", "notification", "option"]) {
+            if (ouvrirFormulaireAdmin(onglet, cible)) {
+              formulairesOuverts.push(cible);
+              break;
+            }
+          }
+        }
+      });
+      if (formulairesOuverts.length || editionsRecues.length) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const contexteAvant = lireContexteAdmin(onglet)?.formulaire as Record<string, unknown> | undefined;
+        if (contexteAvant && typeof contexteAvant === "object") {
+          for (const [cleChamp, valeur] of Object.entries(contexteAvant)) {
+            if (["string", "number", "boolean"].includes(typeof valeur)) avant[cleChamp] = valeur;
+          }
+        }
+      }
+      const editionsAppliquees = editionsRecues.length > 0 && appliquerChampsAdmin(onglet, editionsRecues);
+      if (editionsRecues.length && !editionsAppliquees) {
+        erreurAgent = "Champs proposés, mais aucun formulaire n'est ouvert dans ce panneau.";
+      }
+      // Compatibilité : une réponse « historique » peut encore contenir des
+      // blocs ```action``` ; on les regroupe en plan avec un jeton neuf.
+      if (!planFinal) {
+        const actionsTexte = extraireActions(reponse).actions;
+        if (actionsTexte.length) {
+          try {
+            const reponseJeton = await api.post<{ jeton: string }>(
+              "/api/admin/assistant/proposition",
+              actionsTexte,
+              authHeaders(token ?? "")
+            );
+            planFinal = { actions: actionsTexte, jeton: reponseJeton.jeton, etat: "attente", ignorees: [] };
+          } catch {
+            planFinal = { actions: actionsTexte, jeton: "", etat: "attente", ignorees: [] };
+          }
+        }
+      }
+      nomsEditions = editionsRecues.flatMap((champs) => Object.keys(champs));
+    }
+
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role !== "assistant") return next;
+      next[next.length - 1] = {
+        ...last,
+        content: estEdition
+          ? last.content
+          : erreurAgent
+            ? `⚠️ ${erreurAgent}`
+            : extraireActions(last.content).texte ||
+              (planFinal
+                ? "(plan d'actions proposé)"
+                : nomsEditions.length
+                  ? "(champs du formulaire remplis)"
+                  : "(réponse vide)"),
+        plan: planFinal ?? undefined,
+        formulaires: formulairesOuverts.length ? formulairesOuverts : undefined,
+        editions: nomsEditions.length ? nomsEditions : undefined,
+        annulerEditions: nomsEditions.length ? avant : undefined,
+      };
+      return next;
+    });
   }
 
-  /** Réessaye la DERNIÈRE réponse : retire le dernier échange et renvoie
-   * la même question. */
   function retryLast() {
     if (sending) return;
     const msgs = messagesRef.current;
@@ -326,9 +456,6 @@ export function AdminAssistantPanel({
     void applyExchange(question.content, msgs.slice(0, -2));
   }
 
-  /** Édition d'une question + régénération à partir de ce point : la
-   * conversation est tronquée avant le message édité, qui est renvoyé tel
-   * quel. */
   function regenerateFrom(index: number, contenu: string) {
     if (sending) return;
     const msgs = messagesRef.current;
@@ -337,18 +464,91 @@ export function AdminAssistantPanel({
   }
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Entrée seule envoie (ou met en file d'attente) ; Maj+Entrée insère
-    // un saut de ligne.
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submitQuestion();
     }
   }
 
+  const majPlan = (mi: number, changements: Partial<Plan>) =>
+    setMessages((ms) =>
+      ms.map((m, i) => (i !== mi || !m.plan ? m : { ...m, plan: { ...m.plan, ...changements } }))
+    );
+
+  const annulerEditions = (mi: number) =>
+    setMessages((ms) =>
+      ms.map((m, i) => (i !== mi ? m : { ...m, editions: undefined, annulerEditions: undefined }))
+    );
+
+  async function approuver(mi: number) {
+    const message = messages[mi];
+    const plan = message?.plan;
+    if (!plan || plan.etat !== "attente") return;
+    const ignorees = plan.ignorees ?? [];
+    const actions = plan.actions.filter((_, i) => !ignorees.includes(i));
+    majPlan(mi, { etat: "en-cours" });
+    try {
+      const r = await api.post<{ ok: boolean; resultats: { ok: boolean; erreur?: string }[] }>(
+        "/api/admin/assistant/commit",
+        { jeton: plan.jeton, actions },
+        authHeaders(token ?? "")
+      );
+      const echecs = r.resultats.filter((x) => !x.ok);
+      majPlan(mi, { etat: echecs.length ? "erreur" : "fait", erreur: echecs.map((x) => x.erreur).join(" ; ") });
+      onAction?.();
+    } catch (e) {
+      const detail = e instanceof ApiError ? (typeof e.detail === "string" ? e.detail : "refusé") : "échec réseau";
+      majPlan(mi, { etat: "erreur", erreur: detail });
+    }
+  }
+
+  const rejeter = (mi: number) => majPlan(mi, { etat: "ignoree" });
+
+  async function ignorerAction(mi: number, ai: number) {
+    const plan = messages[mi]?.plan;
+    if (!plan) return;
+    const ignorees = [...new Set([...(plan.ignorees ?? []), ai])];
+    const actions = plan.actions.filter((_, i) => !ignorees.includes(i));
+    let jeton = plan.jeton;
+    if (actions.length) {
+      try {
+        jeton = (
+          await api.post<{ jeton: string }>(
+            "/api/admin/assistant/proposition",
+            actions,
+            authHeaders(token ?? "")
+          )
+        ).jeton;
+      } catch {
+        jeton = "";
+      }
+    }
+    majPlan(mi, { ignorees, jeton });
+  }
+
+  async function editerAction(mi: number, ai: number, texte: string) {
+    const plan = messages[mi]?.plan;
+    if (!plan) return;
+    try {
+      const objet = JSON.parse(texte) as { outil?: string; args?: Record<string, unknown> };
+      if (typeof objet.outil !== "string" || !objet.args) throw new Error('Format : {"outil": "…", "args": {…}}');
+      const actions = plan.actions.map((a, i) => (i === ai ? { outil: objet.outil!, args: objet.args! } : a));
+      const reponse = await api.post<{ jeton: string }>(
+        "/api/admin/assistant/proposition",
+        actions,
+        authHeaders(token ?? "")
+      );
+      majPlan(mi, { actions, jeton: reponse.jeton, etat: "attente" });
+    } catch (e) {
+      majPlan(mi, { etat: "erreur", erreur: e instanceof Error ? e.message : "JSON invalide" });
+    }
+  }
+
   return (
     <>
-      {/* Fond assombri : un clic dessus ferme le tiroir. */}
-      <div className="fixed inset-0 z-40 bg-ink/25" onClick={onClose} aria-hidden="true" />
+      {/* En mode agent, pas de fond bloquant : l'admin doit pouvoir changer
+          d'onglet pendant que le tiroir reste ouvert (mémoire par onglet). */}
+      {estEdition && <div className="fixed inset-0 z-40 bg-ink/25" onClick={onClose} aria-hidden="true" />}
       <div
         role="dialog"
         aria-modal="true"
@@ -385,10 +585,10 @@ export function AdminAssistantPanel({
               </button>
             </div>
           </div>
-          {/* Bandeau contexte : rappelle QUELLE épreuve est snapshottée
-              (le contenu réel est renvoyé à chaque envoi, jamais figé). */}
           <p className="mt-1.5 pb-2 font-mono-tag text-[10px] text-ink-soft">
-            Contexte : épreuve en cours — {resumeEpreuveName({ ...form, statut })}
+            {estEdition
+              ? `Contexte : épreuve en cours — ${resumeEpreuveName({ ...(form as Omit<AdminEpreuveSnapshot, "statut">), statut: statut ?? "" })}`
+              : `ONGLET : ${onglet.toUpperCase()}`}
           </p>
         </div>
 
@@ -409,33 +609,46 @@ export function AdminAssistantPanel({
               <Bot size={28} strokeWidth={1.5} aria-hidden="true" className="mx-auto text-slate" />
               <p className="mt-2 text-sm font-medium">Pose ta première question</p>
               <p className="mt-1 text-xs text-slate">
-                Reprends un exercice, vérifie le Markdown, ou demande une piste de corrigé pour cette épreuve.
+                {estEdition
+                  ? "Reprends un exercice, vérifie le Markdown, ou demande une piste de corrigé pour cette épreuve."
+                  : "Pose une question sur cet onglet : l'agent peut remplir le formulaire, puis te proposer un plan à approuver."}
               </p>
             </div>
           )}
 
           {messages.map((m, i) => {
-            // Bulle d'assistant pré-créée VIDE pendant le streaming :
-            // masquée, l'indicateur « génère… » la remplace.
             if (m.role === "assistant" && m.content === "" && sending && i === messages.length - 1) return null;
             const estDernier = i === messages.length - 1;
+            const actions = m.role === "assistant" && estDernier && !sending ? (
+              <>
+                {estEdition && onAppliquer && (
+                  <ActionsAppliquer content={m.content} onAppliquer={onAppliquer} appliqueAuto={appliqueAuto} />
+                )}
+                {!estEdition && (
+                  <EncartsAgent
+                    message={m}
+                    onAnnuler={() => {
+                      if (m.annulerEditions) appliquerChampsAdmin(onglet, [m.annulerEditions]);
+                      annulerEditions(i);
+                    }}
+                    onApprouver={() => void approuver(i)}
+                    onRejeter={() => rejeter(i)}
+                    onIgnorer={(ai) => void ignorerAction(i, ai)}
+                    onEditer={(ai, texte) => void editerAction(i, ai, texte)}
+                  />
+                )}
+              </>
+            ) : null;
             return (
               <ChatBubble
                 key={`${m.role}-${i}`}
                 m={m}
                 userNom="Admin"
-                // « Appliquer » seulement une fois la réponse terminée (le bloc de modification doit être complet).
-                actionsHaut={
-                  m.role === "assistant" && estDernier && !sending && onAppliquer ? (
-                    <ActionsAppliquer content={m.content} onAppliquer={onAppliquer} appliqueAuto={appliqueAuto} />
-                  ) : null
-                }
+                actionsHaut={actions}
                 estDernier={estDernier}
                 enCours={sending}
                 onEditer={m.role === "user" && !sending ? (contenu) => regenerateFrom(i, contenu) : undefined}
-                onRegenerer={
-                  m.role === "assistant" && !sending && estDernier ? retryLast : undefined
-                }
+                onRegenerer={m.role === "assistant" && !sending && estDernier ? retryLast : undefined}
               />
             );
           })}
@@ -454,40 +667,39 @@ export function AdminAssistantPanel({
             )}
 
           {erreurStream && (
-            <p
-              role="status"
-              className="rounded-lg border border-correction/30 bg-correction-soft px-3 py-2 text-sm text-correction"
-            >
+            <p role="status" className="rounded-lg border border-correction/30 bg-correction-soft px-3 py-2 text-sm text-correction">
               {erreurStream}
             </p>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-x-3 border-t border-ink-soft/15 bg-paper px-4 text-xs">
-          <label className="flex min-h-[44px] items-center gap-2">
-            <input
-              type="checkbox"
-              checked={auto}
-              onChange={(e) => {
-                setAuto(e.target.checked);
-                memoriserApplicationAuto(e.target.checked);
-              }}
-            />
-            Appliquer automatiquement
-          </label>
-          {onAnnuler && (
-            <button
-              type="button"
-              onClick={() => {
-                onAnnuler();
-                setAppliqueAuto(false);
-              }}
-              className="min-h-[44px] font-medium text-correction underline underline-offset-2"
-            >
-              Annuler la dernière application
-            </button>
-          )}
-        </div>
+        {estEdition && (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 border-t border-ink-soft/15 bg-paper px-4 text-xs">
+            <label className="flex min-h-[44px] items-center gap-2">
+              <input
+                type="checkbox"
+                checked={auto}
+                onChange={(e) => {
+                  setAuto(e.target.checked);
+                  memoriserApplicationAuto(e.target.checked);
+                }}
+              />
+              Appliquer automatiquement
+            </label>
+            {onAnnuler && (
+              <button
+                type="button"
+                onClick={() => {
+                  onAnnuler();
+                  setAppliqueAuto(false);
+                }}
+                className="min-h-[44px] font-medium text-correction underline underline-offset-2"
+              >
+                Annuler la dernière application
+              </button>
+            )}
+          </div>
+        )}
 
         <MessageComposer
           inputRef={inputRef}
@@ -497,7 +709,11 @@ export function AdminAssistantPanel({
           onSend={submitQuestion}
           queueCount={queue.length}
           disabled={enChargement}
-          placeholder="Pose ta question sur l'épreuve… (Maj+Entrée pour une nouvelle ligne)"
+          placeholder={
+            estEdition
+              ? "Pose ta question sur l'épreuve… (Maj+Entrée pour une nouvelle ligne)"
+              : "Pose une question sur cet onglet… (Maj+Entrée pour une nouvelle ligne)"
+          }
         />
       </div>
     </>
@@ -506,7 +722,15 @@ export function AdminAssistantPanel({
 
 /** Boutons « Appliquer » sous une réponse contenant des blocs `modification-*` : un clic
  * remplit le sujet, le corrigé ou les métadonnées du formulaire. */
-function ActionsAppliquer({ content, onAppliquer, appliqueAuto }: { content: string; onAppliquer: (m: ModificationsEpreuve) => boolean; appliqueAuto: boolean }) {
+function ActionsAppliquer({
+  content,
+  onAppliquer,
+  appliqueAuto,
+}: {
+  content: string;
+  onAppliquer: (m: ModificationsEpreuve) => boolean;
+  appliqueAuto: boolean;
+}) {
   const modifs = extraireModifications(content);
   const boutons: { cle: string; libelle: string; modifs: ModificationsEpreuve }[] = [
     ...(
@@ -544,12 +768,174 @@ function ActionsAppliquer({ content, onAppliquer, appliqueAuto }: { content: str
           key={b.cle}
           type="button"
           onClick={() => onAppliquer(b.modifs)}
-          className="flex min-h-[44px] items-center gap-1 rounded-full bg-valide px-3 text-xs font-medium text-paper"
+          className="min-h-[36px] rounded-full border border-highlight/50 bg-highlight-soft/50 px-3 text-[11px] font-medium text-highlight-text"
         >
-          <Check size={12} strokeWidth={2.5} aria-hidden="true" />
           {b.libelle}
         </button>
       ))}
     </div>
+  );
+}
+
+/** Encarts du mode agent : formulaire ouvert, champs remplis et plan signé. */
+function EncartsAgent({
+  message,
+  onAnnuler,
+  onApprouver,
+  onRejeter,
+  onIgnorer,
+  onEditer,
+}: {
+  message: MessageAdmin;
+  onAnnuler: () => void;
+  onApprouver: () => void;
+  onRejeter: () => void;
+  onIgnorer: (ai: number) => void;
+  onEditer: (ai: number, texte: string) => void;
+}) {
+  const plan = message.plan;
+  return (
+    <>
+      {message.formulaires && message.formulaires.length > 0 && (
+        <div className="mt-2 rounded-lg border border-highlight/50 bg-highlight-soft/40 p-3">
+          <p className="font-medium">Formulaire ouvert : {message.formulaires.join(", ")}.</p>
+          <p className="mt-1 text-xs text-ink-soft">Les champs sont prêts dans le panneau ; rien n'est enregistré.</p>
+        </div>
+      )}
+      {message.editions && message.editions.length > 0 && (
+        <div className="mt-2 rounded-lg border border-highlight/50 bg-highlight-soft/40 p-3">
+          <p className="font-medium">Champs remplis dans le formulaire : {message.editions.join(", ")}.</p>
+          <p className="mt-1 text-xs text-ink-soft">Rien n'est enregistré. Vérifie puis clique sur « Enregistrer » dans le panneau.</p>
+          {message.annulerEditions && (
+            <button
+              type="button"
+              onClick={onAnnuler}
+              className="mt-2 min-h-[44px] rounded-full border border-ink-soft/30 px-4 text-xs"
+            >
+              Annuler ces modifications
+            </button>
+          )}
+        </div>
+      )}
+      {plan && (
+        <div className="mt-2 rounded-lg border border-highlight/50 bg-highlight-soft/40 p-3">
+          <p className="font-medium">Plan d'actions — approbation groupée</p>
+          <p className="mt-1 text-xs text-ink-soft">
+            {plan.actions.length} action(s). Aucune écriture ne sera faite sans ton accord.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {plan.actions.map((a, ai) => (
+              <PlanAction
+                key={ai}
+                action={a}
+                desactivee={plan.etat !== "attente"}
+                ignoree={(plan.ignorees ?? []).includes(ai)}
+                onEdit={(texte) => onEditer(ai, texte)}
+                onIgnore={() => onIgnorer(ai)}
+              />
+            ))}
+          </ul>
+          {plan.etat === "attente" && (
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={onApprouver}
+                className="flex min-h-[44px] items-center gap-1 rounded-full bg-ink px-4 text-paper"
+              >
+                <Check size={14} aria-hidden="true" /> Tout approuver
+              </button>
+              <button type="button" onClick={onRejeter} className="min-h-[44px] rounded-full border border-ink-soft/30 px-4">
+                Rejeter
+              </button>
+            </div>
+          )}
+          {plan.etat === "en-cours" && (
+            <p role="status" className="mt-2 text-xs">
+              Exécution…
+            </p>
+          )}
+          {plan.etat === "fait" && (
+            <p role="status" className="mt-2 text-xs text-valide">
+              ✓ Plan exécuté.
+            </p>
+          )}
+          {plan.etat === "ignoree" && <p className="mt-2 text-xs text-slate">Plan rejeté — rien n'a été modifié.</p>}
+          {plan.etat === "erreur" && (
+            <p role="alert" className="mt-2 text-xs text-correction">
+              Échec : {plan.erreur ?? "voir le détail"}
+            </p>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function PlanAction({
+  action,
+  desactivee,
+  ignoree,
+  onEdit,
+  onIgnore,
+}: {
+  action: ActionProposee;
+  desactivee: boolean;
+  ignoree: boolean;
+  onEdit: (texte: string) => void;
+  onIgnore: () => void;
+}) {
+  const [edition, setEdition] = useState(false);
+  const [texte, setTexte] = useState(JSON.stringify(action, null, 2));
+  return (
+    <li className="rounded border border-ink-soft/20 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-medium text-xs">{LIBELLES_OUTILS[action.outil] ?? action.outil}</p>
+        {!desactivee && !ignoree && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setEdition((v) => !v)}
+              aria-label="Éditer cette action"
+              className="min-h-[44px] min-w-[44px] text-ink-soft"
+            >
+              <Pencil size={14} className="mx-auto" aria-hidden="true" />
+            </button>
+            <button type="button" onClick={onIgnore} className="min-h-[44px] rounded-full border border-ink-soft/30 px-3 text-xs">
+              Ignorer
+            </button>
+          </div>
+        )}
+      </div>
+      {ignoree && (
+        <p role="status" className="mt-1 text-xs text-slate">
+          Ignorée.
+        </p>
+      )}
+      {edition ? (
+        <div className="mt-1">
+          <textarea
+            value={texte}
+            onChange={(e) => setTexte(e.target.value)}
+            rows={5}
+            aria-label="Arguments de l'action (JSON)"
+            className="w-full rounded border border-ink-soft/30 bg-paper p-2 font-mono text-[11px]"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onEdit(texte);
+              setEdition(false);
+            }}
+            className="mt-1 min-h-[44px] rounded-full bg-ink px-4 text-xs text-paper"
+          >
+            Valider l'édition (nouveau jeton)
+          </button>
+        </div>
+      ) : (
+        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-[11px] text-ink-soft">
+          {JSON.stringify(action.args, null, 2)}
+        </pre>
+      )}
+    </li>
   );
 }

@@ -1585,8 +1585,8 @@ console.log("\nAssistant IA du back-office (tous onglets)");
 
   await test("l'assistant est disponible sur l'onglet Formules, envoie l'onglet courant", async () => {
     await repondre(`Je passe l'épreuve à 777 FCFA.\n\n\`\`\`action\n${JSON.stringify({ outil: "plan_modifier", args: { id: plan.id, prix: 777 } })}\n\`\`\`\n`);
-    await page.getByRole("button", { name: "Assistant", exact: true }).filter({ visible: true }).click();
-    await page.getByLabel("Question à l'assistant").fill("Passe l'épreuve à 777 FCFA");
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).filter({ visible: true }).click();
+    await page.getByLabel("Question à Tuteur IA Prep").fill("Passe l'épreuve à 777 FCFA");
     await page.getByRole("button", { name: "Envoyer" }).click();
     await page.getByText("Modifier une formule d'abonnement").waitFor({ timeout: 10000 });
     ok(page.__requete.onglet === "formules", "onglet envoyé : " + page.__requete.onglet);
@@ -1610,7 +1610,7 @@ console.log("\nAssistant IA du back-office (tous onglets)");
   await test("« Ignorer » n'exécute rien ; une action interdite proposée par le modèle est refusée par le serveur", async () => {
     await page.unroute("**/api/admin/assistant/ask");
     await repondre(`Je propose :\n\`\`\`action\n${JSON.stringify({ outil: "plan_modifier", args: { id: plan.id, prix: 555 } })}\n\`\`\`\n\`\`\`action\n${JSON.stringify({ outil: "utilisateur_supprimer", args: { id: "x" } })}\n\`\`\`\n`);
-    await page.getByLabel("Question à l'assistant").fill("Fais deux choses");
+    await page.getByLabel("Question à Tuteur IA Prep").fill("Fais deux choses");
     await page.getByRole("button", { name: "Envoyer" }).click();
     await page.getByText("utilisateur_supprimer").waitFor({ timeout: 10000 });
     const cartes = page.getByRole("button", { name: "Ignorer", exact: true });
@@ -1622,16 +1622,28 @@ console.log("\nAssistant IA du back-office (tous onglets)");
     ok(p.prix === plan.prix, "une action ignorée ou refusée a modifié la base : " + p.prix);
   });
 
-  await test("onglet Calendrier : question sur l'onglet (le résumé vient du serveur) et pas de doublon d'assistant sur Épreuves", async () => {
+  await test("onglet Calendrier : question sur l'onglet (le résumé vient du serveur), un seul assistant", async () => {
     await page.unroute("**/api/admin/assistant/ask");
     await repondre("Il y a des événements au calendrier.");
     await page.getByRole("tab", { name: "Calendrier" }).click();
-    await page.getByLabel("Question à l'assistant").fill("Que contient le calendrier ?");
+    await page.getByLabel("Question à Tuteur IA Prep").fill("Que contient le calendrier ?");
     await page.getByRole("button", { name: "Envoyer" }).click();
     await page.getByText("Il y a des événements au calendrier.").waitFor({ timeout: 10000 });
     ok(page.__requete.onglet === "calendrier", "onglet : " + page.__requete.onglet);
     await page.getByRole("tab", { name: "Épreuves" }).click();
-    ok((await page.getByLabel("Question à l'assistant").count()) === 0, "l'assistant global ne doit pas apparaître sur l'onglet Épreuves");
+    ok((await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).count()) === 1, "un seul lanceur Assistant attendu");
+    ok((await page.getByLabel("Question à Tuteur IA Prep").count()) === 0, "le tiroir doit être fermé après la bascule");
+  });
+
+  await test("bascule vers Épreuves : même assistant, protocole d'édition du texte", async () => {
+    await page.unroute("**/api/admin/assistant/ask");
+    await repondre("Voici une piste de corrigé.");
+    await page.getByRole("button", { name: "Ouvrir l'assistant admin" }).filter({ visible: true }).click();
+    await page.getByLabel("Question à Tuteur IA Prep").fill("Donne une piste de corrigé");
+    await page.getByRole("button", { name: "Envoyer" }).click();
+    await page.getByText("Voici une piste de corrigé.").waitFor({ timeout: 10000 });
+    ok(page.__requete.epreuve && Array.isArray(page.__requete.epreuve.sujets), "snapshot de l'épreuve absent : " + JSON.stringify(page.__requete));
+    ok(page.__requete.agent !== true && !page.__requete.onglet, "l'agent transverse ne doit pas être actif sur Épreuves : " + JSON.stringify(page.__requete));
   });
   await ctx.close();
 }
@@ -1852,13 +1864,19 @@ console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
     await ctx.request.delete("/api/admin/assistant/conversation/onglet:formules"); // départ propre, quel que soit l'état de la base
     await page.goto("/admin");
     await page.getByRole("tab", { name: "Formules" }).click();
-    await bouton("Assistant").click();
-    await poser("Question à l'assistant", Q);
-    const conv = await conversation("onglet:formules");
+    await bouton("Ouvrir l'assistant admin").click();
+    await poser("Question à Tuteur IA Prep", Q);
+    // La réponse est affichée en streaming : attendre la fin du flux (et son
+    // écriture serveur) avant de vérifier la conversation persistée.
+    let conv = await conversation("onglet:formules");
+    for (let i = 0; i < 20 && (!conv || conv.messages.length < 2); i++) {
+      await page.waitForTimeout(500);
+      conv = await conversation("onglet:formules");
+    }
     ok(conv.messages.filter((m) => m.role === "user" && m.content === Q).length === 1 && conv.messages.length === 2, `la question est dupliquée en base : ${JSON.stringify(conv.messages.map((m) => m.role))}`);
     await page.reload();
     await page.getByRole("tab", { name: "Formules" }).click();
-    await bouton("Assistant").click();
+    await bouton("Ouvrir l'assistant admin").click();
     await journal.getByText(Q).first().waitFor({ timeout: 10000 });
     ok((await journal.locator(".prose-chat").count()) >= 1, "la réponse n'est pas revenue");
     await page.getByRole("tab", { name: "Calendrier" }).click(); // le tiroir reste ouvert
@@ -1874,7 +1892,7 @@ console.log("\nMémoire de l'assistant admin (onglets et brouillon)");
     await page.waitForFunction(async () => (await (await fetch("/api/admin/assistant/conversation/onglet:formules")).json()).conversation === null, null, { timeout: 8000 });
     await page.reload();
     await page.getByRole("tab", { name: "Formules" }).click();
-    await bouton("Assistant").click();
+    await bouton("Ouvrir l'assistant admin").click();
     await page.getByText("Pose une question sur cet onglet").waitFor({ timeout: 10000 });
   });
 
@@ -2887,15 +2905,16 @@ console.log("\nBoutons flottants et débordement horizontal (bureau et mobile)")
       await resteFixe(page, page.getByRole("button", { name: "Ouvrir Tuteur IA Prep" }), "lanceur de l'assistant élève");
     });
 
-    await test(`${vue} › admin : lanceur « Ouvrir l'assistant admin » (Épreuves) et bouton « Assistant » (autres onglets) restent fixes et visibles`, async () => {
+    await test(`${vue} › admin : le lanceur unique « Ouvrir l'assistant admin » reste fixe et visible sur tous les onglets`, async () => {
       await page.goto("/admin");
-      const lanceur = page.getByRole("button", { name: "Ouvrir l'assistant admin" });
+      const lanceur = page.getByRole("button", { name: "Ouvrir l'assistant admin" }).filter({ visible: true });
       await lanceur.waitFor({ timeout: 15000 });
-      await resteFixe(page, lanceur, "lanceur de l'assistant d'épreuve");
+      await resteFixe(page, lanceur, "lanceur de l'assistant admin (Épreuves)");
       await ongletAdmin("utilisateurs");
-      const global = page.getByRole("button", { name: "Assistant", exact: true });
-      await global.waitFor({ timeout: 10000 });
-      await resteFixe(page, global, "bouton Assistant global");
+      const apresBascule = page.getByRole("button", { name: "Ouvrir l'assistant admin" }).filter({ visible: true });
+      await apresBascule.waitFor({ timeout: 10000 });
+      ok((await apresBascule.count()) === 1, "un seul lanceur Assistant attendu");
+      await resteFixe(page, apresBascule, "lanceur de l'assistant admin (autres onglets)");
     });
 
     if (vue === "mobile") {
