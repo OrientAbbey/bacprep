@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, FileUp, LoaderCircle, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
-import { api } from "../../api/client";
+import { Download, FileUp, ImagePlus, LoaderCircle, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { api, BASE_URL } from "../../api/client";
 import type {
   BanqueAdminData,
   BanqueClasseMeta,
@@ -49,6 +49,8 @@ const exerciceVide = (partie_id = ""): ExerciceForm => ({
 export function BanquePanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const fichierRef = useRef<HTMLInputElement>(null);
+  const imageRef = useRef<HTMLInputElement>(null);
+  const cibleImage = useRef<"sujet" | "corrige">("sujet");
   const sujetZoneRef = useRef<HTMLTextAreaElement>(null);
   const corrigeZoneRef = useRef<HTMLTextAreaElement>(null);
   const modeImportRef = useRef<"fusionner" | "remplacer">("fusionner");
@@ -165,6 +167,36 @@ export function BanquePanel({ token }: { token: string }) {
     });
     return () => { retrait(); retraitOuverture(); effacerContexteAdmin("banque"); };
   }, [exerciceForm, exerciceEnEdition, parties, data, partieSelectionnee]);
+
+  async function televerserImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier || !exerciceForm) return;
+    setOperation(true);
+    setOperationLibelle("Envoi de l’image…");
+    try {
+      const corps = new FormData();
+      corps.append("file", fichier);
+      const reponse = await fetch(`${BASE_URL}/api/admin/banque/images`, {
+        method: "POST", credentials: "include", headers: authHeaders(token), body: corps,
+      });
+      if (!reponse.ok) throw new Error(await reponse.text());
+      const image = (await reponse.json()) as { url: string };
+      const cible = cibleImage.current;
+      const zone = cible === "sujet" ? sujetZoneRef.current : corrigeZoneRef.current;
+      const texte = exerciceForm[cible];
+      const debut = zone?.selectionStart ?? texte.length;
+      const fin = zone?.selectionEnd ?? texte.length;
+      const insertion = `\n![${fichier.name.replace(/\.[^.]+$/, "")}](${image.url})\n`;
+      setExerciceForm({ ...exerciceForm, [cible]: texte.slice(0, debut) + insertion + texte.slice(fin) });
+      showToast("Image insérée dans le texte.", "success");
+    } catch (err) {
+      erreurAction(err, "L’envoi de l’image a échoué (5 Mo maximum, PNG/JPEG/WebP/GIF).");
+    } finally {
+      setOperation(false);
+      setOperationLibelle(null);
+    }
+  }
 
   function erreurAction(err: unknown, message: string) {
     if (!purgerSessionExpiree(err)) showToast(erreurDetail(err, message), "error");
@@ -514,20 +546,31 @@ export function BanquePanel({ token }: { token: string }) {
             <p className="text-[10px] text-slate">Coche au moins une classe : sans classe, l&apos;exercice n&apos;est proposé à aucun élève. Les spécialités restreignent le tirage aux séries cochées ; « Aucune spécialité » l&apos;ouvre à toutes.</p>
             <div className="grid gap-3 lg:grid-cols-2">
               <div className="space-y-1">
-                <label className="block text-xs">Sujet *</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-xs">Sujet *</label>
+                  <button type="button" onClick={() => { cibleImage.current = "sujet"; imageRef.current?.click(); }} className="flex min-h-[36px] items-center gap-1 rounded-full border border-ink-soft/25 px-3 text-[11px]">
+                    <ImagePlus size={13} aria-hidden="true" /> Image
+                  </button>
+                </div>
                 <FormulesToolbar textareaRef={sujetZoneRef} onChanger={(sujet) => setExerciceForm((f) => (f ? { ...f, sujet } : f))} />
                 <textarea ref={sujetZoneRef} required maxLength={100000} rows={9} value={exerciceForm.sujet} onChange={(e) => setExerciceForm({ ...exerciceForm, sujet: e.target.value })} className={surligne("sujet", "w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm")} />
                 <p className="font-mono-tag text-[10px] text-ink-soft">Rendu en temps réel</p>
                 <div className="max-h-72 overflow-y-auto rounded border border-ink-soft/15 bg-paper p-2"><MarkdownContent content={exerciceForm.sujet} variant="epreuve" /></div>
               </div>
               <div className="space-y-1">
-                <label className="block text-xs">Corrigé *</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-xs">Corrigé *</label>
+                  <button type="button" onClick={() => { cibleImage.current = "corrige"; imageRef.current?.click(); }} className="flex min-h-[36px] items-center gap-1 rounded-full border border-ink-soft/25 px-3 text-[11px]">
+                    <ImagePlus size={13} aria-hidden="true" /> Image
+                  </button>
+                </div>
                 <FormulesToolbar textareaRef={corrigeZoneRef} onChanger={(corrige) => setExerciceForm((f) => (f ? { ...f, corrige } : f))} />
                 <textarea ref={corrigeZoneRef} required maxLength={100000} rows={9} value={exerciceForm.corrige} onChange={(e) => setExerciceForm({ ...exerciceForm, corrige: e.target.value })} className={surligne("corrige", "w-full rounded border border-ink-soft/25 bg-paper p-3 font-mono text-sm")} />
                 <p className="font-mono-tag text-[10px] text-ink-soft">Rendu en temps réel</p>
                 <div className="max-h-72 overflow-y-auto rounded border border-ink-soft/15 bg-paper p-2"><MarkdownContent content={exerciceForm.corrige} variant="epreuve" /></div>
               </div>
             </div>
+            <input ref={imageRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Image à insérer dans l'exercice" className="hidden" onChange={(e) => void televerserImage(e)} />
             <div className="flex flex-wrap gap-2">
               <button disabled={operation} className={`${bouton} bg-ink text-paper`}><Save size={14} aria-hidden="true" /> Enregistrer</button>
               <button type="button" onClick={() => { setExerciceForm(null); setExerciceEnEdition(null); }} className={bouton}>Annuler</button>
@@ -581,7 +624,11 @@ export function BanquePanel({ token }: { token: string }) {
           <ul className="max-h-96 divide-y divide-ink-soft/10 overflow-y-auto">
             {journal.map((entry) => <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
               <span className="font-mono-tag text-[10px] text-slate">{entry.type}</span>
-              <span className="min-w-0 flex-1 truncate">{String(entry.params.matiere ?? "—")} · {String(entry.params.classe ?? "—")} · {String(entry.details.count ?? "—")} exercice(s)</span>
+              <span className="min-w-0 flex-1 truncate">
+                {entry.details?.description
+                  ? String(entry.details.description)
+                  : `${String(entry.params.matiere ?? "—")} · ${String(entry.params.classe ?? "—")} · ${String(entry.details.count ?? "—")} exercice(s)`}
+              </span>
               <span className="text-xs text-slate" title={new Date(entry.created_at).toLocaleString("fr-FR")}>{formatRelativeTime(entry.created_at)}</span>
             </li>)}
           </ul>

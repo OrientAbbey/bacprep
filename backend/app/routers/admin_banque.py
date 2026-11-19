@@ -11,19 +11,20 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..core import referentiel_options
+from ..core import epreuve_files, images, referentiel_options
 from ..core.banque_generation import DIFFICULTES, SPECIAL_AUCUNE
 from ..core.logging_config import get_logger
 from ..core.storage import get_storage
 from ..db import get_db, utc_now
 from ..db_models import (
     BanqueClasseMetaORM,
+    BanqueImageORM,
     BanqueExerciceORM,
     BanqueJournalORM,
     BanquePartieORM,
@@ -35,6 +36,45 @@ router = APIRouter(prefix="/api/admin/banque", tags=["admin-banque"])
 log = get_logger("admin_banque")
 
 ID_32 = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _journal_admin(
+    db: Session,
+    email: str,
+    type_evenement: str,
+    cible: str,
+    details: dict[str, Any],
+    matiere: str = "",
+    classe: str = "",
+) -> None:
+    """Trace les modifications admin dans le journal d'exploitation de la banque.
+
+    Le journal technique du générateur (générations élèves) et l'audit admin
+    sont distincts ; consigner ici les créations/modifications d'exercices
+    rend le panneau « Journal des générations » utile aussi côté administration.
+    `description` est un résumé lisible affiché tel quel par le panneau admin.
+    """
+    db.add(
+        BanqueJournalORM(
+            user_id=email,
+            generation_id=f"admin:{cible}",
+            type=type_evenement,
+            params_json=json.dumps(
+                {"cible": cible, "matiere": matiere, "classe": classe}, ensure_ascii=False
+            ),
+            details_json=json.dumps(details, ensure_ascii=False),
+        )
+    )
+
+
+def _description_exercice(row: BanqueExerciceORM, prefix: str) -> tuple[str, str, str]:
+    """Résumé lisible d'un exercice pour le journal, avec matière/classe affichées."""
+    matieres = json.loads(row.matieres_json)
+    classes = json.loads(row.classes_json)
+    matiere = matieres[0] if matieres else ""
+    classe = classes[0] if classes else ""
+    contexte = " · ".join(part for part in (", ".join(matieres), ", ".join(classes)) if part)
+    return (f"{prefix} — {contexte}" if contexte else prefix), matiere, classe
 
 
 def _archiver_snapshot(snapshot: dict[str, Any]) -> str | None:
@@ -278,6 +318,12 @@ def creer_partie(payload: PartieIn, db: Session = Depends(get_db), lock=Depends(
         db.rollback()
         raise HTTPException(409, "Une partie porte déjà ce nom pour cette matière") from exc
     log_admin_event(db, None, "banque_partie_creee", lock.email, _partie_out(row))
+    _journal_admin(
+        db, lock.email, "ADMIN_PARTIE_CREE", row.id,
+        {**_partie_out(row), "description": f"Partie « {row.nom} » — {row.matiere}"},
+        matiere=row.matiere,
+    )
+    db.commit()
     return _partie_out(row)
 
 
@@ -298,6 +344,12 @@ def modifier_partie(partie_id: str, payload: PartieIn, db: Session = Depends(get
         db.rollback()
         raise HTTPException(409, "Une partie porte déjà ce nom pour cette matière") from exc
     log_admin_event(db, None, "banque_partie_modifiee", lock.email, _partie_out(row))
+    _journal_admin(
+        db, lock.email, "ADMIN_PARTIE_MODIFIEE", row.id,
+        {**_partie_out(row), "description": f"Partie modifiée « {row.nom} » — {row.matiere}"},
+        matiere=row.matiere,
+    )
+    db.commit()
     return _partie_out(row)
 
 
@@ -312,6 +364,12 @@ def supprimer_partie(partie_id: str, db: Session = Depends(get_db), lock=Depends
     db.delete(row)
     db.commit()
     log_admin_event(db, None, "banque_partie_supprimee", lock.email, details)
+    _journal_admin(
+        db, lock.email, "ADMIN_PARTIE_SUPPRIMEE", details["id"],
+        {**details, "description": f"Partie supprimée « {details['nom']} » — {details['matiere']}"},
+        matiere=details["matiere"],
+    )
+    db.commit()
     return {"ok": True}
 
 
@@ -331,6 +389,13 @@ def creer_exercice(payload: ExerciceIn, db: Session = Depends(get_db), lock=Depe
         db.rollback()
         raise HTTPException(409, "Cet identifiant d'exercice existe déjà") from exc
     log_admin_event(db, None, "banque_exercice_cree", lock.email, {"id": row.id, "partie_id": row.partie_id})
+    description, matiere, classe = _description_exercice(row, "Exercice créé")
+    _journal_admin(db, lock.email, "ADMIN_EXERCICE_CREE", row.id, {
+        "partie_id": row.partie_id, "matieres": data["matieres"],
+        "niveau": row.niveau_intrinseque, "session": row.session,
+        "sujet_longueur": len(row.sujet), "description": description,
+    }, matiere=matiere, classe=classe)
+    db.commit()
     return _exercice_out(row)
 
 
@@ -349,6 +414,13 @@ def modifier_exercice(exercice_id: str, payload: ExerciceIn, db: Session = Depen
     row.series_json = json.dumps(data["series"], ensure_ascii=False)
     db.commit()
     log_admin_event(db, None, "banque_exercice_modifie", lock.email, {"id": row.id})
+    description, matiere, classe = _description_exercice(row, "Exercice modifié")
+    _journal_admin(
+        db, lock.email, "ADMIN_EXERCICE_MODIFIE", row.id,
+        {"partie_id": row.partie_id, "description": description},
+        matiere=matiere, classe=classe,
+    )
+    db.commit()
     return _exercice_out(row)
 
 
@@ -360,6 +432,13 @@ def supprimer_exercice(exercice_id: str, db: Session = Depends(get_db), lock=Dep
     db.delete(row)
     db.commit()
     log_admin_event(db, None, "banque_exercice_supprime", lock.email, {"id": row.id})
+    description, matiere, classe = _description_exercice(row, "Exercice supprimé")
+    _journal_admin(
+        db, lock.email, "ADMIN_EXERCICE_SUPPRIME", row.id,
+        {"partie_id": row.partie_id, "description": description},
+        matiere=matiere, classe=classe,
+    )
+    db.commit()
     return {"ok": True}
 
 
@@ -377,6 +456,58 @@ def definir_meta_classe(classe: str, payload: ClasseMetaIn, db: Session = Depend
     result = {"classe": classe, **payload.model_dump()}
     log_admin_event(db, None, "banque_classe_meta_modifiee", lock.email, result)
     return result
+
+
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+@router.post("/images")
+def upload_image_banque(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Dépose une illustration (figure, graphique, schéma) pour un exercice.
+
+    Mêmes garde-fous que les images d'épreuve : types autorisés, 5 Mo maximum,
+    ré-encodage via Pillow. L'URL renvoyée s'insère directement dans le
+    Markdown de l'exercice : `![Légende](/api/banque/images/{id})`.
+    """
+    if file.content_type not in epreuve_files.ALLOWED_IMAGE_MIME:
+        raise HTTPException(400, f"Type de fichier non autorisé: {file.content_type}")
+    brut = file.file.read(MAX_IMAGE_BYTES + 1)
+    if len(brut) > MAX_IMAGE_BYTES:
+        raise HTTPException(413, "Image trop volumineuse (5 Mo maximum)")
+    try:
+        data, mime, width, height = images.process_image(brut, file.content_type or "")
+    except images.InvalidImageError as exc:
+        raise HTTPException(415, f"Fichier image invalide : {exc}") from exc
+
+    import os
+
+    ext = os.path.splitext(file.filename or "")[1] or ".png"
+    cle = f"banque/images/{uuid.uuid4().hex[:8]}-{uuid.uuid4().hex[:8]}{ext}"
+    from ..core.storage import get_storage
+
+    get_storage().put_bytes(cle, data, mime)
+    ligne = BanqueImageORM(
+        filename=(file.filename or "image.png")[:160],
+        storage_key=cle,
+        mime_type=mime,
+        size_bytes=len(data),
+        width=width,
+        height=height,
+    )
+    db.add(ligne)
+    db.commit()
+    log_admin_event(db, None, "banque_image_uploadee", lock.email, {"id": ligne.id, "filename": ligne.filename})
+    _journal_admin(
+        db, lock.email, "ADMIN_IMAGE_AJOUTEE", ligne.id,
+        {"id": ligne.id, "filename": ligne.filename,
+         "description": f"Image ajoutée « {ligne.filename} » ({ligne.width}×{ligne.height})"},
+    )
+    db.commit()
+    return {"id": ligne.id, "url": f"/api/banque/images/{ligne.id}", "filename": ligne.filename}
 
 
 @router.get("/journal")

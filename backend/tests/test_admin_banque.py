@@ -17,6 +17,50 @@ def _cree_matiere(admin, code: str) -> None:
     assert r.status_code == 200, r.text
 
 
+def test_upload_image_banque_et_url_publique(admin, client):
+    import io
+
+    from PIL import Image
+
+    tampon = io.BytesIO()
+    Image.new("RGB", (40, 30), "white").save(tampon, format="PNG")
+    tampon.seek(0)
+    r = admin.post(
+        "/api/admin/banque/images",
+        files={"file": ("schema.png", tampon.getvalue(), "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    image = r.json()
+    assert image["url"].startswith("/api/banque/images/")
+    public = client.get(image["url"])
+    assert public.status_code == 200 and public.headers["content-type"].startswith("image/")
+    assert client.get("/api/banque/images/inconnu").status_code == 404
+
+
+def test_journal_admin_enregistre_les_modifications(admin, db):
+    matiere = "Banque Journal Test"
+    _cree_matiere(admin, matiere)
+    db.query(BanqueJournalORM).filter(BanqueJournalORM.user_id.like("%@%")).delete()
+    db.commit()
+    partie = admin.post("/api/admin/banque/parties", json={"matiere": matiere, "nom": "Chimie"}).json()
+    exercice = admin.post("/api/admin/banque/exercices", json={
+        "sujet": "Sujet journal", "corrige": "Corrige journal", "partie_id": partie["id"],
+        "session": None, "niveau_intrinseque": "Moyen", "tag_examen": False, "actif": True,
+        "matieres": [matiere], "classes": ["terminale"], "series": [],
+    }).json()
+    journal = admin.get("/api/admin/banque/journal?limit=20").json()
+    types = [row["type"] for row in journal]
+    assert "ADMIN_PARTIE_CREE" in types
+    assert "ADMIN_EXERCICE_CREE" in types
+    cree = next(row for row in journal if row["type"] == "ADMIN_EXERCICE_CREE")
+    assert cree["user_id"] and cree["details"]["partie_id"] == partie["id"]
+    assert cree["generation_id"] == f"admin:{exercice['id']}"
+    assert cree["details"]["description"].startswith("Exercice créé")
+    assert cree["params"]["matiere"] == matiere
+    admin.delete(f"/api/admin/banque/exercices/{exercice['id']}")
+    admin.delete(f"/api/admin/banque/parties/{partie['id']}")
+
+
 def test_admin_banque_crud_et_garde_fous(admin, db):
     # Le référentiel est conservé entre tests ; repartir d'un état connu même
     # si une exécution précédente a été interrompue avant son nettoyage.
