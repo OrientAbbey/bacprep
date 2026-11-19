@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  Bot,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -16,7 +17,7 @@ import { AdminStats } from "../api/types";
 import { useToast } from "../components/Toast";
 import { Spinner } from "../components/Spinner";
 import { messageErreurConnexion } from "../lib/messageConnexion";
-import { AdminAssistantGlobal } from "./admin/AdminAssistantGlobal";
+import { AdminAssistantPanel } from "./admin/AdminAssistantPanel";
 import { BandeauOperations } from "./admin/BandeauOperations";
 import { CalendrierPanel } from "./admin/CalendrierPanel";
 import { GabaritsPanel } from "./admin/GabaritsPanel";
@@ -99,6 +100,7 @@ export function AdminPage() {
   // volontaire pour garder l'URL stable).
   // Incrémenté après une action confirmée de l'assistant : remonte le panneau actif (données à jour).
   const [rafraichir, setRafraichir] = useState(0);
+  const [assistantOuvert, setAssistantOuvert] = useState(false);
   const [tab, setTab] = useState<Onglet>(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
     return ONGLETS.includes(t as Onglet) ? (t as Onglet) : "epreuves";
@@ -547,6 +549,7 @@ export function AdminPage() {
             detailAOpenir={detailAOpenir}
             onDetailOuvert={() => setDetailAOpenir(null)}
             onEpreuvesChange={() => loadStats(token)}
+            actif={tab === "epreuves"}
           />
         </div>
         <div key={rafraichir}>
@@ -584,11 +587,25 @@ export function AdminPage() {
           null
         )}
         </div>
-        {/* Assistant de tous les onglets sauf Épreuves, qui a son propre assistant d'édition. */}
-        {tab !== "epreuves" && (
-          <AdminAssistantGlobal
+        {/* Assistant unique du back-office : même interface partout, mode agent
+            ici, mode édition dans le panneau Épreuves. */}
+        {tab !== "epreuves" && !assistantOuvert && (
+          <button
+            type="button"
+            onClick={() => setAssistantOuvert(true)}
+            title="Poser une question à l'assistant admin"
+            aria-label="Ouvrir l'assistant admin"
+            className="fixed bottom-4 right-4 z-40 flex min-h-[48px] items-center gap-2 rounded-full bg-ink px-4 text-sm text-paper shadow-lg"
+          >
+            <Bot size={16} aria-hidden="true" />
+            Assistant
+          </button>
+        )}
+        {tab !== "epreuves" && assistantOuvert && (
+          <AdminAssistantPanel
             token={token}
             onglet={tab}
+            onClose={() => setAssistantOuvert(false)}
             onAction={() => {
               setRafraichir((n) => n + 1);
               loadStats(token);
