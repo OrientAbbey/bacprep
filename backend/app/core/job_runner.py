@@ -70,16 +70,19 @@ def duree_ms(debut, fin) -> Optional[int]:
 
 
 def dossier_temporaire(job_id: str) -> Path:
+    """Dossier de travail d'un job de sauvegarde, sous DATA_DIR (fichiers transitoires supprimés en fin de job)."""
     return Path(os.getenv("DATA_DIR", ".")) / TVA_SAUVEGARDES / job_id
 
 
 def dossier_job_import(job_id: str) -> Path:
+    """Dossier de travail d'un job d'import, sous IMPORTS_DIR/jobs (archive source et fichiers intermédiaires)."""
     from ..db import IMPORTS_DIR
 
     return IMPORTS_DIR / "jobs" / job_id
 
 
 def cle_source_import(job_id: str) -> str:
+    """Clé de stockage de l'archive ZIP source d'un job d'import (permet de relire le fichier après coup)."""
     return f"{PREFIXE_SOURCES_IMPORT}/{job_id}/source.zip"
 
 
@@ -174,12 +177,14 @@ def _executer_export(job_id: str) -> bool:
         db.commit()
 
         def noter(message: str) -> None:
+            """Ajoute une ligne de texte au journal du job en cours (trace consultable par l'admin)."""
             logs.append(message)
             job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
             job.heartbeat_at = utc_now()
             db.commit()
 
         def progresser(fichiers, total, parties, parties_total, octets) -> None:
+            """Met à jour la progression d'un export : fichiers, parties et octets traités."""
             job.fichiers_faits = fichiers
             job.total_fichiers = total
             job.partie_courante = parties
@@ -189,6 +194,7 @@ def _executer_export(job_id: str) -> bool:
             db.commit()
 
         def changer_phase(nom: str) -> None:
+            """Change la phase affichée du job (« analyse », « écriture », « finalisation »…)."""
             moment = utc_now()
             job.phase = nom
             job.phase_started_at = moment
@@ -275,12 +281,14 @@ def _executer_restauration(job_id: str) -> bool:
         db.commit()
 
         def noter(message: str) -> None:
+            """Ajoute une ligne de texte au journal du job en cours (trace consultable par l'admin)."""
             logs.append(message)
             job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
             job.heartbeat_at = utc_now()
             db.commit()
 
         def progresser(fichiers, total, octets, parties, parties_total) -> None:
+            """Met à jour la progression d'un import : fichiers, octets et parties traités."""
             job.fichiers_faits = fichiers
             job.total_fichiers = total
             job.octets_faits = octets
@@ -290,6 +298,7 @@ def _executer_restauration(job_id: str) -> bool:
             db.commit()
 
         def changer_phase(nom: str) -> None:
+            """Change la phase affichée du job (« analyse », « écriture », « finalisation »…)."""
             moment = utc_now()
             job.phase = nom
             job.phase_started_at = moment
@@ -445,6 +454,7 @@ def _executer_import(job_id: str) -> bool:
         extract_dir = Path(params.get("extract_dir") or (dossier_job_import(job_id) / "contenu"))
 
         def persister_log(message: str) -> None:
+            """Écrit une ligne dans le journal persisté du job (consultable par l'admin)."""
             logs.append(message)
             job.logs_json = json.dumps(logs, ensure_ascii=False)
             job.heartbeat_at = utc_now()

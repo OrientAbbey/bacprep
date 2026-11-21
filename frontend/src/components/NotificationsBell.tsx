@@ -24,6 +24,7 @@ function loadNotifications(setData: (d: NotificationsEleve | null) => void) {
     .catch(() => undefined);
 }
 
+/** Cloche de notifications avec badge de compteur et liste déroulante. */
 export function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<NotificationsEleve | null>(null);

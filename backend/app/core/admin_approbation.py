@@ -37,6 +37,7 @@ def _canonical(actions: list[dict]) -> str:
     """Sérialisation déterministe des actions approuvées."""
 
     def propre(value: Any) -> Any:
+        """Normalise une valeur en structure JSON sûre à signer (sans clés internes)."""
         if isinstance(value, dict):
             return {k: propre(value[k]) for k in sorted(value)}
         if isinstance(value, list):

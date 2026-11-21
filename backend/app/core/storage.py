@@ -48,20 +48,38 @@ class _IterChunks(io.RawIOBase):
     """
 
     def __init__(self, chunks):
+        """Initialise l'adaptateur avec l'itérable de blocs à consommer.
+
+        Args:
+            chunks: itérable de ``bytes``, ``bytearray`` ou ``memoryview``.
+        """
         self._it = iter(chunks)
         self._buf = b""
         self._pos = 0
 
     def readable(self) -> bool:
+        """Indique que l'objet est en lecture seule (contrat ``RawIOBase``)."""
         return True
 
     def seekable(self) -> bool:
+        """Indique que l'objet ne permet pas de déplacement (flux séquentiel)."""
         return False
 
     def writable(self) -> bool:
+        """Indique que l'objet ne permet pas d'écriture."""
         return False
 
     def read(self, size: int = -1) -> bytes:
+        """Renvoie au plus ``size`` octets, en ne puisant dans l'itérable que
+        le nécessaire pour satisfaire la demande.
+
+        Args:
+            size: nombre d'octets attendus ; ``-1`` signifie « tout le reste ».
+
+        Returns:
+            Les octets disponibles (éventuellement moins que ``size`` en fin
+            de flux).
+        """
         # `zipfile` demande des blocs de taille fixe ; on sert exactement ce
         # qu'il demande pour ne pas charger plus que nécessaire.
         while len(self._buf) - self._pos < size:
@@ -81,6 +99,8 @@ class _IterChunks(io.RawIOBase):
         return out
 
     def readinto(self, view) -> int:
+        """Lit directement dans le tampon ``view`` et renvoie le nombre
+        d'octets écrits (évite une copie supplémentaire pour boto3)."""
         data = self.read(len(view))
         view[: len(data)] = data
         return len(data)
@@ -104,9 +124,13 @@ class StorageService(Protocol):
 
     backend: str
 
-    def put_bytes(self, key: str, data: bytes, mime_type: str = "") -> None: ...
+    def put_bytes(self, key: str, data: bytes, mime_type: str = "") -> None:
+        """Écrit un objet entier sous ``key``, avec son type MIME si connu."""
+        ...
 
-    def get_bytes(self, key: str) -> bytes: ...
+    def get_bytes(self, key: str) -> bytes:
+        """Lit et renvoie l'objet entier ; lève ``StorageError`` s'il est absent."""
+        ...
 
     def put_stream(
         self, key: str, chunks, size: Optional[int] = None, mime_type: str = ""
@@ -135,9 +159,14 @@ class StorageService(Protocol):
         """
         yield self.get_bytes(key)
 
-    def delete(self, key: str) -> None: ...
+    def delete(self, key: str) -> None:
+        """Supprime l'objet ; une clé absente est tolérée (suppression
+        idempotente, nécessaire lors des remplacements de fichiers)."""
+        ...
 
-    def exists(self, key: str) -> bool: ...
+    def exists(self, key: str) -> bool:
+        """Indique si l'objet existe, sans le charger."""
+        ...
 
     def list_objects(self, prefix: str) -> list[dict]:
         """Liste les objets sous un préfixe : `[{cle, taille, modifie}, ...]`.
@@ -171,27 +200,39 @@ class LocalStorage:
     backend = "local"
 
     def __init__(self, root: Path):
+        """Prépare le répertoire racine dans lequel les clés sont résolues.
+
+        Args:
+            root: dossier racine, créé s'il n'existe pas.
+        """
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, key: str) -> Path:
+        """Résout une clé en chemin disque, en vérifiant qu'il reste sous la
+        racine (double garde anti path-traversal après ``normalize_key``)."""
         path = (self.root / normalize_key(key)).resolve()
         # Double garde après resolve() : la clé ne doit jamais sortir de la racine.
         path.relative_to(self.root)
         return path
 
     def put_bytes(self, key: str, data: bytes, mime_type: str = "") -> None:
+        """Écrit les octets sur disque ; le type MIME est ignoré en local
+        (le service FastAPI le retrouve depuis la base)."""
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
     def get_bytes(self, key: str) -> bytes:
+        """Lit le fichier ; lève ``StorageError`` s'il n'existe pas."""
         path = self._path(key)
         if not path.is_file():
             raise StorageError(f"Objet introuvable: {key}")
         return path.read_bytes()
 
     def put_stream(self, key: str, chunks, size: Optional[int] = None, mime_type: str = "") -> None:
+        """Écrit les blocs directement sur disque (mémoire constante) et
+        vérifie la taille annoncée si elle est fournie."""
         # Écriture directe sur disque : la taille peut dépasser la mémoire.
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -204,6 +245,7 @@ class LocalStorage:
             )
 
     def open_read(self, key: str, chunk_size: int = 1024 * 1024):
+        """Lit le fichier par blocs de ``chunk_size`` octets (export en flux)."""
         path = self._path(key)
         if not path.is_file():
             raise StorageError(f"Objet introuvable: {key}")
@@ -215,6 +257,7 @@ class LocalStorage:
                 yield bloc
 
     def delete(self, key: str) -> None:
+        """Supprime le fichier puis remonte les dossiers parents devenus vides."""
         path = self._path(key)
         if path.is_file():
             path.unlink()
@@ -226,9 +269,12 @@ class LocalStorage:
                 parent = parent.parent
 
     def exists(self, key: str) -> bool:
+        """Indique si le fichier existe sur disque."""
         return self._path(key).is_file()
 
     def list_objects(self, prefix: str) -> list[dict]:
+        """Liste récursivement les fichiers sous le préfixe, avec leur
+        taille et leur date de modification UTC (contrat ``StorageService``)."""
         base = self.root / normalize_key(prefix)
         if not base.is_dir():
             return []
@@ -247,6 +293,8 @@ class LocalStorage:
         return trouves
 
     def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
+        """Pas d'URL signée en local : toujours ``None`` (le service FastAPI
+        sert le fichier directement)."""
         return None
 
     def local_path(self, key: str) -> Optional[Path]:
@@ -286,6 +334,14 @@ class S3CompatibleStorage:
         secret_access_key: str,
         bucket: str,
     ):
+        """Crée le client boto3 (import tardif : inutile en développement).
+
+        Args:
+            endpoint_url: URL S3 du fournisseur.
+            region_name: région du bucket.
+            access_key_id, secret_access_key: identifiants d'accès.
+            bucket: nom du bucket privé existant.
+        """
         import boto3  # import tardif : inutile en développement local
         from botocore.config import Config
 
@@ -302,14 +358,19 @@ class S3CompatibleStorage:
         )
 
     def put_bytes(self, key: str, data: bytes, mime_type: str = "") -> None:
+        """Dépose l'objet entier dans le bucket, avec son Content-Type."""
         extra = {"ContentType": mime_type} if mime_type else {}
         self._client.put_object(Bucket=self.bucket, Key=normalize_key(key), Body=data, **extra)
 
     def get_bytes(self, key: str) -> bytes:
+        """Télécharge l'objet et le renvoie entier en mémoire."""
         resp = self._client.get_object(Bucket=self.bucket, Key=normalize_key(key))
         return resp["Body"].read()
 
     def put_stream(self, key: str, chunks, size: Optional[int] = None, mime_type: str = "") -> None:
+        """Envoie les blocs via ``upload_fileobj`` (multipart au-delà du
+        seuil AWS) : la mémoire reste constante quelle que soit la taille.
+        Vérifie la taille annoncée par un ``head_object`` si elle est fournie."""
         # `upload_fileobj` déclenche le multipart AWS au-delà du seuil : la
         # mémoire reste constante quelle que soit la taille de l'objet. Le
         # ContentType est fixé par un put_object vide préalable, upload_fileobj
@@ -328,6 +389,8 @@ class S3CompatibleStorage:
                 )
 
     def open_read(self, key: str, chunk_size: int = 1024 * 1024):
+        """Itère sur l'objet S3 par blocs, en fermant toujours le corps
+        de réponse même si le consommateur interrompt la lecture."""
         resp = self._client.get_object(Bucket=self.bucket, Key=normalize_key(key))
         body = resp["Body"]
         try:
@@ -340,9 +403,11 @@ class S3CompatibleStorage:
             body.close()
 
     def delete(self, key: str) -> None:
+        """Supprime l'objet du bucket (idempotent côté S3)."""
         self._client.delete_object(Bucket=self.bucket, Key=normalize_key(key))
 
     def exists(self, key: str) -> bool:
+        """Teste l'existence par ``head_object``, sans télécharger l'objet."""
         import botocore.exceptions
 
         try:
@@ -352,6 +417,8 @@ class S3CompatibleStorage:
             return False
 
     def list_objects(self, prefix: str) -> list[dict]:
+        """Liste les objets sous le préfixe en parcourant toutes les pages
+        de ``list_objects_v2`` (le bucket peut en contenir plus de 1000)."""
         trouves: list[dict] = []
         pagineur = self._client.get_paginator("list_objects_v2")
         for page in pagineur.paginate(Bucket=self.bucket, Prefix=normalize_key(prefix)):
@@ -366,6 +433,8 @@ class S3CompatibleStorage:
         return trouves
 
     def presigned_url(self, key: str, expires_seconds: int = 900, content_disposition: Optional[str] = None) -> Optional[str]:
+        """Génère une URL signée valable ``expires_seconds`` ; le
+        ``content_disposition`` force le téléchargement côté navigateur."""
         params = {"Bucket": self.bucket, "Key": normalize_key(key)}
         if content_disposition:
             params["ResponseContentDisposition"] = content_disposition

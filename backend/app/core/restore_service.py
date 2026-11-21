@@ -502,7 +502,7 @@ def _restauration_incomplete(report: dict) -> bool:
     )
 
 
-def _controler_partie(zf: zipfile.ZipFile) -> list[str]:
+def _controler_partie(fichier_zip: zipfile.ZipFile) -> list[str]:
     """Contrôle la STRUCTURE d'une partie avant d'en extraire quoi que ce soit.
 
     Deux entrées de même nom sont ambiguës — c'est le vecteur classique de
@@ -513,7 +513,7 @@ def _controler_partie(zf: zipfile.ZipFile) -> list[str]:
     """
     problemes: list[str] = []
     vues: set[str] = set()
-    for info in zf.infolist():
+    for info in fichier_zip.infolist():
         if info.is_dir():
             continue
         try:
@@ -529,7 +529,7 @@ def _controler_partie(zf: zipfile.ZipFile) -> list[str]:
 
 def _restaurer_un(
     db: Session,
-    zf: zipfile.ZipFile,
+    fichier_zip: zipfile.ZipFile,
     info: zipfile.ZipInfo,
     attendu: dict,
     stockage,
@@ -546,7 +546,7 @@ def _restaurer_un(
     """
     total = 0
     h = hashlib.sha256()
-    with zf.open(info) as src:
+    with fichier_zip.open(info) as src:
         for bloc in iter(lambda: src.read(_BLOC), b""):
             h.update(bloc)
             total += len(bloc)
@@ -576,7 +576,8 @@ def _restaurer_un(
 
     if not dry_run:
         def flux():
-            with zf.open(info) as src:
+            """Parcourt les objets de la sauvegarde en flux (sans charger l'archive entière)."""
+            with fichier_zip.open(info) as src:
                 for bloc in iter(lambda: src.read(_BLOC), b""):
                     yield bloc
 

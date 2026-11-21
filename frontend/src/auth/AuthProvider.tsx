@@ -4,6 +4,7 @@ import { useToast } from "../components/Toast";
 import { t } from "../i18n";
 import { viderHorsLigne } from "../lib/horsLigne";
 
+/** Utilisateur connecté exposé à toute l'application (identité, droits, consentements). */
 export interface User {
   id: string;
   email: string;
@@ -48,6 +49,7 @@ const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000];
  * OU écran tactile étroit), "web" sinon. Envoyée à la connexion et affichée
  * dans le fil d'activité du profil (« Connexion à ton compte (mobile) /
  * (ordinateur) »). */
+/** Déduit la plateforme d'origine (mobile ou web) de l'agent utilisateur, pour les stats de connexion. */
 export function detectPlatform(): "mobile" | "web" {
   if (typeof navigator === "undefined") return "web";
   const mobileUa =
@@ -56,6 +58,7 @@ export function detectPlatform(): "mobile" | "web" {
   return mobileUa || (navigator.maxTouchPoints > 0 && window.innerWidth < 1024) ? "mobile" : "web";
 }
 
+/** Fournit le contexte d'authentification : utilisateur courant, chargement et gestion de la déconnexion forcée. */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -198,6 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Accède au contexte d'authentification ; lève une erreur hors AuthProvider. */
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth doit être utilisé dans un AuthProvider");

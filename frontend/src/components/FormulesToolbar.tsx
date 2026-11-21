@@ -9,6 +9,7 @@ import { GROUPES_OUTILS, type OutilFormule } from "../lib/renduMath";
  * puis la portion à remplacer est sélectionnée (modèle `§…§` dans renduMath).
  * Tout est accessible au clavier : chaque outil est un vrai `<button>`.
  */
+/** Barre d'outils insérant formules LaTeX, blocs chimie et images dans un éditeur Markdown. */
 export function FormulesToolbar({
   textareaRef,
   onChanger,

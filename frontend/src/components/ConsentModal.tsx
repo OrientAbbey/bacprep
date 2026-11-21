@@ -19,6 +19,7 @@ import { t } from "../i18n";
  * En cas d'échec réseau ou serveur, elle reste affichée avec un message
  * d'erreur et le bouton reste disponible pour réessayer.
  */
+/** Modale de recueil des consentements avant toute utilisation des discussions ou notes IA. */
 export function ConsentModal() {
   const { user, refreshUser } = useAuth();
   const [iaOk, setIaOk] = useState(false);

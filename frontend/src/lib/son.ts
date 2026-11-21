@@ -12,6 +12,7 @@ export function sonActif(): boolean {
   }
 }
 
+/** Active ou coupe le son global (alarme du chronomètre), en mémorisant le choix. */
 export function reglerSon(actif: boolean): void {
   try {
     localStorage.setItem(CLE, actif ? "on" : "off");
@@ -38,6 +39,7 @@ export function preparerSon(): void {
   }
 }
 
+/** Durée maximale d'une alarme non arrêtée manuellement avant coupure automatique. */
 export const DUREE_ALARME_MS = 60_000;
 const PERIODE_BIP_MS = 800;
 

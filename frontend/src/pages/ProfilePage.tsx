@@ -87,6 +87,7 @@ const ONGLETS_PROFIL: [OngletProfil, string][] = [
   ["donnees", t("Confidentialité")],
 ];
 
+/** Profil de l'utilisateur : identité, abonnements, activité et export/suppression de compte. */
 export function ProfilePage() {
   const [profil, setProfil] = useState<Profil | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);

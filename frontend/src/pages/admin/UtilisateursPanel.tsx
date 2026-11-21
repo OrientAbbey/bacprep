@@ -17,6 +17,7 @@ import { authHeaders, purgerSessionExpiree } from "./shared";
  * SANS donnée sensible : rien de secret n'est stocké dans le produit
  * (connexion Google/mock, paiement par référence d'agrégateur), et la table
  * ne présente que ce que l'utilisateur a accepté de partager. */
+/** Panneau de gestion des comptes, droits et abonnements utilisateurs. */
 export function UtilisateursPanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const [rows, setRows] = useState<AdminUtilisateur[] | null>(null);

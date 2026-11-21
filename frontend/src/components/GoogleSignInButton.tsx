@@ -1,9 +1,26 @@
 import { useEffect, useRef } from "react";
 import { useTheme } from "../theme/ThemeProvider";
 
+/** Surface minimale de l'API Google Identity utilisée par ce bouton. */
+interface GoogleIdentity {
+  accounts: {
+    id: {
+      initialize: (options: {
+        client_id: string;
+        callback: (response: { credential: string }) => void;
+      }) => void;
+      renderButton: (element: HTMLElement, options: {
+        theme: string;
+        size: string;
+        width: number;
+      }) => void;
+    };
+  };
+}
+
 declare global {
   interface Window {
-    google?: any;
+    google?: GoogleIdentity;
   }
 }
 
@@ -41,6 +58,7 @@ function chargerScriptGsi(): Promise<void> {
   return promesseScript;
 }
 
+/** Bouton de connexion Google Identity Services, chargé uniquement si configuré. */
 export function GoogleSignInButton({
   clientId,
   onCredential,

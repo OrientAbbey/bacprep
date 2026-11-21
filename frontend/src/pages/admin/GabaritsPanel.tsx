@@ -24,6 +24,7 @@ import { authHeaders, erreurDetail, purgerSessionExpiree } from "./shared";
  *
  * Console admin : textes en français uniquement (comme les autres panneaux).
  */
+/** Panneau de relecture et validation des exercices types (gabarits paramétrés). */
 export function GabaritsPanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const [lignes, setLignes] = useState<LigneGabarit[] | null>(null);

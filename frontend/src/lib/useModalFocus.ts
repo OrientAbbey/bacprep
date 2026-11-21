@@ -65,6 +65,7 @@ function estDialogueAuDessus(dialog: HTMLElement | null): boolean {
  * `open` doit valoir true uniquement quand le dialogue est affiché, car
  * c'est le montage/démontage du composant qui délimite l'entrée/sortie.
  */
+/** Hook de gestion du focus et de la touche Échap dans une modale. */
 export function useModalFocus<T extends HTMLElement>({
   open,
   onClose,

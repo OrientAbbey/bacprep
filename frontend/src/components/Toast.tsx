@@ -37,6 +37,7 @@ const KIND_ICON: Record<ToastKind, React.ComponentType<{ size?: number; strokeWi
  * (peu visibles une fois la page longue, ou carrément hors de vue après
  * une action en bas de page).
  */
+/** Fournit le contexte des notifications éphémères et gère leur disparition automatique. */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
@@ -94,6 +95,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Accède au contexte des toasts ; lève une erreur hors ToastProvider. */
 export function useToast(): ToastContextValue {
   const ctx = useContext(ToastContext);
   if (!ctx) throw new Error("useToast doit être utilisé dans un ToastProvider");

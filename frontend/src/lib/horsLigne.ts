@@ -7,6 +7,7 @@ const CLE = "bacprep-hors-ligne";
 const TTL_MS = 30 * 24 * 3600 * 1000;
 const CACHES = ["epreuves", "epreuves-images", "session"];
 
+/** Épreuve mise de côté pour une consultation hors connexion. */
 export interface Telechargee {
   id: string;
   matiere: string;
@@ -67,6 +68,7 @@ export async function telecharger(meta: Omit<Telechargee, "ajoute">): Promise<nu
   return n;
 }
 
+/** Retire une épreuve du cache hors connexion. */
 export async function retirer(id: string): Promise<void> {
   ecrire(lire().filter((e) => e.id !== id));
   try {

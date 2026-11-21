@@ -54,6 +54,7 @@ function KickoutBanner() {
  *   - `/profil` : connexion requise ;
  *   - `/admin` : réservé aux comptes de la liste blanche admin (RequireAdmin).
  */
+/** Composant racine : routeurs, fournisseurs de contexte et mise en page globale. */
 export default function App() {
   return (
     <ThemeProvider>

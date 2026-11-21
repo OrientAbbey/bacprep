@@ -29,14 +29,15 @@ def _gabarit_ou_404(gabarit_id: str) -> gab.Gabarit:
     return g
 
 
-def _statut(g: gab.Gabarit, validation: GabaritValidationORM | None) -> str:
+def _statut(gabarit: gab.Gabarit, validation: GabaritValidationORM | None) -> str:
     if validation is None:
         return "a_valider"
-    return "valide" if validation.hash_contenu == g.hash else "modifie"
+    return "valide" if validation.hash_contenu == gabarit.hash else "modifie"
 
 
 @router.get("")
 def lister(db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Liste les gabarits avec leur statut de validation, leur rapport automatique et leurs signalements ouverts."""
     valides, invalides = gab.tous()
     validations = {v.gabarit_id: v for v in db.query(GabaritValidationORM).all()}
     ouverts: dict[str, int] = {}
@@ -64,6 +65,7 @@ def signalements(
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> list[dict]:
+    """Renvoie les signalements de variantes, filtrables par statut (ouvert, résolu, tous), les plus récents d'abord."""
     q = db.query(GabaritSignalementORM)
     if statut != "tous":
         q = q.filter(GabaritSignalementORM.statut == statut)
@@ -87,6 +89,7 @@ def signalements(
 
 @router.post("/signalements/{signalement_id}/resoudre")
 def resoudre(signalement_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Marque un signalement comme résolu et trace le geste dans le journal admin."""
     r = db.query(GabaritSignalementORM).filter(GabaritSignalementORM.id == signalement_id).one_or_none()
     if r is None:
         raise HTTPException(404, "Signalement introuvable")
@@ -115,6 +118,7 @@ def apercu(
 
 @router.post("/{gabarit_id}/validation")
 def valider(gabarit_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Publie un gabarit après contrôle automatique : la validation est liée au hash du contenu."""
     g = _gabarit_ou_404(gabarit_id)
     if not gab.rapport_validation(g, N_RAPPORT)["ok"]:
         raise HTTPException(409, "Le contrôle automatique de ce gabarit a échoué : il ne peut pas être validé.")
@@ -130,6 +134,7 @@ def valider(gabarit_id: str, db: Session = Depends(get_db), lock=Depends(require
 
 @router.delete("/{gabarit_id}/validation")
 def retirer(gabarit_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Retire la validation d'un gabarit, le rendant invisible de l'entraînement jusqu'à une nouvelle relecture."""
     _gabarit_ou_404(gabarit_id)
     n = db.query(GabaritValidationORM).filter(GabaritValidationORM.gabarit_id == gabarit_id).delete()
     db.commit()

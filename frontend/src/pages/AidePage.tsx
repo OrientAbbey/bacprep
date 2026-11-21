@@ -11,6 +11,7 @@ import { SectionsAide } from "./aide/SectionsAide";
  * un administrateur est renvoyé vers elle par un lien, plutôt que de voir deux
  * contenus différents défiler sous la même adresse.
  */
+/** Centre d'aide des élèves avec sommaire et rubriques navigables. */
 export function AidePage() {
   const { user } = useAuth();
   const estAdmin = !!user?.is_admin;

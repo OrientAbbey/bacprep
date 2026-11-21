@@ -40,30 +40,30 @@ router = APIRouter(prefix="/api/epreuves", tags=["epreuves"])
 log = get_logger("epreuves")
 
 
-def _to_list_item(e: EpreuveORM, covered_ids: set[str] | None = None) -> EpreuveListItem:
+def _to_list_item(epreuve: EpreuveORM, covered_ids: set[str] | None = None) -> EpreuveListItem:
     """Projette une épreuve ORM vers le schéma de liste (sans le contenu,
     chargé séparément depuis le stockage pour un catalogue léger).
     Si `covered_ids` est fourni, calcule le champ `acces` côté serveur."""
-    if e.gratuit:
+    if epreuve.gratuit:
         acces = "gratuit"
-    elif covered_ids is not None and e.id in covered_ids:
+    elif covered_ids is not None and epreuve.id in covered_ids:
         acces = "ouvert"
     else:
         acces = "payant"
     return EpreuveListItem(
-        id=e.id,
-        niveau=e.niveau,
-        classe=e.classe,
-        evaluation=e.evaluation,
-        matiere=e.matiere,
-        annee=e.annee,
-        duree=e.duree,
-        coefficient=e.coefficient,
-        extrait=e.extrait or "",
-        gratuit=e.gratuit,
-        statut=e.statut,
-        filieres=e.filieres,
-        corrige_disponible=e.corrige_disponible,
+        id=epreuve.id,
+        niveau=epreuve.niveau,
+        classe=epreuve.classe,
+        evaluation=epreuve.evaluation,
+        matiere=epreuve.matiere,
+        annee=epreuve.annee,
+        duree=epreuve.duree,
+        coefficient=epreuve.coefficient,
+        extrait=epreuve.extrait or "",
+        gratuit=epreuve.gratuit,
+        statut=epreuve.statut,
+        filieres=epreuve.filieres,
+        corrige_disponible=epreuve.corrige_disponible,
         acces=acces,
     )
 
@@ -89,7 +89,7 @@ def _apply_filters(
     matiere: Optional[str],
     annee: Optional[str],
     evaluation: Optional[str],
-    q: Optional[str],
+    requete: Optional[str],
     corrige: Optional[str],
     acces_type: Optional[str],
     user_id: Optional[str] = None,
@@ -137,14 +137,14 @@ def _apply_filters(
     return query.distinct()
 
 
-def _search_filter(db: Session, query, q: str):
+def _search_filter(db: Session, query, requete: str):
     """Recherche texte GLOBALE : porte sur la matière, l'évaluation et les
     séries, et NE filtre PAS par classe (l'utilisateur doit pouvoir chercher
     dans tout le catalogue, cf. prompt d'amélioration §3)."""
-    serie_subquery = db.query(EpreuveFiliereORM.epreuve_id).filter(contient(EpreuveFiliereORM.filiere, q))
+    serie_subquery = db.query(EpreuveFiliereORM.epreuve_id).filter(contient(EpreuveFiliereORM.filiere, requete))
     return query.filter(
-        contient(EpreuveORM.matiere, q)
-        | contient(EpreuveORM.evaluation, q)
+        contient(EpreuveORM.matiere, requete)
+        | contient(EpreuveORM.evaluation, requete)
         | EpreuveORM.id.in_(serie_subquery)
     )
 
@@ -188,14 +188,14 @@ def navigation(db: Session = Depends(get_db)) -> dict:
     return {"niveaux": niveaux}
 
 
-def _catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, q, corrige, acces_type):
+def _catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, requete, corrige, acces_type):
     """Requête de catalogue filtrée — commune à la liste et aux groupes."""
     query = _apply_filters(
         db, db.query(EpreuveORM), filiere, matiere, annee, evaluation, None, corrige, acces_type,
         user_id=user.id if user else None,
     )
-    if q:
-        query = _search_filter(db, query, q)
+    if requete:
+        query = _search_filter(db, query, requete)
     elif classe:
         query = query.filter(EpreuveORM.classe == classe)
     return query
@@ -208,7 +208,7 @@ def list_epreuves(
     matiere: Optional[str] = None,
     annee: Optional[str] = None,
     evaluation: Optional[str] = None,
-    q: Optional[str] = None,
+    requete: Optional[str] = Query(default=None, alias="q"),
     corrige: Optional[str] = None,
     acces_type: Optional[str] = None,
     limit: int = Query(default=24, ge=1, le=100),
@@ -224,7 +224,7 @@ def list_epreuves(
     session élève : le filtre `acces_type="ouvert"|"payant"` en a besoin
     pour distinguer les épreuves payantes couvertes par un abonnement actif
     (résolu côté serveur, AVANT pagination)."""
-    query = _catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, q, corrige, acces_type)
+    query = _catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, requete, corrige, acces_type)
     epreuves = (
         query.order_by(EpreuveORM.annee.desc(), EpreuveORM.matiere.asc())
         .offset(offset)
@@ -246,7 +246,7 @@ def list_groupes(
     matiere: Optional[str] = None,
     annee: Optional[str] = None,
     evaluation: Optional[str] = None,
-    q: Optional[str] = None,
+    requete: Optional[str] = Query(default=None, alias="q"),
     corrige: Optional[str] = None,
     acces_type: Optional[str] = None,
     limit: int = Query(default=12, ge=1, le=50),
@@ -258,7 +258,7 @@ def list_groupes(
     toutes ses années, au lieu d'une carte par épreuve. Mêmes filtres que la
     liste ; la pagination porte sur les GROUPES (jamais coupés en deux entre
     deux pages). Les années sont triées de la plus récente à la plus ancienne."""
-    ids = select(_catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, q, corrige, acces_type)
+    ids = select(_catalogue_query(db, user, classe, filiere, matiere, annee, evaluation, requete, corrige, acces_type)
                  .with_entities(EpreuveORM.id).subquery().c.id)
     cle = (EpreuveORM.matiere, EpreuveORM.evaluation, EpreuveORM.classe)
     groupes_q = db.query(*cle).filter(EpreuveORM.id.in_(ids)).group_by(*cle)

@@ -39,6 +39,7 @@ from ..db import IMPORTS_DIR, SessionLocal, Base, engine
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Point d'entrée du script d'import en ligne de commande (archive ZIP → base et stockage objet)."""
     parser = argparse.ArgumentParser(
         prog="python -m app.scripts.importer",
         description="Import massif d'épreuves Markdown + images depuis un dossier organisé.",

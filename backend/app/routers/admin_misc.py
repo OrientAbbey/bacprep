@@ -14,7 +14,7 @@ import secrets
 from datetime import timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -313,7 +313,7 @@ def _admin_revenus_par_mois(paiements: list[PaymentORM]) -> tuple[dict[str, int]
 def admin_events(
     limit: int = 100,
     offset: int = 0,
-    q: Optional[str] = None,
+    requete: Optional[str] = Query(default=None, alias="q"),
     jours: Optional[int] = None,
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
@@ -325,8 +325,8 @@ def admin_events(
     `epreuve_id` reste cliquable côté UI (ouverture dans la section
     « Épreuves »)."""
     query = db.query(AdminEventORM)
-    if q and q.strip():  # filtre sur l'action ou l'e-mail de l'acteur
-        query = query.filter(contient(AdminEventORM.action, q.strip()) | contient(AdminEventORM.email, q.strip()))
+    if requete and requete.strip():  # filtre sur l'action ou l'e-mail de l'acteur
+        query = query.filter(contient(AdminEventORM.action, requete.strip()) | contient(AdminEventORM.email, requete.strip()))
     if jours:  # fenêtre glissante : 1 = dernières 24 h, 7 = 7 derniers jours…
         query = query.filter(AdminEventORM.created_at >= utc_now() - timedelta(days=jours))
     rows = (
@@ -369,7 +369,7 @@ def admin_events(
 @router.get("/signalements")
 def admin_list_signalements(
     statut: Optional[str] = None,
-    q: Optional[str] = None,
+    requete: Optional[str] = Query(default=None, alias="q"),
     limit: int = 30,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -382,8 +382,8 @@ def admin_list_signalements(
     query = db.query(SignalementORM)
     if statut in ("ouvert", "resolu"):
         query = query.filter(SignalementORM.statut == statut)
-    if q and q.strip():  # motif ou message ; la matière demande une jointure, volontairement absente
-        query = query.filter(contient(SignalementORM.message, q.strip()) | contient(SignalementORM.motif, q.strip()))
+    if requete and requete.strip():  # motif ou message ; la matière demande une jointure, volontairement absente
+        query = query.filter(contient(SignalementORM.message, requete.strip()) | contient(SignalementORM.motif, requete.strip()))
     rows = (
         query.order_by(SignalementORM.created_at.desc())
         .offset(max(0, offset))
@@ -527,38 +527,38 @@ def _admin_derniere_connexion_par_user(db: Session, ids: list) -> dict[str, obje
     }
 
 
-def _admin_utilisateur_out(u, notes, convs, consults, subs_actifs, depenses, sessions, allowed, roots) -> dict:
+def _admin_utilisateur_out(utilisateur, notes, convs, consults, subs_actifs, depenses, sessions, allowed, roots) -> dict:
     """Formate une ligne utilisateur pour le tableau du back-office.
     `allowed`/`roots` sont les ensembles ROOT ∪ promus déjà calculés par
     l'appelant (une seule requête `IN`, pas de test par ligne)."""
-    is_admin = u.email.lower() in allowed
+    is_admin = utilisateur.email.lower() in allowed
     return {
-        "id": u.id,
-        "nom": u.nom,
-        "email": u.email,
+        "id": utilisateur.id,
+        "nom": utilisateur.nom,
+        "email": utilisateur.email,
         # Identifiant public dictable : c'est ce que l'élève communique au
         # support, donc ce que le support doit pouvoir lire et rechercher.
-        "matricule": u.matricule,
-        "solde_ak": int(u.solde_ak or 0),
-        "niveau": u.niveau,
-        "classe": u.classe,
-        "etablissement": u.etablissement,
-        "consent_ia": u.consent_ia,
-        "consent_notes": u.consent_notes,
+        "matricule": utilisateur.matricule,
+        "solde_ak": int(utilisateur.solde_ak or 0),
+        "niveau": utilisateur.niveau,
+        "classe": utilisateur.classe,
+        "etablissement": utilisateur.etablissement,
+        "consent_ia": utilisateur.consent_ia,
+        "consent_notes": utilisateur.consent_notes,
         "is_admin": is_admin,
-        "racine": u.email.lower() in roots,
-        "banni": u.banni,
-        "banni_motif": u.banni_motif,
-        "created_at": u.created_at,
+        "racine": utilisateur.email.lower() in roots,
+        "banni": utilisateur.banni,
+        "banni_motif": utilisateur.banni_motif,
+        "created_at": utilisateur.created_at,
         # Horodatage persistant posé à chaque login (survit à la
         # déconnexion — la table `sessions`, elle, est purgée) ;
         # repli sur la session courante pour les comptes antérieurs.
-        "derniere_connexion": u.derniere_connexion or sessions.get(u.id),
-        "notes": notes.get(u.id, 0),
-        "discussions_ia": convs.get(u.id, 0),
-        "consultations": consults.get(u.id, 0),
-        "abonnements_actifs": subs_actifs.get(u.id, 0),
-        "total_depense_fcfa": depenses.get(u.id, 0),
+        "derniere_connexion": utilisateur.derniere_connexion or sessions.get(utilisateur.id),
+        "notes": notes.get(utilisateur.id, 0),
+        "discussions_ia": convs.get(utilisateur.id, 0),
+        "consultations": consults.get(utilisateur.id, 0),
+        "abonnements_actifs": subs_actifs.get(utilisateur.id, 0),
+        "total_depense_fcfa": depenses.get(utilisateur.id, 0),
     }
 
 

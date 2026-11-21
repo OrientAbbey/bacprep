@@ -19,6 +19,7 @@ import { authHeaders } from "./shared";
  *  Le bandeau lit les deux listes serveur — la même source que les panneaux —
  *  et propose d'aller à l'onglet concerné.
  */
+/** Bandeau global de suivi des jobs (sauvegarde, import) avec accès au détail. */
 export function BandeauOperations({
   token,
   onOuvrir,

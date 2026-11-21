@@ -12,6 +12,7 @@ export const MOTIFS: { value: MotifSignalement; label: string }[] = [
   { value: "autre", label: t("Autre problème") },
 ];
 
+/** Libellés affichés des motifs de signalement, partagés entre élève et admin. */
 export const MOTIF_LABELS: Record<string, string> = Object.fromEntries(
   MOTIFS.map((m) => [m.value, m.label]),
 );

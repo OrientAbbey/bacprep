@@ -32,6 +32,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 class ReferentielOptionIn(BaseModel):
+    """Création d'une option du référentiel : portée, code, libellé et position d'affichage."""
     scope: str = Field(min_length=1, max_length=30)
     code: str = Field(min_length=1, max_length=120)
     label: Optional[str] = Field(default=None, max_length=120)
@@ -39,6 +40,7 @@ class ReferentielOptionIn(BaseModel):
 
 
 class ReferentielOptionUpdate(BaseModel):
+    """Modification partielle d'une option du référentiel (code, libellé, position)."""
     code: Optional[str] = Field(default=None, min_length=1, max_length=120)
     label: Optional[str] = Field(default=None, max_length=120)
     position: Optional[int] = None

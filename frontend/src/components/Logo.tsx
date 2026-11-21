@@ -1,3 +1,4 @@
+/** Logo de l'application en SVG, adapté au thème courant. */
 export function Logo({ size = 36 }: { size?: number }) {
   return (
     <svg

@@ -8,8 +8,10 @@
  * Pas d'état React ici : le panneau publie en continu, l'assistant lit au
  * moment de l'envoi, puis applique les éditions reçues via l'appliqueur.
  */
+/** Snapshot des champs d'un panneau admin, lu par l'assistant au moment de la question. */
 export type ContexteOnglet = Record<string, unknown>;
 
+/** Description d'un champ éditable publiée pour l'assistant : clé, libellé, type et valeurs possibles. */
 export interface ChampAdmin {
   cle: string;
   libelle: string;
@@ -26,6 +28,7 @@ interface EntreeOnglet {
 
 const contexteParOnglet = new Map<string, EntreeOnglet>();
 
+/** Publie le contexte et les champs d'un onglet, en conservant les callbacks déjà enregistrés. */
 export function publierContexteAdmin(
   onglet: string,
   contexte: ContexteOnglet,
@@ -40,10 +43,12 @@ export function publierContexteAdmin(
   });
 }
 
+/** Lit le contexte publié par un onglet, ou null si le panneau n'est pas monté. */
 export function lireContexteAdmin(onglet: string): ContexteOnglet | null {
   return contexteParOnglet.get(onglet)?.contexte ?? null;
 }
 
+/** Renvoie les champs éditables publiés par un onglet (vide si aucun). */
 export function lireChampsAdmin(onglet: string): ChampAdmin[] {
   return contexteParOnglet.get(onglet)?.champs ?? [];
 }
@@ -98,6 +103,7 @@ export function appliquerChampsAdmin(
   return appliquerEditionsAdmin(onglet, champsList.map((champs) => ({ champs })));
 }
 
+/** Applique au panneau courant les éditions reçues de l'agent ; renvoie false si aucun appliqueur n'est enregistré. */
 export function appliquerEditionsAdmin(
   onglet: string,
   editions: Record<string, unknown>[],
@@ -108,6 +114,7 @@ export function appliquerEditionsAdmin(
   return true;
 }
 
+/** Oublie le contexte d'un onglet (ou de tous les onglets) au démontage du panneau. */
 export function effacerContexteAdmin(onglet?: string): void {
   if (onglet === undefined) contexteParOnglet.clear();
   else contexteParOnglet.delete(onglet);

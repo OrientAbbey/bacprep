@@ -9,19 +9,23 @@ import { streamEventSource } from "./streaming";
  * back-office.
  */
 
+/** Étapes successives de la génération d'un sujet par l'atelier IA. */
 export type CodeEtape = "plan" | "exercice" | "situation" | "corrige" | "reparation";
 
+/** Un contrôle automatique du texte généré (erreur ou avertissement) avec ses paramètres. */
 export interface ControleAtelier {
   niveau: "erreur" | "avertissement";
   code: string;
   params: Record<string, unknown>;
 }
 
+/** Événements SSE de l'atelier : étape de progression, résultat ou erreur. */
 export type EvenementAtelier =
   | { type: "etape"; code: CodeEtape; n: number; total: number; k?: number }
   | { type: "resultat"; sujet: string; corrige: string; controles: ControleAtelier[] }
   | { type: "erreur"; code: "indisponible" | "interne"; etape: number };
 
+/** Paramètres envoyés à l'atelier : thème, nombre d'exercices, consignes et épreuve cible. */
 export interface DemandeAtelier {
   theme: string;
   nb_exercices: number;
@@ -30,6 +34,7 @@ export interface DemandeAtelier {
   meta: { matiere: string; classe: string; evaluation: string; filieres: string[] };
 }
 
+/** Lance la génération et transmet chaque événement SSE au callback ; le signal permet l'annulation. */
 export function genererExercices(demande: DemandeAtelier, onEvent: (e: EvenementAtelier) => void, signal?: AbortSignal): Promise<void> {
   return streamEventSource<EvenementAtelier>("/api/admin/generation-exercices", demande, onEvent, signal);
 }
@@ -52,6 +57,7 @@ const MAX_FORMULES_SIGNALEES = 5;
  * `throwOnError` ; une formule qui ne se compile pas s'afficherait en rouge
  * pour l'élève. `ou` dit où se trouve le texte contrôlé (« sujet » ou
  * « corrige »). Au plus 5 formules sont détaillées. */
+/** Contrôle les formules `$...$` / `$$...$$` d'un sujet ou corrigé et renvoie les anomalies trouvées. */
 export function verifierFormules(markdown: string, ou: "sujet" | "corrige"): ControleAtelier[] {
   const controles: ControleAtelier[] = [];
   for (const { formule, bloc } of extraireFormules(markdown)) {
@@ -69,6 +75,7 @@ export function verifierFormules(markdown: string, ou: "sujet" | "corrige"): Con
 
 /** Ajoute `ajout` à la suite de `existant`, séparés par une ligne vide (ou le
  * remplace s'il est vide). */
+/** Ajoute un texte généré à la fin d'un contenu existant, en gardant un seul séparateur propre. */
 export function ajouterALaSuite(existant: string, ajout: string): string {
   const base = existant.replace(/\s+$/, "");
   return base ? `${base}\n\n${ajout.trim()}\n` : `${ajout.trim()}\n`;

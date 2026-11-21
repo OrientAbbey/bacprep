@@ -359,6 +359,7 @@ def run_import(db: Session, root: Path, dry_run: bool = False, on_progress=None)
     }
 
     def trace(message: str) -> None:
+        """Ajoute une ligne au journal d'exécution de l'import en cours."""
         log.info("Import: %s", message)
         if on_progress:
             try:

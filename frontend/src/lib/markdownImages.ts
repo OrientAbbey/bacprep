@@ -18,6 +18,7 @@ import { visit } from "unist-util-visit";
  */
 const IMAGE_WIDTH_RE = /#w=(\d+)\s*$/;
 
+/** Plugin rehype qui applique le fragment #w=NNN comme largeur d'affichage d'une image. */
 export function rehypeImageWidths() {
   return (tree: Root) => {
     visit(tree, "element", (node) => {

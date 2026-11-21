@@ -3,6 +3,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { foldText } from "../lib/text";
 import { t } from "../i18n";
 
+/** Option d'une combobox : valeur technique et libellé affiché. */
 export interface ComboOption {
   value: string;
   label: string;
@@ -39,6 +40,7 @@ export function useClickOutside(
  * - Échap : ferme le menu et redonne le focus au bouton déclencheur.
  * - Tab : comportement natif (quitte le composant), le menu se ferme.
  */
+/** Liste déroulante accessible avec filtrage par saisie et navigation clavier. */
 export function Combobox({
   label,
   options,

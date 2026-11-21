@@ -9,6 +9,7 @@
 /** Sous-ensemble d'un rapport de job : les seules clés utilisées par les
  *  règles ci-dessous. Typage volontairement partiel — un rapport réel contient
  *  bien plus (parties, epreuves, deja_presents…). */
+/** Extrait d'un rapport de restauration : anomalies trouvées et indicateur de simulation. */
 export interface RapportPartiel {
   dry_run?: boolean;
   introuvables?: unknown[];
@@ -25,6 +26,7 @@ export interface RapportPartiel {
  *  autoriserait une écriture sur une restauration qui a déjà perdu des
  *  fichiers.
  */
+/** Compte les anomalies signalées dans un rapport de restauration partiel. */
 export function nombreAnomalies(rapport: RapportPartiel | null | undefined): number {
   if (!rapport) return 0;
   return (
@@ -47,6 +49,7 @@ export function nombreAnomalies(rapport: RapportPartiel | null | undefined): num
  *  Renvoie `false` dès qu'une information manque : mieux vaut un bouton
  *  d'écriture absent qu'un bouton qui vide un catalogue par défaut.
  */
+/** Indique si une restauration peut écrire en base (dry-run désactivé et rapport acceptable). */
 export function ecritureAutorisee(
   rapport: RapportPartiel | null | undefined,
   statut: string
@@ -71,6 +74,7 @@ export function ecritureAutorisee(
  *  sélectionnés. Renvoie `false` dès qu'une des deux ne correspond pas, y
  *  compris si le job ne porte pas encore ces informations.
  */
+/** Indique si un job correspond au couple source/mode sélectionné dans l'interface. */
 export function essaiConcerne(
   job: { source?: string; mode?: string } | null | undefined,
   choix: { source: string; mode: string }
@@ -85,6 +89,7 @@ export function essaiConcerne(
  *  (arrondi, octets incohérents) rendrait une barre plus large que son cadre,
  *  et 0/0 doit rester 0 plutôt que NaN.
  */
+/** Calcule un pourcentage de progression borné entre 0 et 100, sûr même avec des valeurs invalides. */
 export function pourcentage(fait: number, total: number): number {
   if (!Number.isFinite(fait) || !Number.isFinite(total) || total <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((fait / total) * 100)));
@@ -94,6 +99,7 @@ export function pourcentage(fait: number, total: number): number {
  *  déborde une ligne de liste. Les 12 premiers caractères suffisent à comparer
  *  deux sauvegardes à l'œil ; la valeur entière reste disponible en
  *  info-bulle pour un copier-coller. */
+/** Version abrégée d'un SHA-256 pour l'affichage (12 caractères ou tiret). */
 export function empreinteCourte(sha: string | null | undefined): string {
   return sha ? `${sha.slice(0, 12)}…` : "—";
 }

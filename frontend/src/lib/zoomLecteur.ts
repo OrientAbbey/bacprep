@@ -6,6 +6,7 @@ export const PALIERS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2
 const CLE = "bacprep-zoom-lecteur";
 const EPSILON = 0.001;
 
+/** Limite le facteur de zoom à la plage autorisée. */
 export const borner = (zoom: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
 
 /** Palier suivant (+1) ou précédent (−1) : la valeur courante peut venir d'un pincement, donc être entre deux paliers. */
@@ -28,6 +29,7 @@ export function zoomInitial(): number {
   }
 }
 
+/** Mémorise le zoom du lecteur dans localStorage (best-effort). */
 export function memoriserZoom(zoom: number): void {
   try {
     localStorage.setItem(CLE, String(zoom));

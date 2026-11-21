@@ -100,15 +100,15 @@ def _json_list(raw: str) -> list[str]:
         return []
 
 
-def _parametres_out(p: Parametres) -> dict:
+def _parametres_out(parametres: Parametres) -> dict:
     return {
-        "matiere": p.matiere,
-        "classe": p.classe,
-        "serie": p.serie,
-        "sequence": p.sequence,
-        "mode": p.mode,
-        "difficulte": p.difficulte,
-        "nb_exercices": p.n,
+        "matiere": parametres.matiere,
+        "classe": parametres.classe,
+        "serie": parametres.serie,
+        "sequence": parametres.sequence,
+        "mode": parametres.mode,
+        "difficulte": parametres.difficulte,
+        "nb_exercices": parametres.n,
     }
 
 
@@ -201,6 +201,7 @@ def _history(db: Session, user_id: str) -> set[tuple[str, ...]]:
 
 
 class GenerationIn(BaseModel):
+    """Choix de l'élève pour composer une épreuve : matière, classe, série, séquence, mode et difficulté."""
     matiere: str = Field(min_length=1, max_length=120)
     classe: str = Field(min_length=1, max_length=80)
     serie: str | None = Field(default=None, max_length=80)
@@ -210,6 +211,7 @@ class GenerationIn(BaseModel):
 
     @model_validator(mode="after")
     def sequence_consistency(self):
+        """Vérifie que la séquence n'est fournie que pour le mode « séquence » et qu'elle est alors obligatoire."""
         if self.mode == "sequence" and self.sequence is None:
             raise ValueError("Une séquence est requise pour ce mode")
         if self.mode != "sequence" and self.sequence is not None:
@@ -240,7 +242,7 @@ def _valider_referentiel(db: Session, payload: GenerationIn) -> tuple[tuple[str,
     return classes, sequences
 
 
-def _series_accessibles(db: Session, user_id: str, p: GenerationIn) -> tuple[str, ...]:
+def _series_accessibles(db: Session, user_id: str, parametres: GenerationIn) -> tuple[str, ...]:
     """Séries réelles couvertes par un abonnement matière/classe actif."""
     return tuple(
         filiere
@@ -250,13 +252,13 @@ def _series_accessibles(db: Session, user_id: str, p: GenerationIn) -> tuple[str
             user_id,
             "matiere",
             filiere=filiere,
-            matiere=p.matiere,
-            classe=p.classe,
+            matiere=parametres.matiere,
+            classe=parametres.classe,
         )
     )
 
 
-def _access_granted(db: Session, user_id: str, p: GenerationIn) -> bool:
+def _access_granted(db: Session, user_id: str, parametres: GenerationIn) -> bool:
     """Vérifie l'abonnement à la matière dans la spécialité demandée.
 
     Sans spécialité sélectionnée, toute série couverte ouvre la composition,
@@ -264,16 +266,16 @@ def _access_granted(db: Session, user_id: str, p: GenerationIn) -> bool:
     L'achat API conserve toujours une filière réelle : aucun joker `ALL` n'est
     créé pour cette portée.
     """
-    if p.serie is not None:
+    if parametres.serie is not None:
         return store.scope_already_covered(
             db,
             user_id,
             "matiere",
-            filiere=p.serie,
-            matiere=p.matiere,
-            classe=p.classe,
+            filiere=parametres.serie,
+            matiere=parametres.matiere,
+            classe=parametres.classe,
         )
-    return bool(_series_accessibles(db, user_id, p))
+    return bool(_series_accessibles(db, user_id, parametres))
 
 
 def _to_exercice(row: BanqueExerciceORM) -> ExerciceBanque:
@@ -335,6 +337,7 @@ def options_generation(
         series_banque.update(_json_list(series_raw))
 
     def codes_disponibles(scope: str, disponibles: set[str]) -> list[str]:
+        """Filtre les options du référentiel selon les codes réellement présents dans la Banque."""
         return [
             row.code
             for row in db.query(ReferentielOptionORM)
@@ -364,6 +367,7 @@ def generer_epreuve(
     db: Session = Depends(get_db),
     user=Depends(require_user),
 ) -> dict:
+    """Vérifie abonnement et sélection, tire les exercices de la Banque, enregistre l'épreuve et journalise le tirage."""
     _limiteur.check(client_ip(request))
     if payload.mode not in ("sequence", "examen", "examen_blanc", "vide") or payload.difficulte not in ("Facile", "Moyen", "Difficile"):
         raise HTTPException(422, "Sélection invalide")
@@ -440,6 +444,7 @@ def lire_generation(
     db: Session = Depends(get_db),
     user=Depends(require_user),
 ) -> dict:
+    """Renvoie le sujet d'une épreuve générée, réservée à son propriétaire (404 pour les autres)."""
     _limiteur.check(client_ip(request))
     row = db.get(BanqueGenerationORM, generation_id)
     if row is None or row.user_id != user.id:
@@ -454,6 +459,7 @@ def lire_corrige(
     db: Session = Depends(get_db),
     user=Depends(require_user),
 ) -> dict:
+    """Renvoie le corrigé de la même épreuve, chargé séparément pour ne pas le divulguer avec le sujet."""
     _limiteur.check(client_ip(request))
     row = db.get(BanqueGenerationORM, generation_id)
     if row is None or row.user_id != user.id:

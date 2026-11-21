@@ -15,6 +15,7 @@ function getInitialTheme(): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+/** Fournit le thème clair/sombre et le bascule associé à toute l'application. */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [hasExplicitChoice, setHasExplicitChoice] = useState<boolean>(
@@ -45,6 +46,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
 }
 
+/** Accède au contexte de thème ; lève une erreur hors ThemeProvider. */
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error("useTheme doit être utilisé dans un ThemeProvider");

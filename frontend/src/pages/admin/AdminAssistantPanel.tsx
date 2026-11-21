@@ -62,6 +62,7 @@ interface MessageAdmin extends MessageChat {
  * file d'attente, horodatage, édition inline d'une question + régénération,
  * relance de la dernière question, mémorisation de la discussion par clé.
  */
+/** Assistant unique du back-office : édition de texte sur Épreuves, agent à plan approuvé sur les autres onglets. */
 export function AdminAssistantPanel({
   token,
   onglet,

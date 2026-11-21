@@ -74,6 +74,7 @@ function Paywall({ necessiteConnexion }: { necessiteConnexion: boolean }) {
   );
 }
 
+/** Lecteur d'épreuve : sujet, corrigé à la demande, chronomètre, notes et impression. */
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();

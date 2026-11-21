@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..core.textsearch import contient
@@ -21,25 +21,25 @@ from .deps import log_admin_event, require_admin
 router = APIRouter(prefix="/api/admin/notifications", tags=["admin", "notifications"])
 
 
-def _notification_out(n: NotificationORM) -> dict:
+def _notification_out(notification: NotificationORM) -> dict:
     """Projette une notification vers la forme API (l'admin voit toutes les
     notifications, actives ou non)."""
     return {
-        "id": n.id,
-        "titre": n.titre,
-        "message": n.message,
-        "type": n.type,
-        "epreuve_id": n.epreuve_id,
-        "actif": n.actif,
-        "created_at": n.created_at,
-        "updated_at": n.updated_at,
+        "id": notification.id,
+        "titre": notification.titre,
+        "message": notification.message,
+        "type": notification.type,
+        "epreuve_id": notification.epreuve_id,
+        "actif": notification.actif,
+        "created_at": notification.created_at,
+        "updated_at": notification.updated_at,
     }
 
 
 @router.get("")
 def admin_list_notifications(
     etat: Optional[str] = None,
-    q: Optional[str] = None,
+    requete: Optional[str] = Query(default=None, alias="q"),
     limit: int = 30,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -50,8 +50,8 @@ def admin_list_notifications(
     query = db.query(NotificationORM)
     if etat in ("active", "inactive"):
         query = query.filter(NotificationORM.actif.is_(etat == "active"))
-    if q and q.strip():
-        query = query.filter(contient(NotificationORM.titre, q.strip()) | contient(NotificationORM.message, q.strip()))
+    if requete and requete.strip():
+        query = query.filter(contient(NotificationORM.titre, requete.strip()) | contient(NotificationORM.message, requete.strip()))
     rows = query.order_by(NotificationORM.created_at.desc()).offset(max(0, offset)).limit(max(1, min(limit, 100))).all()
     return [_notification_out(n) for n in rows]
 

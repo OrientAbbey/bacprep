@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { t } from "../i18n";
 
+/** Page 404 avec retour à l'accueil et lien vers l'aide. */
 export function NotFoundPage() {
   return (
     <div className="mx-auto max-w-md py-16 text-center">

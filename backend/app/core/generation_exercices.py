@@ -50,12 +50,12 @@ def formater_points(valeur: Fraction) -> str:
     return f"{float(valeur):g}".replace(".", ",")
 
 
-def repartir_points(total: Fraction, n: int) -> list[Fraction]:
+def repartir_points(total: Fraction, nombre: int) -> list[Fraction]:
     """Répartit `total` points entre `n` exercices, par multiples de 0,25 ; le reste est donné par quarts aux premiers exercices.
     La somme est exacte. Ex. 15 sur 4 → 3,75 chacun ; 15 sur 7 → 2,25 ×4 puis 2 ×3."""
     quarts_total = int(total / PAS_BAREME)
-    base, reste = divmod(quarts_total, n)
-    return [PAS_BAREME * (base + (1 if i < reste else 0)) for i in range(n)]
+    base, reste = divmod(quarts_total, nombre)
+    return [PAS_BAREME * (base + (1 if i < reste else 0)) for i in range(nombre)]
 
 
 def somme_points(markdown: str) -> Fraction:
@@ -158,6 +158,7 @@ def _controles_texte(markdown: str) -> list[dict]:
 
 
 def a_des_erreurs(controles: list[dict]) -> bool:
+    """Indique si au moins un contrôle automatique est en niveau « erreur » (un simple avertissement n'empêche pas la publication)."""
     return any(c["niveau"] == "erreur" for c in controles)
 
 
@@ -183,34 +184,37 @@ _REGLES = """RÈGLES DE FORME (obligatoires) :
 - Pas de préambule, pas de commentaire, pas de bloc de code : uniquement le Markdown demandé."""
 
 
-def prompt_plan(meta: dict, theme: str, consignes: str, nb: int) -> str:
+def prompt_plan(meta: dict, theme: str, consignes: str, nombre_exercices: int) -> str:
+    """Construit la consigne de l'étape « plan » : nombre d'exercices de la Partie A et thème de la situation de la Partie B, renvoyés en JSON strict."""
     return (
         "### ÉTAPE : plan\n"
-        f"Tu aides un enseignant à préparer un sujet d'entraînement. Propose le PLAN de {nb} exercice(s) de la Partie A (évaluation des ressources) "
+        f"Tu aides un enseignant à préparer un sujet d'entraînement. Propose le PLAN de {nombre_exercices} exercice(s) de la Partie A (évaluation des ressources) "
         "et le thème d'une situation de la Partie B (évaluation des compétences).\n"
         f"{_contexte(meta, theme, consignes)}\n\n"
         "Réponds UNIQUEMENT par un objet JSON, sans texte autour, de la forme :\n"
         '{"exercices": [{"titre": "...", "notions": "..."}], "situation": {"theme": "..."}}\n'
-        f"avec exactement {nb} élément(s) dans « exercices », portant sur des notions différentes."
+        f"avec exactement {nombre_exercices} élément(s) dans « exercices », portant sur des notions différentes."
     )
 
 
-def prompt_exercice(meta: dict, theme: str, consignes: str, k: int, pts: Fraction, plan: dict, deja: list[str], reparation: str = "") -> str:
-    exo = plan["exercices"][k - 1]
+def prompt_exercice(meta: dict, theme: str, consignes: str, numero: int, pts: Fraction, plan: dict, deja: list[str], reparation: str = "") -> str:
+    """Construit la consigne de rédaction de l'exercice numéro k de la Partie A, avec son barème exact et les notions déjà traitées (anti-redondance)."""
+    exo = plan["exercices"][numero - 1]
     precedents = "\n".join(f"- {t}" for t in deja) or "(aucun)"
     repar = f"\nCORRECTION DEMANDÉE : {reparation}\n" if reparation else ""
     return (
-        f"### ÉTAPE : exercice {k}\n"
-        f"Rédige l'EXERCICE {k} de la Partie A du sujet.\n{_contexte(meta, theme, consignes)}\n"
+        f"### ÉTAPE : exercice {numero}\n"
+        f"Rédige l'EXERCICE {numero} de la Partie A du sujet.\n{_contexte(meta, theme, consignes)}\n"
         f"- Titre prévu : {exo['titre']}\n- Notions : {exo['notions']}\n"
         f"- Total de l'exercice : {formater_points(pts)} points : la SOMME des barèmes de ses questions doit valoir EXACTEMENT {formater_points(pts)}.\n"
         f"- Exercices déjà écrits (ne pas les répéter) :\n{precedents}\n{repar}\n"
         "Écris 4 à 6 questions de difficulté progressive, avec toutes les données nécessaires dans l'énoncé.\n"
-        f"Commence directement par l'énoncé (le titre « Exercice {k} » est ajouté automatiquement).\n\n{_REGLES}"
+        f"Commence directement par l'énoncé (le titre « Exercice {numero} » est ajouté automatiquement).\n\n{_REGLES}"
     )
 
 
 def prompt_situation(meta: dict, theme: str, consignes: str, plan: dict, reparation: str = "") -> str:
+    """Construit la consigne de la Partie B : situation contextualisée au Cameroun, consigne et questions, avec le barème exact à respecter."""
     repar = f"\nCORRECTION DEMANDÉE : {reparation}\n" if reparation else ""
     return (
         "### ÉTAPE : situation\n"
@@ -223,6 +227,7 @@ def prompt_situation(meta: dict, theme: str, consignes: str, plan: dict, reparat
 
 
 def prompt_corrige(sujet: str) -> str:
+    """Construit la consigne de rédaction du corrigé détaillé d'un sujet, en reproduisant exactement ses titres et barèmes, et en signalant les questions problématiques."""
     return (
         "### ÉTAPE : corrigé\n"
         "Voici un sujet. RÉSOUS d'abord toi-même chaque question, puis rédige le CORRIGÉ DÉTAILLÉ (réponse, justification brève, résultats avec unités).\n\n"
@@ -251,22 +256,22 @@ def _sans_titres_initiaux(texte: str) -> str:
     return "\n".join(lignes).strip()
 
 
-def _plan_de_secours(theme: str, nb: int) -> dict:
-    return {"exercices": [{"titre": f"{theme} — exercice {k}", "notions": theme} for k in range(1, nb + 1)], "situation": {"theme": theme}}
+def _plan_de_secours(theme: str, nombre_exercices: int) -> dict:
+    return {"exercices": [{"titre": f"{theme} — exercice {k}", "notions": theme} for k in range(1, nombre_exercices + 1)], "situation": {"theme": theme}}
 
 
-def lire_plan(texte: str, nb: int, theme: str) -> dict:
+def lire_plan(texte: str, nombre_exercices: int, theme: str) -> dict:
     """Plan JSON de l'IA ; à défaut (JSON invalide, mauvais nombre d'exercices), plan de secours construit à partir du thème : la génération continue."""
     brut = _nettoyer(texte)
     debut, fin = brut.find("{"), brut.rfind("}")
     try:
         plan = json.loads(brut[debut:fin + 1])
         exos = plan["exercices"]
-        if len(exos) == nb and all(isinstance(e.get("titre"), str) and isinstance(e.get("notions"), str) for e in exos) and isinstance(plan["situation"]["theme"], str):
+        if len(exos) == nombre_exercices and all(isinstance(e.get("titre"), str) and isinstance(e.get("notions"), str) for e in exos) and isinstance(plan["situation"]["theme"], str):
             return plan
     except (ValueError, KeyError, TypeError, AttributeError):
         pass
-    return _plan_de_secours(theme, nb)
+    return _plan_de_secours(theme, nombre_exercices)
 
 
 class GenerationIndisponible(Exception):
@@ -296,37 +301,39 @@ async def _appeler(prompt: str) -> str:
 
 
 def assembler_sujet(exercices: list[str], situation: str) -> str:
+    """Assemble les exercices de la Partie A et la situation de la Partie B en un sujet Markdown complet, avec les titres et totaux de points officiels."""
     return ("## PARTIE A : ÉVALUATION DES RESSOURCES (15 points)\n\n" + "\n\n".join(exercices)
             + "\n\n## PARTIE B : ÉVALUATION DES COMPÉTENCES (5 points)\n\n" + situation + "\n")
 
 
-def _corps_exercice(k: int, pts: Fraction, texte: str) -> str:
-    return f"### Exercice {k} ({formater_points(pts)} points)\n\n{_sans_titres_initiaux(texte)}"
+def _corps_exercice(numero: int, pts: Fraction, texte: str) -> str:
+    return f"### Exercice {numero} ({formater_points(pts)} points)\n\n{_sans_titres_initiaux(texte)}"
 
 
 def _corps_situation(texte: str) -> str:
     return "### Situation\n\n" + _sans_titres_initiaux(texte)
 
 
-async def generer(meta: dict, theme: str, consignes: str, nb: int) -> AsyncIterator[dict]:
+async def generer(meta: dict, theme: str, consignes: str, nombre_exercices: int) -> AsyncIterator[dict]:
     """Événements : `{"type": "etape", "code", "n", "total", "k"?}` au début de chaque étape, puis soit
     `{"type": "resultat", "sujet", "corrige", "controles"}` soit `{"type": "erreur", "code"}`. Rien n'est enregistré."""
     # Les modèles de génération sont choisis dans `call_cascade` (GENERATION_GROQ_MODELS) : `refonte` n'a pas de ContextVar de surcharge.
-    total = nb + 3
+    total = nombre_exercices + 3
     n = 0
 
     def etape(code: str, **extra) -> dict:
+        """Fabrique l'événement SSE de progression d'une étape (code, numéro, total)."""
         nonlocal n
         n += 1
         return {"type": "etape", "code": code, "n": min(n, total), "total": total, **extra}
 
     try:
         yield etape("plan")
-        plan = lire_plan(await _appeler(prompt_plan(meta, theme, consignes, nb)), nb, theme)
+        plan = lire_plan(await _appeler(prompt_plan(meta, theme, consignes, nombre_exercices)), nombre_exercices, theme)
 
-        points = repartir_points(POINTS_PARTIE_A, nb)
+        points = repartir_points(POINTS_PARTIE_A, nombre_exercices)
         exercices: list[str] = []
-        for k in range(1, nb + 1):
+        for k in range(1, nombre_exercices + 1):
             yield etape("exercice", k=k)
             texte = await _appeler(prompt_exercice(meta, theme, consignes, k, points[k - 1], plan, [e["titre"] for e in plan["exercices"][: k - 1]]))
             exercices.append(_corps_exercice(k, points[k - 1], texte))
@@ -335,7 +342,7 @@ async def generer(meta: dict, theme: str, consignes: str, nb: int) -> AsyncItera
         situation = _corps_situation(await _appeler(prompt_situation(meta, theme, consignes, plan)))
 
         # une seule réparation par bloc dont le barème ne tombe pas juste (l'IA se trompe souvent d'un quart de point)
-        for k in range(1, nb + 1):
+        for k in range(1, nombre_exercices + 1):
             trouve = somme_points(exercices[k - 1].split("\n", 1)[1])
             if trouve != points[k - 1]:
                 yield {"type": "etape", "code": "reparation", "n": n, "total": total, "k": k}
@@ -353,7 +360,7 @@ async def generer(meta: dict, theme: str, consignes: str, nb: int) -> AsyncItera
         yield etape("corrige")
         corrige = _nettoyer(await _appeler(prompt_corrige(sujet))) + "\n"
 
-        controles = controles_sujet(sujet, nb) + controles_corrige(corrige, nb)
+        controles = controles_sujet(sujet, nombre_exercices) + controles_corrige(corrige, nombre_exercices)
         yield {"type": "resultat", "sujet": sujet, "corrige": corrige, "controles": controles}
     except GenerationIndisponible:
         yield {"type": "erreur", "code": "indisponible", "etape": n}

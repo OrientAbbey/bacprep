@@ -11,10 +11,14 @@ import { MarkdownContent } from "./MarkdownContent";
  * rôle diffèrent, elles se branchent par les emplacements `actionsHaut` et
  * `actionsEnLigne` de `ChatBubble`. */
 
+/** Nom affiché de l'assistant pédagogique, partagé par tous les panneaux de discussion. */
 export const ASSISTANT_TITRE = t("Tuteur IA Prep");
+/** Signature affichée sous le nom de l'assistant. */
 export const ASSISTANT_SIGNATURE = t("Assistant Pédagogique");
+/** Hauteur maximale du champ de saisie avant défilement interne. */
 export const INPUT_MAX_HEIGHT_PX = 120;
 
+/** Message d'une discussion : rôle, contenu et horodatage optionnel. */
 export interface Message {
   role: "user" | "assistant";
   content: string;
@@ -68,6 +72,7 @@ export function BoutonCopier({ texte }: { texte: string }) {
  * peut modifier sa question (régénération depuis ce point) ; la DERNIÈRE réponse peut
  * être relancée. Actions spécifiques : `actionsHaut` (sous la bulle) et `actionsEnLigne`
  * (dans la rangée de boutons texte, avant « Réessayer »). */
+/** Bulle de discussion avec avatar, horodatage, édition inline et actions propres au message. */
 export function ChatBubble({
   m,
   userNom,
@@ -174,6 +179,7 @@ export function ChatBubble({
 
 /** Champ de question + bouton d'envoi. Pendant une réponse, l'envoi reste possible :
  * la question part en file d'attente, signalée au-dessus du champ. */
+/** Champ de saisie des discussions avec file d'attente et envoi au bouton ou par Entrée. */
 export function MessageComposer({
   inputRef,
   input,

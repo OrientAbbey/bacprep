@@ -183,6 +183,7 @@ def _validate_exercise(db: Session, data: dict[str, Any]) -> dict[str, Any]:
 
 
 class PartieIn(BaseModel):
+    """Données du formulaire d'une partie de la Banque : matière du référentiel, nom unique et ordre d'affichage."""
     matiere: str = Field(min_length=1, max_length=120)
     nom: str = Field(min_length=1, max_length=160)
     ordre: int = Field(default=0, ge=0, le=10000)
@@ -190,6 +191,7 @@ class PartieIn(BaseModel):
     @field_validator("matiere", "nom")
     @classmethod
     def trim_text(cls, value: str) -> str:
+        """Nettoie et vérifie qu'une matière ou un nom n'est pas vide après suppression des espaces."""
         value = value.strip()
         if not value:
             raise ValueError("valeur vide")
@@ -197,6 +199,7 @@ class PartieIn(BaseModel):
 
 
 class ExerciceIn(BaseModel):
+    """Données du formulaire d'un exercice : sujet et corrigé Markdown, partie, séquence, difficulté et critères de ciblage."""
     id: str | None = None
     sujet: str = Field(min_length=1, max_length=100_000)
     corrige: str = Field(min_length=1, max_length=100_000)
@@ -212,6 +215,7 @@ class ExerciceIn(BaseModel):
     @field_validator("sujet", "corrige")
     @classmethod
     def trim_body(cls, value: str) -> str:
+        """Refuse un sujet ou un corrigé réduit à du blanc après nettoyage."""
         value = value.strip()
         if not value:
             raise ValueError("contenu vide")
@@ -220,6 +224,7 @@ class ExerciceIn(BaseModel):
     @field_validator("niveau_intrinseque")
     @classmethod
     def known_level(cls, value: str) -> str:
+        """Vérifie que la difficulté intrinsèque appartient à la liste autorisée."""
         if value not in DIFFICULTES:
             raise ValueError("niveau intrinsèque inconnu")
         return value
@@ -227,6 +232,7 @@ class ExerciceIn(BaseModel):
     @field_validator("matieres", "classes", "series")
     @classmethod
     def clean_codes(cls, values: list[str]) -> list[str]:
+        """Nettoie les listes de matières/classes/séries et refuse les codes vides ou dupliqués."""
         out = [v.strip() for v in values]
         if any(not v for v in out):
             raise ValueError("code vide")
@@ -236,23 +242,27 @@ class ExerciceIn(BaseModel):
 
     @model_validator(mode="after")
     def validate_exam_tag(self):
+        """Interdit le tag « tombé à l'examen » quand aucune séquence n'est renseignée."""
         if self.session is None and self.tag_examen:
             raise ValueError("tagExamen doit être faux si session est vide")
         return self
 
 
 class ClasseMetaIn(BaseModel):
+    """Métadonnées d'une classe : présence à l'examen et obligation de choisir une spécialité au tirage."""
     a_examen: bool = False
     specialite_obligatoire: bool = False
 
 
 class ImportIn(BaseModel):
+    """Charge utile d'import de la Banque : mode « remplacer » ou « fusionner » et snapshot JSON validé."""
     mode: str = Field(pattern="^(remplacer|fusionner)$")
     snapshot: dict[str, Any]
 
     @field_validator("snapshot")
     @classmethod
     def limit_snapshot_bytes(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Limite la taille du snapshot à 25 Mo pour éviter une charge utile disproportionnée."""
         if len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > 25_000_000:
             raise ValueError("snapshot trop volumineux")
         return value
@@ -268,6 +278,7 @@ def lister(
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> dict:
+    """Renvoie parties, exercices, référentiel, métadonnées de classe et journal pour le panneau d'administration, avec filtres optionnels."""
     parties_q = db.query(BanquePartieORM)
     if matiere:
         parties_q = parties_q.filter(BanquePartieORM.matiere == matiere)
@@ -307,6 +318,7 @@ def lister(
 
 @router.post("/parties")
 def creer_partie(payload: PartieIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Crée une partie dans une matière existante du référentiel ; trace l'action dans le journal admin."""
     if payload.matiere not in _codes_referentiel(db, "matiere"):
         raise HTTPException(422, "Matière inconnue du référentiel")
     row = BanquePartieORM(matiere=payload.matiere, nom=payload.nom, ordre=payload.ordre)
@@ -329,6 +341,7 @@ def creer_partie(payload: PartieIn, db: Session = Depends(get_db), lock=Depends(
 
 @router.patch("/parties/{partie_id}")
 def modifier_partie(partie_id: str, payload: PartieIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Modifie une partie ; refuse de la déplacer vers une autre matière tant qu'elle contient des exercices."""
     row = _partie(db, partie_id)
     if payload.matiere not in _codes_referentiel(db, "matiere"):
         raise HTTPException(422, "Matière inconnue du référentiel")
@@ -355,6 +368,7 @@ def modifier_partie(partie_id: str, payload: PartieIn, db: Session = Depends(get
 
 @router.delete("/parties/{partie_id}")
 def supprimer_partie(partie_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Supprime une partie vide ; interdit de supprimer la dernière partie d'une matière."""
     row = _partie(db, partie_id)
     if db.query(func.count(BanquePartieORM.id)).filter(BanquePartieORM.matiere == row.matiere).scalar() <= 1:
         raise HTTPException(409, "Impossible de supprimer la dernière partie d'une matière")
@@ -375,6 +389,7 @@ def supprimer_partie(partie_id: str, db: Session = Depends(get_db), lock=Depends
 
 @router.post("/exercices")
 def creer_exercice(payload: ExerciceIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Crée un exercice après validation des critères, puis journalise la création avec un résumé lisible."""
     data = _validate_exercise(db, payload.model_dump())
     row = BanqueExerciceORM(
         id=_uuid_hex(data.get("id"), optional=True), sujet=data["sujet"], corrige=data["corrige"],
@@ -401,6 +416,7 @@ def creer_exercice(payload: ExerciceIn, db: Session = Depends(get_db), lock=Depe
 
 @router.put("/exercices/{exercice_id}")
 def modifier_exercice(exercice_id: str, payload: ExerciceIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Remplace le contenu et les critères d'un exercice existant, puis journalise la modification."""
     row = db.get(BanqueExerciceORM, _uuid_hex(exercice_id))
     if row is None:
         raise HTTPException(404, "Exercice introuvable")
@@ -426,6 +442,7 @@ def modifier_exercice(exercice_id: str, payload: ExerciceIn, db: Session = Depen
 
 @router.delete("/exercices/{exercice_id}")
 def supprimer_exercice(exercice_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Supprime un exercice de la Banque et inscrit la suppression dans le journal admin."""
     row = db.get(BanqueExerciceORM, _uuid_hex(exercice_id))
     if row is None:
         raise HTTPException(404, "Exercice introuvable")
@@ -444,6 +461,7 @@ def supprimer_exercice(exercice_id: str, db: Session = Depends(get_db), lock=Dep
 
 @router.put("/classes/{classe}")
 def definir_meta_classe(classe: str, payload: ClasseMetaIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Crée ou met à jour les métadonnées d'examen et de spécialité d'une classe du référentiel."""
     if classe not in _codes_referentiel(db, "classe"):
         raise HTTPException(422, "Classe inconnue du référentiel")
     row = db.get(BanqueClasseMetaORM, classe)
@@ -520,6 +538,7 @@ def lire_journal(
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> list[dict]:
+    """Renvoie les dernières entrées du journal d'exploitation, filtrables par type, utilisateur et période."""
     q = db.query(BanqueJournalORM)
     if type_evenement:
         q = q.filter(BanqueJournalORM.type == type_evenement)
@@ -556,6 +575,7 @@ def _snapshot(db: Session) -> dict[str, Any]:
 
 @router.get("/export")
 def exporter(db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Produit le snapshot JSON complet de la Banque (parties, exercices, référentiel, métadonnées de classe)."""
     return _snapshot(db)
 
 
@@ -656,6 +676,7 @@ def _validate_snapshot(db: Session, snapshot: dict[str, Any]) -> dict[str, list[
 
 @router.post("/import")
 def importer(payload: ImportIn, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Remplace ou fusionne la Banque à partir d'un snapshot validé, après archivage du fichier importé."""
     data = _validate_snapshot(db, payload.snapshot)
     snapshot_cle = _archiver_snapshot(payload.snapshot)
     try:

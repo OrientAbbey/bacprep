@@ -11,6 +11,7 @@
 
 /** Champs communs aux jobs d'import et de sauvegarde. Volontairement partiel :
  *  le composant peut passer son type complet, seul ce sous-ensemble est lu. */
+/** Informations communes à un job asynchrone suivi par le bandeau global. */
 export interface JobSuivi {
   id: string;
   status: string;
@@ -23,18 +24,22 @@ export interface JobSuivi {
 /** États pendant lesquels un job travaille encore. `done` et `error` sont
  *  terminaux : les rattacher au montage afficherait un rapport ancien comme
  *  s'il venait de se produire. */
+/** Statuts considérés comme encore en cours (en attente ou en exécution). */
 export const STATUTS_ACTIFS = new Set(["pending", "running"]);
 
+/** Indique si un job existe et n'est pas encore terminé. */
 export function estActif(job: JobSuivi | null | undefined): boolean {
   return !!job && STATUTS_ACTIFS.has(job.status);
 }
 
 /** Cadence nominale du bandeau global. Quatre secondes suffisent pour une durée
  *  qui s'affiche en minutes ; plus fréquent multiplierait les appels inutiles. */
+/** Cadence nominale d'interrogation du bandeau de suivi des jobs. */
 export const INTERVALLE_BANDEAU_MS = 4_000;
 
 /** Plafond du backoff : au-delà, l'écran réagirait trop tard au retour du
  *  réseau ou du serveur (réveil Render). */
+/** Plafond du délai entre deux interrogations du bandeau. */
 export const DELAI_MAX_BANDEAU_MS = 30_000;
 
 /** Délai avant le prochain essai du bandeau, après `echecs` échecs consécutifs.
@@ -45,6 +50,7 @@ export const DELAI_MAX_BANDEAU_MS = 30_000;
  *  compteur à zéro au premier succès — sans quoi le bandeau resterait lent
  *  après une panne passée.
  */
+/** Calcule le délai avant la prochaine interrogation avec backoff après échecs consécutifs. */
 export function delaiProchainEssai(
   echecs: number,
   base: number = INTERVALLE_BANDEAU_MS,
@@ -68,6 +74,7 @@ function instant(iso: string | null | undefined): number {
  *  sache, et suivre un job plus ancien qu'un autre afficherait une progression
  *  qui n'est pas celle du lancement courant.
  */
+/** Choisit le job le plus pertinent à afficher (actif en priorité, sinon le plus récent). */
 export function choisirJobASuivre<T extends JobSuivi>(
   jobs: readonly T[] | null | undefined
 ): T | null {
@@ -86,6 +93,7 @@ export function choisirJobASuivre<T extends JobSuivi>(
  *
  *  `maintenant` est un paramètre pour que le test n'attende pas une horloge
  *  réelle. Retourne `null` si le début est absent ou illisible. */
+/** Durée écoulée depuis une date ISO, ou null si la date est absente ou invalide. */
 export function dureeEcoulee(
   debut: string | null | undefined,
   maintenant: number = Date.now()
@@ -100,6 +108,7 @@ export function dureeEcoulee(
  *
  *  `null` reste `null` : l'appelant décide de ne rien afficher plutôt que de
  *  montrer un « 0 s » qui laisserait croire à une opération instantanée. */
+/** Formate une durée en millisecondes en texte court lisible (ms, s, min). */
 export function dureeLisible(ms: number | null | undefined): string | null {
   if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return null;
   if (ms < 1000) return `${Math.round(ms)} ms`;
@@ -123,6 +132,7 @@ export function dureeLisible(ms: number | null | undefined): string | null {
  *  on retombe sur `finished_at - started_at`, puis sur le temps écoulé pour
  *  un job encore actif. Un job `pending` compte depuis sa demande : c'est le
  *  temps que l'administrateur attend, même si le worker n'a pas commencé. */
+/** Durée d'un job : valeur enregistrée si disponible, sinon calculée depuis son horodatage. */
 export function dureeJob(job: JobSuivi, maintenant: number = Date.now()): number | null {
   if (job.duration_ms !== null && job.duration_ms !== undefined) {
     return job.duration_ms;
@@ -139,6 +149,7 @@ export function dureeJob(job: JobSuivi, maintenant: number = Date.now()): number
 /** Libellé français d'une phase serveur. Une phase inconnue est rendue telle
  *  quelle plutôt que masquée : mieux vaut un identifiant technique visible
  *  qu'une étape qui disparaît de l'écran. */
+/** Traduit une phase technique de job en libellé affiché dans le bandeau. */
 export function libellePhase(phase: string | null | undefined): string | null {
   if (!phase) return null;
   const libelles: Record<string, string> = {
@@ -162,8 +173,10 @@ export interface JobOperation extends JobSuivi {
   destination?: string;
 }
 
+/** Onglet du back-office auquel appartient une opération suivie. */
 export type OngletOperation = "sauvegardes" | "import";
 
+/** Opération en cours affichée par le bandeau (export, restauration ou import). */
 export interface OperationEnCours {
   id: string;
   type: "export" | "restore" | "import";
@@ -182,6 +195,7 @@ export interface OperationEnCours {
  *  Les jobs terminaux sont exclus : un rapport ancien n'est pas une opération
  *  « en cours ».
  */
+/** Regroupe les jobs actifs de sauvegarde et d'import en une liste d'opérations affichables. */
 export function operationsEnCours(
   sauvegardes: readonly JobOperation[] | null | undefined,
   imports: readonly JobOperation[] | null | undefined,

@@ -3,6 +3,7 @@ import { t } from "../i18n";
 /** Mouvement du journal AK, tel que `/api/me/profil` l'expose. `montant` est
  * SIGNÉ (positif = crédit, négatif = débit) ; `motif` est une clé technique
  * du serveur, jamais affichée telle quelle. */
+/** Mouvement de la monnaie interne AK : montant signé, motif et détails. */
 export interface MouvementAK {
   id: string;
   montant: number;
@@ -15,9 +16,13 @@ export interface MouvementAK {
 // gain de la prochaine connexion sans rappeler l'API. Toute modification du
 // barème doit être faite des deux côtés — les tests du frontend couvrent la
 // table de vérité, ceux du backend la leur.
+/** Gain AK pour les trois premiers jours d'une série de connexions. */
 export const GAIN_JOURS_1_3 = 3;
+/** Gain AK pour les jours 4 à 6 d'une série de connexions. */
 export const GAIN_JOURS_4_6 = 7;
+/** Gain AK à partir du septième jour d'une série. */
 export const GAIN_JOURS_7_PLUS = 10;
+/** Nombre de jours sans connexion après lequel la série repart à zéro. */
 export const RESET_APRES_JOURS = 7;
 
 /** Gain en AK pour un jour de série donné (1 = première connexion). */
@@ -31,12 +36,14 @@ export function gainPourSerie(serie: number): number {
 /** Date du jour `AAAA-MM-JJ` en UTC — la même référence que le serveur
  * (`aujourd_hui_utc`) : un élève de Douala ne doit pas voir un gain annoncé
  * puis un autre crédité à cause d'un décalage de fuseau. */
+/** Date du jour au format UTC AAAA-MM-JJ (clé de comparaison des séries). */
 export function jourUTC(maintenant: Date = new Date()): string {
   return maintenant.toISOString().slice(0, 10);
 }
 
 /** Gain crédité à la PROCHAINE connexion, compte tenu de la série en cours et
  * de l'éventuelle remise à zéro après `RESET_APRES_JOURS` jours d'absence. */
+/** Gain à créditer à la prochaine connexion compte tenu de la série et du dernier jour. */
 export function gainProchaineConnexion(
   serie: number,
   dernierJour: string | null,
@@ -54,6 +61,7 @@ export function gainProchaineConnexion(
  * `core/ak.py` (`connexion_j1` … `connexion_j7plus`, `achat:<plan_id>`) et
  * par les crédits manuels (`ajustement_admin`) ; un motif inconnu (nouvelle
  * règle serveur) s'affiche tel quel plutôt que de disparaître. */
+/** Libellé lisible d'un motif de mouvement AK (connexion, achat, ajustement admin). */
 export function libelleMouvementAK(motif: string): string {
   if (motif === "ajustement_admin") return t("Ajustement de l'équipe");
   if (motif.startsWith("achat:")) return t("Achat d'un abonnement");

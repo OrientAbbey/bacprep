@@ -22,6 +22,7 @@ export function prochainExamen(evenements: Evenement[], maintenant: Date = new D
   );
 }
 
+/** Formate une date du calendrier pour l'affichage (court ou long). */
 export function formaterDate(iso: string): string {
   return dateLocale(iso).toLocaleDateString(locale(), { day: "numeric", month: "long", year: "numeric" });
 }

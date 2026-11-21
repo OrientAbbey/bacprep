@@ -221,6 +221,7 @@ function isolateDisplayMath(markdown: string): string {
   return out.join("\n");
 }
 
+/** Convertit les délimiteurs \(…\) / \[…\] en $…$ / $$…$$ pour le moteur de rendu. */
 export function normalizeLatexDelimiters(markdown: string): string {
   // convertDelimiters couvre déjà toutes les formes (\[ \], \( \), $$
   // présents, \begin{...} nus) SANS jamais rescanner un corps de bloc déjà
@@ -236,6 +237,7 @@ export function normalizeLatexDelimiters(markdown: string): string {
  * normalisation complète, cette variante peut donc être utilisée quand ces
  * offsets sont suivis.
  */
+/** Normalise les délimiteurs de formules isolées en conservant les positions source pour l'éditeur. */
 export function normalizeDisplayMathDelimitersPreservingOffsets(markdown: string): string {
   const lines = markdown.split("\n");
   const replacements: number[] = [];

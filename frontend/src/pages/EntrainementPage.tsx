@@ -35,6 +35,7 @@ import { classeLabel } from "../lib/referentiel";
  * enseignant.
  */
 
+/** Page d'entraînement : gabarits validés et composition d'épreuves depuis la Banque. */
 export function EntrainementPage() {
   const [params] = useSearchParams();
   const id = params.get("g");

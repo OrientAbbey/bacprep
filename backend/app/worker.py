@@ -24,6 +24,7 @@ log = get_logger("worker")
 
 
 def main() -> int:
+    """Point d'entrée du worker : lance la boucle de traitement des jobs asynchrones en arrière-plan."""
     arret = threading.Event()
 
     def _arreter(signum, _frame) -> None:

@@ -1,3 +1,4 @@
+import type { Element, Root, Text } from "hast";
 import { visit } from "unist-util-visit";
 
 /**
@@ -19,8 +20,8 @@ import { visit } from "unist-util-visit";
  * (value des noeuds texte), jamais la position des éléments parents.
  */
 export function rehypeSourceOffsets() {
-  return (tree: any) => {
-    visit(tree, "element", (node: any) => {
+  return (tree: Root) => {
+    visit(tree, "element", (node: Element) => {
       if (node.position?.start?.offset != null && node.position?.end?.offset != null) {
         node.properties = node.properties || {};
         node.properties["data-src-start"] = node.position.start.offset;
@@ -37,8 +38,8 @@ export function rehypeSourceOffsets() {
  * exact même quand ce plugin est actif en même temps.
  */
 export function rehypeStripAnchorText() {
-  return (tree: any) => {
-    visit(tree, "text", (node: any) => {
+  return (tree: Root) => {
+    visit(tree, "text", (node: Text) => {
       // On appelle directement .replace() (jamais .test()/.exec() sur un
       // regex partagé avec le flag "g" — cela mute lastIndex et produit des
       // faux négatifs intermittents d'un noeud texte à l'autre).
@@ -74,6 +75,7 @@ function findSourceOffsets(node: Node | null): { start: number; end: number } | 
  * aucun ancêtre avec position source n'a pu être trouvé (repli sur le
  * texte brut de la sélection dans ce cas, géré par l'appelant).
  */
+/** Retrouve l'extrait de Markdown source correspondant à une sélection dans le rendu. */
 export function extractSourceMarkdownForSelection(
   selection: Selection,
   fullMarkdown: string

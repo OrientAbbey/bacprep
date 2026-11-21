@@ -206,6 +206,7 @@ const SECTIONS_CONDITIONS: Section[] = [
   },
 ];
 
+/** Page des mentions légales, confidentialité et conditions d'utilisation. */
 export function LegalPage({ kind }: { kind: "privacy" | "terms" }) {
   const confidentialite = kind === "privacy";
   const sections = confidentialite ? SECTIONS_CONFIDENTIALITE : SECTIONS_CONDITIONS;

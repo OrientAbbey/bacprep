@@ -161,9 +161,16 @@ def _fact(n: Fraction) -> Fraction:
 
 
 def _deux_entiers(nom: str, f):
-    def g(a: Fraction, b: Fraction) -> Fraction:
+    """Fabrique un opérateur à deux entiers à partir d'une fonction Python.
+
+    L'opérateur convertit les ``Fraction`` en entiers (en validant le nom du
+    paramètre pour les messages d'erreur), applique ``f`` et convertit le
+    résultat en ``Fraction`` exacte.
+    """
+    def operateur(a: Fraction, b: Fraction) -> Fraction:
+        """Applique l'opérateur à deux fractions entières et renvoie une fraction exacte."""
         return Fraction(f(_entier(a, nom), _entier(b, nom)))
-    return g
+    return operateur
 
 
 # Fonctions NUMÉRIQUES (arguments et résultat : Fraction) et fonctions de MISE EN FORME (résultat : Texte)
@@ -534,6 +541,7 @@ class Gabarit:
         }
 
     def resume(self) -> dict:
+        """Résumé public d'un gabarit pour la liste élève : identifiant, titre, matière, classes, chapitre, difficulté et total des points."""
         return {"id": self.id, "titre": self.titre, "matiere": self.matiere, "classes": self.classes, "chapitre": self.chapitre,
                 "difficulte": self.difficulte, "total_points": float(self.total_points)}
 
@@ -544,6 +552,7 @@ def vue_eleve(inst: dict) -> dict:
 
 
 def vue_correction(inst: dict) -> dict:
+    """Extrait d'une variante ne contenant que ses corrections (réponses et étapes), jamais l'énoncé — appelé séparément par /correction."""
     return {"id": inst["id"], "graine": inst["graine"], "corrections": inst["corrections"]}
 
 
@@ -603,6 +612,7 @@ _CACHE: Optional[tuple[dict[str, Gabarit], dict[str, str]]] = None
 
 
 def tous() -> tuple[dict[str, Gabarit], dict[str, str]]:
+    """Charge (et met en cache) tous les gabarits du dossier app/gabarits, avec le détail des fichiers illisibles ; renvoie (gabarits valides, erreurs de lecture)."""
     global _CACHE
     if _CACHE is None:
         _CACHE = charger_dossier()

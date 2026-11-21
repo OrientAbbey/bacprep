@@ -62,6 +62,7 @@ _HORODATAGE_SAUVEGARDE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{6}Z)")
 
 def _job_to_dict(job: SauvegardeJobORM) -> dict:
     def charge(brut, defaut):
+        """Convertit une limite configurée en entier, avec repli sur la valeur par défaut."""
         try:
             return json.loads(brut) if brut else defaut
         except ValueError:
@@ -487,6 +488,7 @@ def lister_jobs(
     db: Session = Depends(get_db),
     lock=Depends(require_admin),
 ) -> dict:
+    """Renvoie les derniers jobs de sauvegarde/restauration pour le panneau admin (liste bornée)."""
     jobs = (
         db.query(SauvegardeJobORM)
         .order_by(SauvegardeJobORM.created_at.desc())
@@ -498,6 +500,7 @@ def lister_jobs(
 
 @router.get("/sauvegardes/jobs/{job_id}")
 def lire_job(job_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)) -> dict:
+    """Renvoie le détail d'un job, en marquant les anciens jobs comme orphelins si leurs fichiers ont disparu."""
     job = db.query(SauvegardeJobORM).filter(SauvegardeJobORM.id == job_id).one_or_none()
     if not job:
         raise HTTPException(404, "Job de sauvegarde introuvable")
@@ -545,6 +548,7 @@ def telecharger(cle: str, lock=Depends(require_admin)):
         raise HTTPException(501, "Le backend ne sait pas servir ce téléchargement")
 
     def flux():
+        """Parcourt le fichier de sauvegarde par blocs pour le télécharger sans le charger en mémoire."""
         with chemin.open("rb") as src:
             while True:
                 bloc = src.read(1024 * 1024)

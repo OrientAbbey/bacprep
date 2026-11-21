@@ -59,6 +59,7 @@ function useOuvert(cle: string): [boolean, () => void] {
   return [ouvert, basculer];
 }
 
+/** Page du back-office : navigation par onglets, statistiques et panneaux d'administration. */
 export function AdminPage() {
   const { showToast } = useToast();
   const [token, setToken] = useState("");

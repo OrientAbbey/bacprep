@@ -179,66 +179,81 @@ RESUMES: dict[str, Callable[[Session], str]] = {
 
 
 def resume_onglet(db: Session, onglet: str) -> str:
+    """Construit le résumé en lecture seule d'un onglet du back-office. Sert de contexte factuel à l'assistant ; un onglet inconnu retombe sur les statistiques générales."""
     return RESUMES.get(onglet, _resume_stats)(db)
 
 
 # ---------------------------------------------------------------- actions
 class IdArgs(BaseModel):
+    """Arguments d'une action ciblant une entité par son identifiant."""
     id: str = Field(min_length=1, max_length=64)
 
 
 class BannirArgs(IdArgs):
+    """Arguments du bannissement d'un utilisateur : identifiant et motif affiché à l'admin."""
     motif: str = Field(default="", max_length=500)
 
 
 class PlanModifierArgs(admin_plans.PlanUpdate):
+    """Arguments de modification d'une formule d'abonnement : identifiant de la formule et champs à mettre à jour."""
     id: str = Field(min_length=1, max_length=64)
 
 
 class EvenementArgs(calendrier.EvenementIn):
+    """Arguments de création d'un événement du calendrier, identiques aux champs du formulaire admin."""
     pass
 
 
 class OptionArgs(admin_referentiel.ReferentielOptionIn):
+    """Arguments de création d'une option du référentiel (matière, classe, série ou évaluation)."""
     pass
 
 
 class VideArgs(BaseModel):
+    """Arguments vides : action sans paramètre (ex. rafraîchissement du catalogue)."""
     pass
 
 
 class PartieModifierArgs(admin_banque.PartieIn):
+    """Arguments de modification d'une partie de la Banque : identifiant et nouveaux champs."""
     id: str = Field(min_length=1, max_length=64)
 
 
 class ExerciceModifierArgs(admin_banque.ExerciceIn):
+    """Arguments de modification d'un exercice de la Banque : identifiant et nouveaux champs."""
     id: str = Field(min_length=1, max_length=64)
 
 
 class ClasseMetaArgs(BaseModel):
+    """Arguments de mise à jour des métadonnées d'une classe : présence à l'examen et spécialité obligatoire."""
     classe: str = Field(min_length=1, max_length=64)
     a_examen: bool = False
     specialite_obligatoire: bool = False
 
 
 class OptionModifierArgs(admin_referentiel.ReferentielOptionUpdate):
+    """Arguments de modification d'une option du référentiel : identifiant et nouveaux champs."""
     id: str = Field(min_length=1, max_length=64)
 
 
 class NotificationModifierArgs(NotificationUpdate):
+    """Arguments de modification d'une notification : identifiant et nouveaux champs."""
     id: str = Field(min_length=1, max_length=64)
 
 
 class EvenementModifierArgs(calendrier.EvenementUpdate):
+    """Arguments de modification d'un événement du calendrier : identifiant et nouveaux champs."""
     id: str = Field(min_length=1, max_length=64)
 
 
 class EpreuveModifierArgs(EpreuveUpdate):
+    """Arguments de modification d'une épreuve : identifiant et nouveaux champs du formulaire admin."""
     id: str = Field(min_length=1, max_length=64)
 
 
 @dataclass
 class Outil:
+    """Spécification d'un outil de l'agent admin : description montrée sur la carte de confirmation, schéma de validation des arguments, fonction d'exécution et niveau de risque (commit = approbation obligatoire)."""
     description: str  # affichée à l'admin sur la carte de confirmation
     schema: type[BaseModel]
     run: Callable[..., Any | Awaitable[Any]]
@@ -302,7 +317,7 @@ TOOLS: dict[str, Outil] = {
 }
 
 
-async def executer(db: Session, lock, bg: BackgroundTasks, outil: str, args: dict) -> Any:
+async def executer(db: Session, lock, background_tasks: BackgroundTasks, outil: str, args: dict) -> Any:
     """Valide `args` contre le schéma de l'outil puis l'exécute. Un outil inconnu
     ou un champ en trop lève une ValueError (traduite en 422 par la route).
     Seuls les outils de risque `commit` peuvent être exécutés ici : les outils
@@ -316,7 +331,7 @@ async def executer(db: Session, lock, bg: BackgroundTasks, outil: str, args: dic
     extra = set(args) - set(spec.schema.model_fields)
     if extra:
         raise ValueError(f"Champs non autorisés : {', '.join(sorted(extra))}")
-    res = spec.run(db, lock, bg, valides)
+    res = spec.run(db, lock, background_tasks, valides)
     return await res if inspect.isawaitable(res) else res
 
 

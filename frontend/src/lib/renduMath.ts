@@ -11,6 +11,7 @@ import { normalizeDisplayMathDelimitersPreservingOffsets, normalizeLatexDelimite
  * `trust: false` est conservé : le HTML brut via LaTeX (\href, \includegraphics…)
  * reste désactivé, comme pour le Markdown (voir MarkdownContent).
  */
+/** Options KaTeX communes aux aperçus : mhchem autorisé, HTML+MathML, pas de HTML de confiance. */
 export const KATEX_OPTIONS: Omit<KatexOptions, "displayMode" | "throwOnError"> = {
   strict: "ignore",
   trust: false,
@@ -34,6 +35,7 @@ let promesseExtensions: Promise<void> | null = null;
  * L'appel est idempotent ; en cas d'échec la promesse est réinitialisée pour
  * permettre un nouvel essai.
  */
+/** Charge une seule fois l'extension mhchem de KaTeX (promesse idempotente). */
 export function chargerExtensions(): Promise<void> {
   if (!promesseExtensions) {
     promesseExtensions = import("katex/contrib/mhchem")
@@ -57,6 +59,7 @@ export function normaliserPourRendu(markdown: string, { preserverOffsets }: { pr
  * Compile une formule avec les options strictes. Lève une erreur si la
  * formule est invalide. Utilisé par l'atelier IA avant insertion dans l'éditeur.
  */
+/** Vérifie qu'une formule LaTeX est valide, en mode ligne ou bloc. */
 export function verifierFormule(formule: string, bloc: boolean): void {
   katex.renderToString(formule, { ...KATEX_OPTIONS_STRICT, displayMode: bloc });
 }
@@ -70,6 +73,7 @@ export interface OutilFormule {
   fin: number;
 }
 
+/** Un groupe de la barre d'insertion de formules (maths, physique, chimie, structures). */
 export interface GroupeOutils {
   nom: string;
   outils: OutilFormule[];
@@ -95,6 +99,7 @@ function outil(libelle: string, titre: string, modele: string): OutilFormule {
  * Groupes Maths / Physique / Chimie / Structures : les blocs ```mol``` sont
  * rendus par `MolBlock` (chargement différé de SmilesDrawer, lot 4).
  */
+/** Catalogue des outils d'insertion de formules proposés dans les éditeurs admin. */
 export const GROUPES_OUTILS: GroupeOutils[] = [
   {
     nom: "Maths",

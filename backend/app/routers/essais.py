@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/me", tags=["essais"])
 
 
 class EssaiIn(BaseModel):
+    """Résultat d'un essai sur une épreuve : note sur 20 (ou vide = « à revoir ») et durée en secondes."""
     epreuve_id: str = Field(max_length=64)
     note: Optional[float] = Field(default=None, ge=0, le=20)  # vide = « à revoir » sans note
     duree_s: Optional[int] = Field(default=None, ge=0, le=86400)
@@ -39,12 +40,13 @@ def intervalle_jours(note: Optional[float], nb_essais: int) -> int:
     return 30 if nb_essais >= 3 else 14
 
 
-def _label(e: EpreuveORM) -> dict:
-    return {"epreuve_id": e.id, "matiere": e.matiere, "annee": e.annee, "evaluation": e.evaluation, "classe": e.classe}
+def _label(essai: EpreuveORM) -> dict:
+    return {"epreuve_id": essai.id, "matiere": essai.matiere, "annee": essai.annee, "evaluation": essai.evaluation, "classe": essai.classe}
 
 
 @router.post("/essais")
 def enregistrer(payload: EssaiIn, db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
+    """Enregistre un essai et calcule la prochaine échéance de révision ; « à revoir » reste idempotent."""
     get_public_epreuve_or_404(db, payload.epreuve_id, user)  # accès (abonnement) vérifié
     # « À revoir » est IDEMPOTENT : tant que la révision demandée n'est pas
     # encore due, un second clic (double-clic, retour sur la page) ne crée pas
@@ -69,6 +71,7 @@ def enregistrer(payload: EssaiIn, db: Session = Depends(get_db), user=Depends(re
 
 @router.get("/essais")
 def historique(db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
+    """Renvoie les 200 derniers essais de l'utilisateur avec les épreuves associées."""
     rows = (
         db.query(EssaiORM, EpreuveORM)
         .join(EpreuveORM, EpreuveORM.id == EssaiORM.epreuve_id)

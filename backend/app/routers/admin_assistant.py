@@ -82,16 +82,18 @@ class AdminAskIn(BaseModel):
 
     @field_validator("question")
     @classmethod
-    def question_non_blanche(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
+    def question_non_blanche(cls, valeur: str) -> str:
+        """Refuse une question vide ou réduite à des espaces avant envoi au modèle."""
+        valeur = valeur.strip()
+        if not valeur:
             raise ValueError("la question ne peut pas être vide")
-        return v
+        return valeur
 
     @field_validator("historique")
     @classmethod
-    def historique_borne(cls, v: list[dict]) -> list[dict]:
-        for i, message in enumerate(v):
+    def historique_borne(cls, valeur: list[dict]) -> list[dict]:
+        """Valide et borne l'historique de discussion (rôles et taille des messages) pour éviter une charge abusive."""
+        for i, message in enumerate(valeur):
             role = message.get("role")
             content = message.get("content")
             if not isinstance(role, str) or len(role) > 16:
@@ -100,43 +102,45 @@ class AdminAskIn(BaseModel):
                 raise ValueError(
                     f"historique[{i}].content trop long (max {MESSAGE_CONTENT_MAX_CHARS} caractères)"
                 )
-        return v
+        return valeur
 
     @field_validator("epreuve")
     @classmethod
-    def epreuve_bornee(cls, v: dict) -> dict:
+    def epreuve_bornee(cls, donnees: dict) -> dict:
+        """Limite la taille du sujet et du corrigé transmis au modèle (coût LLM et mémoire maîtrisés)."""
         # `contenu_markdown` / `corrige_markdown` sont renvoyés au modèle :
         # une valeur non bornée est à la fois un risque mémoire et un coût
         # LLM contrôlé par le client. 200 000 caractères couvre un sujet
         # d'examen complet très largement.
         for champ in ("contenu_markdown", "corrige_markdown"):
-            valeur = v.get(champ)
+            valeur = donnees.get(champ)
             if valeur is not None and (
                 not isinstance(valeur, str) or len(valeur) > EPREUVE_TEXT_MAX_CHARS
             ):
                 raise ValueError(f"epreuve.{champ} trop long (max {EPREUVE_TEXT_MAX_CHARS} caractères)")
-        return v
+        return donnees
 
     @field_validator("contexte")
     @classmethod
-    def contexte_borne(cls, v: dict) -> dict:
+    def contexte_borne(cls, valeur: dict) -> dict:
         # Champs remplis par l'interface : bornés pour éviter l'abus mémoire / LLM.
+        """Limite la taille du contexte de formulaire publié par l'interface, même imbriqué."""
         import json
 
-        def _taille(x: object) -> int:
+        def _taille(valeur: object) -> int:
             try:
-                return len(json.dumps(x, ensure_ascii=False))
+                return len(json.dumps(valeur, ensure_ascii=False))
             except (TypeError, ValueError):
-                return len(str(x))
+                return len(str(valeur))
 
         total = 0
-        for cle, valeur in v.items():
+        for cle, valeur in valeur.items():
             if not isinstance(cle, str) or len(cle) > 80:
                 raise ValueError("contexte : clé invalide")
             total += _taille(valeur)
             if total > EPREUVE_TEXT_MAX_CHARS:
                 raise ValueError(f"contexte trop long (max {EPREUVE_TEXT_MAX_CHARS} caractères)")
-        return v
+        return valeur
 
 
 def _historique_borne(historique: list[dict]) -> list[dict]:
@@ -156,6 +160,7 @@ def admin_get_conversation(
 
 
 class DeplacerIn(BaseModel):
+    """Clé de destination d'une discussion de brouillon lorsqu'elle est rattachée à une épreuve enregistrée."""
     vers: str = Field(min_length=1, max_length=64)
 
 
@@ -241,6 +246,7 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
     conv_id = conv.id if conv else None
 
     async def event_stream():
+        """Génère le flux SSE des événements de l'assistant et persiste la conversation à la fin."""
         accumulated = ""
         try:
             if prompt_onglet is not None and payload.agent:
@@ -307,6 +313,7 @@ async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_
     )
 
 class ExecuterIn(BaseModel):
+    """Appel direct d'un outil de l'agent : nom de l'outil et arguments à valider contre son schéma."""
     outil: str = Field(min_length=1, max_length=40)
     args: dict = Field(default_factory=dict)
 
@@ -337,6 +344,7 @@ async def admin_execute(
 
 
 class ActionPlan(BaseModel):
+    """Une action d'un plan proposé par l'agent : outil et arguments affichés avant approbation."""
     outil: str = Field(min_length=1, max_length=40)
     args: dict = Field(default_factory=dict)
 
@@ -366,6 +374,7 @@ def admin_proposition(
 
 
 class CommitIn(BaseModel):
+    """Plan approuvé : jeton signé lié aux actions exactes et liste des actions à exécuter."""
     jeton: str = Field(min_length=1, max_length=4_000)
     actions: list[ActionPlan] = Field(min_length=1, max_length=10)
 

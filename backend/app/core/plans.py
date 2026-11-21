@@ -43,6 +43,7 @@ _DEFAUTS_AK: dict[str, int] = {
 
 
 def seed_plans(db: Session) -> None:
+    """Crée les formules d'abonnement par défaut si la table est vide (amorçage d'une base neuve, sans écraser les formules existantes)."""
     if db.query(PlanORM.id).first():
         return
     for i, (scope, (prix, desc, desc_en)) in enumerate(_DEFAUTS.items()):
@@ -53,6 +54,7 @@ def seed_plans(db: Session) -> None:
 
 
 def plans_actifs(db: Session) -> list[PlanORM]:
+    """Renvoie les formules d'abonnement actives, ordonnées par position puis par prix."""
     return db.query(PlanORM).filter(PlanORM.actif.is_(True)).order_by(PlanORM.ordre, PlanORM.prix).all()
 
 

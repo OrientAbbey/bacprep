@@ -1,6 +1,7 @@
 import { MessageCircle } from "lucide-react";
 import { t } from "../i18n";
 
+/** Bouton flottant d'ouverture de l'assistant élève, fixe et toujours visible. */
 export function AssistantLauncherButton({ onClick }: { onClick: () => void }) {
   return (
     <button

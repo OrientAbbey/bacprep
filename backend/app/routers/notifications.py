@@ -18,16 +18,16 @@ from .auth import require_user
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
-def _notification_out(n: NotificationORM, lue: bool) -> dict:
+def _notification_out(notification: NotificationORM, lue: bool) -> dict:
     return {
-        "id": n.id,
-        "titre": n.titre,
-        "message": n.message,
-        "type": n.type,
-        "epreuve_id": n.epreuve_id,
+        "id": notification.id,
+        "titre": notification.titre,
+        "message": notification.message,
+        "type": notification.type,
+        "epreuve_id": notification.epreuve_id,
         "lue": lue,
-        "created_at": n.created_at,
-        "updated_at": n.updated_at,
+        "created_at": notification.created_at,
+        "updated_at": notification.updated_at,
     }
 
 
