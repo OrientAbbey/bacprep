@@ -31,6 +31,7 @@ from sqlalchemy import func
 
 from ..db import SessionLocal, utc_now
 from ..db_models import ImportJobORM, SauvegardeJobORM
+from .job_definitions import WORKER_ID
 from .logging_config import get_logger
 from .storage import StorageError, get_storage
 
@@ -170,8 +171,6 @@ def _terminer(db, job) -> None:
 
 def _executer_export(job_id: str) -> bool:
     from .export_service import PREFIXE, run_export
-    from .job_queue import WORKER_ID
-
     db = SessionLocal()
     logs: list[str] = []
     try:
@@ -266,7 +265,6 @@ def _vider_destination(destination: str, prefixe_racine: str) -> None:
 
 
 def _executer_restauration(job_id: str) -> bool:
-    from .job_queue import WORKER_ID
     from .restore_service import ManifesteInvalide, run_restore
 
     db = SessionLocal()
@@ -438,8 +436,6 @@ def _source_import_disponible(job) -> Optional[Path]:
 
 def _executer_import(job_id: str) -> bool:
     from .import_service import run_import
-    from .job_queue import WORKER_ID
-
     db = SessionLocal()
     logs: list[str] = []
     succes = False
