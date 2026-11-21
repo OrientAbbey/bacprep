@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import zipfile
+from functools import partial
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -67,6 +68,14 @@ def duree_ms(debut, fin) -> Optional[int]:
     if debut is None or fin is None:
         return None
     return max(0, int((fin - debut).total_seconds() * 1000))
+
+
+def noter_journal(logs: list[str], job, db, message: str) -> None:
+    """Ajoute une ligne au journal d'un job, rafraîchit son heartbeat et commit."""
+    logs.append(message)
+    job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
+    job.heartbeat_at = utc_now()
+    db.commit()
 
 
 def dossier_temporaire(job_id: str) -> Path:
@@ -176,12 +185,7 @@ def _executer_export(job_id: str) -> bool:
         job.phase_started_at = maintenant
         db.commit()
 
-        def noter(message: str) -> None:
-            """Ajoute une ligne de texte au journal du job en cours (trace consultable par l'admin)."""
-            logs.append(message)
-            job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
-            job.heartbeat_at = utc_now()
-            db.commit()
+        noter = partial(noter_journal, logs, job, db)
 
         def progresser(fichiers, total, parties, parties_total, octets) -> None:
             """Met à jour la progression d'un export : fichiers, parties et octets traités."""
@@ -280,12 +284,7 @@ def _executer_restauration(job_id: str) -> bool:
         job.phase_started_at = maintenant
         db.commit()
 
-        def noter(message: str) -> None:
-            """Ajoute une ligne de texte au journal du job en cours (trace consultable par l'admin)."""
-            logs.append(message)
-            job.logs_json = json.dumps(logs[-200:], ensure_ascii=False)
-            job.heartbeat_at = utc_now()
-            db.commit()
+        noter = partial(noter_journal, logs, job, db)
 
         def progresser(fichiers, total, octets, parties, parties_total) -> None:
             """Met à jour la progression d'un import : fichiers, octets et parties traités."""

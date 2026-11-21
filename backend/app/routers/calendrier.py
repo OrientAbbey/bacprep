@@ -26,6 +26,13 @@ def _date_valide(valeur: str) -> str:
     return valeur
 
 
+def _lien_http(valeur: Optional[str]) -> Optional[str]:
+    """N'accepte qu'un lien http(s), vide autorisé (champ optionnel)."""
+    if valeur and not valeur.startswith(("https://", "http://")):
+        raise ValueError("le lien doit commencer par http(s)://")
+    return valeur
+
+
 class EvenementIn(BaseModel):
     """Création d'un événement : titre, type, évaluation ciblée, dates, lien officiel et visibilité publique."""
     titre: str = Field(min_length=1, max_length=160)
@@ -39,12 +46,7 @@ class EvenementIn(BaseModel):
     _d1 = field_validator("date_debut")(_date_valide)
     _d2 = field_validator("date_fin")(_date_valide)
 
-    @field_validator("lien_officiel")
-    @classmethod
-    def _lien_http(cls, valeur: str) -> str:
-        if valeur and not valeur.startswith(("https://", "http://")):
-            raise ValueError("le lien doit commencer par http(s)://")
-        return valeur
+    _l1 = field_validator("lien_officiel")(_lien_http)
 
 
 class EvenementUpdate(BaseModel):
@@ -59,12 +61,7 @@ class EvenementUpdate(BaseModel):
 
     _d1 = field_validator("date_debut", "date_fin")(lambda v: _date_valide(v) if v is not None else v)
 
-    @field_validator("lien_officiel")
-    @classmethod
-    def _lien_http(cls, valeur: Optional[str]) -> Optional[str]:
-        if valeur and not valeur.startswith(("https://", "http://")):
-            raise ValueError("le lien doit commencer par http(s)://")
-        return valeur
+    _l1 = field_validator("lien_officiel")(_lien_http)
 
 
 @public.get("")

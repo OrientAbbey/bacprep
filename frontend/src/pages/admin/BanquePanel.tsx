@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileUp, ImagePlus, LoaderCircle, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
-import { api, BASE_URL } from "../../api/client";
+import { api } from "../../api/client";
 import type {
   BanqueAdminData,
   BanqueClasseMeta,
@@ -177,11 +177,7 @@ export function BanquePanel({ token }: { token: string }) {
     try {
       const corps = new FormData();
       corps.append("file", fichier);
-      const reponse = await fetch(`${BASE_URL}/api/admin/banque/images`, {
-        method: "POST", credentials: "include", headers: authHeaders(token), body: corps,
-      });
-      if (!reponse.ok) throw new Error(await reponse.text());
-      const image = (await reponse.json()) as { url: string };
+      const image = await api.upload<{ url: string }>("/api/admin/banque/images", corps, authHeaders(token));
       const cible = cibleImage.current;
       const zone = cible === "sujet" ? sujetZoneRef.current : corrigeZoneRef.current;
       const texte = exerciceForm[cible];
