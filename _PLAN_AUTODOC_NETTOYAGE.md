@@ -98,10 +98,10 @@ Répartition frontend (JSDoc) : `api/types.ts` 32, `lib/adminContexte.ts` 7, `li
 
 ## Phase 8 — Livraison
 
-- [ ] Commit atomique par phase (ou lot cohérent), messages explicites.
-- [ ] Push de la branche, ouverture d'une PR vers `refonte`.
-- [ ] Vérification de **toutes** les PR ouvertes au vert (CI backend SQLite/PostgreSQL + frontend + E2E).
-- [ ] Fusion (squash), vérification qu'aucune PR n'est ouverte, synchronisation de `refonte`.
+- [x] Commit atomique par phase (ou lot cohérent), messages explicites.
+- [x] Push de la branche, ouverture d'une PR vers `refonte`.
+- [x] Vérification de **toutes** les PR ouvertes au vert (CI backend SQLite/PostgreSQL + frontend + E2E).
+- [x] Fusion (squash), vérification qu'aucune PR n'est ouverte, synchronisation de `refonte`.
 - [x] Cocher la dernière case et clore le plan.
 
 ## Critères d'acceptation
