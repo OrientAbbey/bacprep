@@ -16,7 +16,7 @@ import signal
 import sys
 import threading
 
-from .core.job_queue import boucle_worker
+from .domains.sauvegardes.jobs.queue import boucle_worker
 from .core.logging_config import get_logger
 from .db import BASE_DIR
 

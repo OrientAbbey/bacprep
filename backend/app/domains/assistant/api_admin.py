@@ -1,0 +1,419 @@
+"""Route assistant du back-office : `POST /api/admin/assistant/ask` en
+Server-Sent Events (SSE), réservée aux sessions admin.
+
+Deux voies (mêmes événements que l'assistant élève) :
+
+- PERSISTÉE : `epreuve_id` présent — la conversation « roulante » de cet
+  admin sur cette épreuve est relue/recréée, le message de l'admin est
+  écrit IMMÉDIATEMENT (jamais perdu), et l'événement final `done` porte
+  l'objet conversation persisté. Chaque tentative renvoie une charge utile
+  IDENTIQUE : le serveur réconcilie au préalable les messages persistés
+  avec l'`historique` de la charge (le résidu d'une tentative interrompue
+  n'est jamais dupliqué) — même convention que l'assistant élève.
+- ÉPHÉMÈRE : sans `epreuve_id` (épreuve pas encore enregistrée) — rien
+  n'est persisté, `done` porte `conversation: null`.
+"""
+from __future__ import annotations
+
+import json
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from sqlalchemy.orm import Session
+from starlette.requests import ClientDisconnect
+
+from ...core.admin_assistant import ask_admin_assistant_stream
+from ...core.assistant import FournisseursIndisponiblesError
+from ...core.logging_config import get_logger
+from ...core.rate_limit import SlidingWindowLimiter, client_ip
+from ...core import store
+from ...db import get_db, utc_now
+from ...routers.deps import require_admin
+
+router = APIRouter(prefix="/api/admin/assistant", tags=["admin-assistant"])
+log = get_logger("admin_assistant_router")
+
+# Bornes de la charge utile de l'assistant (cf. AdminAskIn). Le serveur
+# n'exploite que les 20 derniers messages, mais le corps de la requête est
+# intégralement parsé avant cette troncature : sans plafond, un client
+# envoyait un tableau arbitrairement grand.
+MESSAGE_CONTENT_MAX_CHARS = 20_000
+EPREUVE_TEXT_MAX_CHARS = 200_000
+
+# Plafonne le coût LLM par admin (les APIs appelées sont payantes) —
+# comptage mémoire, mono-instance ; partage l'interrupteur
+# ASSISTANT_RATE_LIMIT (désactivé en test).
+_ask_limiter = SlidingWindowLimiter(
+    max_attempts=30,
+    window_seconds=300.0,
+    message="Trop de demandes à l'assistant — réessaie dans quelques minutes",
+    env_switch="ASSISTANT_RATE_LIMIT",
+)
+
+
+class AdminAskIn(BaseModel):
+    """Question de l'admin + instantané du formulaire épreuve en cours.
+
+    `epreuve` suit la forme du formulaire d'édition (AdminForm) :
+    niveau, classe, evaluation, matiere, annee, duree, coefficient,
+    gratuit, statut, filieres, contenu_markdown, corrige_markdown — les clés
+    absentes sont tolérées (`build_admin_prompt` retombe sur « ? »).
+
+    `epreuve_id` (id de l'épreuve EN SAVEGARDE) déclenche la persistance de
+    la conversation ; absent (épreuve pas encore enregistrée), l'échange est
+    éphémère. `historique` = l'état des messages attendu par le client (base
+    de réconciliation)."""
+
+    question: str = Field(min_length=1, max_length=8000)
+    historique: list[dict] = Field(default_factory=list, max_length=100)
+    epreuve: dict = Field(default_factory=dict)
+    epreuve_id: str | None = Field(default=None, max_length=64)
+    # Onglet du back-office d'où vient la question : autre que l'édition d'une
+    # épreuve, le contexte est un résumé de l'onglet et l'assistant peut proposer des actions.
+    onglet: str | None = Field(default=None, max_length=24)
+    # Instantané fourni par l'interface (les champs exacts remplis par l'admin).
+    contexte: dict = Field(default_factory=dict)
+    # Active la boucle d'agent transverse (lectures, éditions de formulaire,
+    # plan groupé). Défaut faux : conserve le comportement historique « une
+    # réponse, une action » et les tests existants.
+    agent: bool = False
+
+    @field_validator("question")
+    @classmethod
+    def question_non_blanche(cls, valeur: str) -> str:
+        """Refuse une question vide ou réduite à des espaces avant envoi au modèle."""
+        valeur = valeur.strip()
+        if not valeur:
+            raise ValueError("la question ne peut pas être vide")
+        return valeur
+
+    @field_validator("historique")
+    @classmethod
+    def historique_borne(cls, valeur: list[dict]) -> list[dict]:
+        """Valide et borne l'historique de discussion (rôles et taille des messages) pour éviter une charge abusive."""
+        for i, message in enumerate(valeur):
+            role = message.get("role")
+            content = message.get("content")
+            if not isinstance(role, str) or len(role) > 16:
+                raise ValueError(f"historique[{i}].role invalide (1 à 16 caractères)")
+            if not isinstance(content, str) or len(content) > MESSAGE_CONTENT_MAX_CHARS:
+                raise ValueError(
+                    f"historique[{i}].content trop long (max {MESSAGE_CONTENT_MAX_CHARS} caractères)"
+                )
+        return valeur
+
+    @field_validator("epreuve")
+    @classmethod
+    def epreuve_bornee(cls, donnees: dict) -> dict:
+        """Limite la taille du sujet et du corrigé transmis au modèle (coût LLM et mémoire maîtrisés)."""
+        # `contenu_markdown` / `corrige_markdown` sont renvoyés au modèle :
+        # une valeur non bornée est à la fois un risque mémoire et un coût
+        # LLM contrôlé par le client. 200 000 caractères couvre un sujet
+        # d'examen complet très largement.
+        for champ in ("contenu_markdown", "corrige_markdown"):
+            valeur = donnees.get(champ)
+            if valeur is not None and (
+                not isinstance(valeur, str) or len(valeur) > EPREUVE_TEXT_MAX_CHARS
+            ):
+                raise ValueError(f"epreuve.{champ} trop long (max {EPREUVE_TEXT_MAX_CHARS} caractères)")
+        return donnees
+
+    @field_validator("contexte")
+    @classmethod
+    def contexte_borne(cls, valeur: dict) -> dict:
+        # Champs remplis par l'interface : bornés pour éviter l'abus mémoire / LLM.
+        """Limite la taille du contexte de formulaire publié par l'interface, même imbriqué."""
+        import json
+
+        def _taille(valeur: object) -> int:
+            try:
+                return len(json.dumps(valeur, ensure_ascii=False))
+            except (TypeError, ValueError):
+                return len(str(valeur))
+
+        total = 0
+        for cle, valeur in valeur.items():
+            if not isinstance(cle, str) or len(cle) > 80:
+                raise ValueError("contexte : clé invalide")
+            total += _taille(valeur)
+            if total > EPREUVE_TEXT_MAX_CHARS:
+                raise ValueError(f"contexte trop long (max {EPREUVE_TEXT_MAX_CHARS} caractères)")
+        return valeur
+
+
+def _historique_borne(historique: list[dict]) -> list[dict]:
+    """Historique borné (20 derniers messages) et réordonné par sécurité."""
+    return list(historique)[-20:]
+
+
+@router.get("/conversation/{epreuve_id}")
+def admin_get_conversation(
+    epreuve_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)
+) -> dict:
+    """Charge la conversation roulante de CET admin sur cette épreuve (id
+    des messages inclus) pour restaurer le tiroir à la réouverture. Null si
+    aucune discussion n'existe encore."""
+    conv = store.get_admin_conversation(db, lock.email, epreuve_id)
+    return {"conversation": store.admin_conversation_to_dict(conv) if conv else None}
+
+
+class DeplacerIn(BaseModel):
+    """Clé de destination d'une discussion de brouillon lorsqu'elle est rattachée à une épreuve enregistrée."""
+    vers: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/conversation/{epreuve_id}/deplacer")
+def admin_move_conversation(
+    epreuve_id: str, payload: DeplacerIn, db: Session = Depends(get_db), lock=Depends(require_admin)
+) -> dict:
+    """Rattache la conversation tenue sur un BROUILLON (clé `brouillon:…`) à l'épreuve une fois
+    enregistrée : la discussion suit l'épreuve au lieu de rester orpheline."""
+    conv = store.get_admin_conversation(db, lock.email, epreuve_id)
+    if conv is None or store.get_admin_conversation(db, lock.email, payload.vers) is not None:
+        return {"ok": False}
+    conv.epreuve_id = payload.vers
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/conversation/{epreuve_id}")
+def admin_delete_conversation(
+    epreuve_id: str, db: Session = Depends(get_db), lock=Depends(require_admin)
+) -> dict:
+    """« Nouvelle conversation » : supprime la conversation de cet admin sur
+    cette épreuve (le prochain `/ask` la recrée vierge)."""
+    conv = store.get_admin_conversation(db, lock.email, epreuve_id)
+    if conv:
+        store.delete_admin_conversation(db, conv)
+    return {"ok": True}
+
+
+@router.post("/ask")
+async def admin_ask(payload: AdminAskIn, request: Request, lock=Depends(require_admin), db: Session = Depends(get_db)) -> StreamingResponse:
+    """Réponse streamée de l'assistant admin (mêmes événements que
+    l'assistant élève `/api/assistant/ask/stream`, une ligne
+    `data: <json>` par fragment) :
+
+    - `{"type": "chunk", "text": "..."}` — un fragment de texte ;
+    - `{"type": "done", "conversation": {...}|null}` — fin normale du flux
+      (conversation persistée si `epreuve_id` fourni, sinon null) ;
+    - `{"type": "error", "message": "..."}` — échec pendant le flux, la
+      connexion se ferme ensuite.
+
+    Rate-limit par admin/IP ; les échanges ne sont écrits en base QUE sur
+    la voie persistée (jamais de journal d'audit : les annotations d'une
+    épreuve ne se font qu'à sa sauvegarde réelle par l'admin)."""
+    _ask_limiter.check(f"{lock.email}|{client_ip(request)}")
+
+    from ...core import admin_tools
+
+    # Voie « onglet » : le résumé est calculé ICI (session valide) ; la conversation est
+    # mémorisée par onglet sous la clé `onglet:<nom>` (mêmes routes que celles d'une épreuve).
+    prompt_onglet = None
+    if payload.onglet and payload.onglet in admin_tools.ONGLETS:
+        prompt_onglet = admin_tools.prompt_onglet(
+            payload.onglet,
+            admin_tools.resume_onglet(db, payload.onglet),
+            payload.question,
+            payload.historique,
+            contexte=payload.contexte or None,
+        )
+        payload.epreuve_id = f"onglet:{payload.onglet}"
+
+    persiste = bool(payload.epreuve_id)
+    conv = None
+    if persiste:
+        conv = store.get_admin_conversation(db, lock.email, payload.epreuve_id)
+        if not conv:
+            conv = store.create_admin_conversation(db, lock.email, payload.epreuve_id)
+        # Réconciliation : ramène les messages persistés à l'`historique`
+        # attendu par le client (base) — le résidu d'une tentative
+        # interrompue ne doit pas être dupliqué par une réémission.
+        attendus = _historique_borne(payload.historique)
+        if json.loads(conv.messages_json or "[]") != attendus:
+            conv = store.update_admin_conversation(db, conv, attendus)
+        messages = attendus + [{"role": "user", "content": payload.question, "ts": utc_now().isoformat()}]
+        # Persistance IMMÉDIATE du message de l'admin (avant le streaming)
+        # pour ne jamais le perdre si le flux échoue ; la réponse sera
+        # écrite à la fin dans event_stream() (la seconde écriture écrase la
+        # première avec les deux messages).
+        conv = store.update_admin_conversation(db, conv, messages)
+    else:
+        messages = _historique_borne(payload.historique) + [{"role": "user", "content": payload.question}]
+
+    conv_id = conv.id if conv else None
+
+    async def event_stream():
+        """Génère le flux SSE des événements de l'assistant et persiste la conversation à la fin."""
+        accumulated = ""
+        try:
+            if prompt_onglet is not None and payload.agent:
+                # Voie agent : boucle bornée, éditions de formulaire et plan
+                # groupé signé. Les événements sont émis tels quels ; le texte
+                # est accumulé exactement comme dans la voie historique.
+                from ...core import admin_agent
+
+                async for event in admin_agent.executer_agent(
+                    epreuve=payload.epreuve,
+                    question=payload.question,
+                    messages=messages,
+                    prompt_de_base=prompt_onglet,
+                    admin=lock.email,
+                    onglet=payload.onglet,
+                    contexte=payload.contexte or None,
+                ):
+                    if event["type"] == "chunk":
+                        accumulated += event["text"]
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            else:
+                async for chunk in ask_admin_assistant_stream(payload.epreuve, payload.question, messages, prompt_onglet):
+                    accumulated += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk}, ensure_ascii=False)}\n\n"
+        except FournisseursIndisponiblesError as exc:
+            # Production : jamais de réponse simulée côté admin non plus.
+            log.error("Assistant admin : aucun fournisseur LLM disponible (conversation=%s): %s", conv_id, exc)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            return
+        except ClientDisconnect:
+            log.debug("Client disconnect pendant le streaming assistant admin (conversation=%s)", conv_id)
+            return
+        except Exception as exc:
+            log.exception("Erreur pendant le streaming assistant admin: %s", exc)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Une erreur est survenue côté serveur.'})}\n\n"
+            return
+
+        if not persiste or conv_id is None:
+            yield f"data: {json.dumps({'type': 'done', 'conversation': None})}\n\n"
+            return
+
+        # Nouvelle session DB : celle injectée peut déjà être fermée quand le
+        # générateur reprend après son dernier `yield` (le corps de la réponse
+        # est streamé après le retour de la route).
+        from ...db import SessionLocal
+
+        local_db = SessionLocal()
+        try:
+            fresh_conv = store.get_admin_conversation(local_db, lock.email, payload.epreuve_id)
+            if fresh_conv is None:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Discussion introuvable (supprimée entre-temps).'})}\n\n"
+                return
+            final_messages = messages + [{"role": "assistant", "content": accumulated, "ts": utc_now().isoformat()}]
+            updated = store.update_admin_conversation(local_db, fresh_conv, final_messages)
+            out = store.admin_conversation_to_dict(updated)
+            yield f"data: {json.dumps({'type': 'done', 'conversation': out}, ensure_ascii=False)}\n\n"
+        finally:
+            local_db.close()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+class ExecuterIn(BaseModel):
+    """Appel direct d'un outil de l'agent : nom de l'outil et arguments à valider contre son schéma."""
+    outil: str = Field(min_length=1, max_length=40)
+    args: dict = Field(default_factory=dict)
+
+
+@router.post("/execute")
+async def admin_execute(
+    payload: ExecuterIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Exécute une action PROPOSÉE par l'assistant et CONFIRMÉE par l'admin
+    (carte « Confirmer » de l'interface). Liste blanche d'outils, arguments
+    validés, puis délégation aux handlers admin existants ; l'action est en
+    plus tracée au journal (« via l'assistant »)."""
+    from ...core import admin_tools
+    from ...routers.deps import log_admin_event
+
+    try:
+        resultat = await admin_tools.executer(db, lock, background, payload.outil, payload.args)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except ValidationError as exc:
+        raise HTTPException(422, "Arguments invalides : " + "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()))
+    log_admin_event(db, None, "assistant_action", lock.email, {"outil": payload.outil, "args": payload.args})
+    db.commit()
+    return {"ok": True, "outil": payload.outil, "resultat": jsonable_encoder(resultat)}
+
+
+class ActionPlan(BaseModel):
+    """Une action d'un plan proposé par l'agent : outil et arguments affichés avant approbation."""
+    outil: str = Field(min_length=1, max_length=40)
+    args: dict = Field(default_factory=dict)
+
+
+@router.post("/proposition")
+def admin_proposition(
+    payload: list[ActionPlan],
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """(Re)signe un plan, éventuellement ÉDITÉ par l'admin avant approbation.
+
+    C'est le « return of control » : dès que l'admin modifie une action, le
+    jeton d'origine est invalidé et un nouveau jeton, lié aux nouvelles
+    actions, est émis. Aucun outil n'est exécuté ici."""
+    from ...core import admin_approbation
+
+    if not payload or len(payload) > 10:
+        raise HTTPException(422, "Le plan doit contenir entre 1 et 10 actions")
+    actions = [a.model_dump() for a in payload]
+    # La signature porte sur les actions TELLES QUE L'ADMIN LES VOIT, y compris
+    # un outil hors liste blanche : la validation est faite à l'exécution par
+    # `admin_tools.executer`, qui refusera cette action et la tracera. On ne
+    # cache pas ici une action que le modèle a proposée — l'admin doit pouvoir
+    # la voir et la rejeter explicitement.
+    return {"jeton": admin_approbation.creer(lock.email, actions)}
+
+
+class CommitIn(BaseModel):
+    """Plan approuvé : jeton signé lié aux actions exactes et liste des actions à exécuter."""
+    jeton: str = Field(min_length=1, max_length=4_000)
+    actions: list[ActionPlan] = Field(min_length=1, max_length=10)
+
+
+@router.post("/commit")
+async def admin_commit(
+    payload: CommitIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    lock=Depends(require_admin),
+) -> dict:
+    """Exécute un PLAN d'actions approuvé en une seule fois.
+
+    Le jeton signé lie l'approbation à cet admin, à ces actions exactes et à
+    une expiration courte : ni falsification des arguments, ni rejeu. Chaque
+    action est revérifiée (liste blanche, schéma) avant délégation aux
+    handlers admin existants. En cas de doute, rien n'est exécuté (fail closed)."""
+    from ...core import admin_approbation, admin_tools
+    from ...routers.deps import log_admin_event
+
+    actions = [a.model_dump() for a in payload.actions]
+    try:
+        admin_approbation.verifier(payload.jeton, lock.email, actions)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+    resultats: list[dict] = []
+    for action in actions:
+        outil, args = action["outil"], action["args"]
+        try:
+            resultat = await admin_tools.executer(db, lock, background, outil, args)
+            resultats.append({"outil": outil, "ok": True, "resultat": jsonable_encoder(resultat)})
+            log_admin_event(db, None, "assistant_action", lock.email, {"outil": outil, "args": args, "via": "plan"})
+        except (ValueError, ValidationError, HTTPException) as exc:
+            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            resultats.append({"outil": outil, "ok": False, "erreur": str(detail)})
+    reussis = sum(1 for r in resultats if r["ok"])
+    log_admin_event(db, None, "assistant_commit", lock.email, {
+        "nb_actions": len(actions), "reussis": reussis, "outils": [a["outil"] for a in actions],
+    })
+    db.commit()
+    return {"ok": reussis == len(actions), "resultats": resultats}

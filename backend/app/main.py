@@ -37,26 +37,27 @@ from .core.errors import installer_handlers as installer_handlers_erreurs
 from .core.logging_config import log_json_actif, get_logger, setup_logging
 from .db import IS_SQLITE, Base, SessionLocal, engine, get_db
 from .domains.abonnements import api as subscriptions, api_admin as admin_plans
+from .domains.assistant import api as assistant, api_admin as admin_assistant
+from .domains.banque import api as banque, api_admin as admin_banque
 from .domains.catalogue import api as epreuves
+from .domains.communication import (
+    api_calendrier as calendrier,
+    api_admin_misc as admin_misc,
+    api_admin_notifications as admin_notifications,
+    api_notifications as notifications,
+)
 from .domains.comptes import api as me, api_auth as auth, api_avatar as avatar
 from .domains.entrainement import api as entrainement, api_admin as admin_gabarits
+from .domains.epreuves_admin import (
+    api_epreuves as admin_epreuves,
+    api_generation as admin_generation,
+)
+from .domains.sauvegardes import api as admin_sauvegardes, api_import as admin_import
 from .routers import (
-    admin_assistant,
-    admin_banque,
-    banque,
-    admin_generation,
-    calendrier,
     cron,
     essais,
-    admin_epreuves,
-    admin_import,
-    admin_misc,
-    admin_notifications,
     admin_referentiel,
-    admin_sauvegardes,
-    assistant,
     files,
-    notifications,
     ws,
 )
 

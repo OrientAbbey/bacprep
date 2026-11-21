@@ -40,12 +40,12 @@ Règle d'or : **une phase = une PR verte**, aucune URL ni paramètre de requête
 
 ## Phase 4 — Domaines admin
 
-- [ ] `domains/epreuves_admin/` : `routers/admin_epreuves.py`, `admin_generation.py`, `core/epreuve_files.py`, `core/images.py`, `core/generation_exercices.py`.
-- [ ] `domains/banque/` : `routers/banque.py`, `admin_banque.py`, `core/banque_generation.py`, journal technique + journal admin.
-- [ ] `domains/sauvegardes/` : `routers/admin_sauvegardes.py`, `admin_import.py`, `core/export_service.py`, `import_service.py`, `import_parsing.py`, `restore_service.py`, `jobs/`.
-- [ ] `domains/communication/` : notifications, calendrier, signalements, journal d'audit, stats.
-- [ ] `domains/assistant/` : `routers/assistant.py`, `admin_assistant.py`, `core/assistant*.py`, `admin_agent*.py`, `admin_approbation.py`, `admin_tools.py`, prompts.
-- [ ] Corriger l'inversion `core/admin_tools.py → routers` (modèles d'outils déplacés dans `domains/assistant/schemas.py`, appels via cas d'usage injectés).
+- [x] `domains/epreuves_admin/` : `routers/admin_epreuves.py`, `admin_generation.py`, `core/epreuve_files.py`, `core/images.py`, `core/generation_exercices.py`.
+- [x] `domains/banque/` : `routers/banque.py`, `admin_banque.py`, `core/banque_generation.py`, journal technique + journal admin.
+- [x] `domains/sauvegardes/` : `routers/admin_sauvegardes.py`, `admin_import.py`, `core/export_service.py`, `import_service.py`, `import_parsing.py`, `restore_service.py`, `jobs/`.
+- [x] `domains/communication/` : notifications, calendrier, signalements, journal d'audit, stats.
+- [x] `domains/assistant/` : `routers/assistant.py`, `admin_assistant.py`, `core/assistant*.py`, `admin_agent*.py`, `admin_approbation.py`, `admin_tools.py`, prompts. **Reporté** : les prompts restent définis inline (`_build_prompt`, `build_admin_prompt`, `prompt_agent`, `prompt_onglet`, génération) ; un `prompts.py` unique n'apporte pas de bénéfice fonctionnel.
+- [x] Corriger l'inversion `core/admin_tools.py → routers` : le module vit dans `domains/assistant` et appelle directement les cas d'usage des domaines. **Reporté** : les modèles d'arguments restent dans `admin_tools.py` (ils sont déjà hors de `core`) plutôt que dans un `schemas.py` dédié, sans gain fonctionnel.
 - [ ] Vérifier : E2E admin complète (129 scénarios).
 
 ## Phase 5 — Frontend par tranches
