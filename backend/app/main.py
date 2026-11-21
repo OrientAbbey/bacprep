@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from .core import seo, store
 from .core.catalogue import seed_database_if_empty
 from .core.config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
+from .core.errors import installer_handlers as installer_handlers_erreurs
 from .core.logging_config import log_json_actif, get_logger, setup_logging
 from .db import IS_SQLITE, Base, SessionLocal, engine, get_db
 from .routers import (
@@ -430,6 +431,9 @@ app = FastAPI(
     redoc_url=redoc_url,
     openapi_url=openapi_url,
 )
+
+# Erreurs applicatives typées (voir core/errors.py) : traduction JSON centralisée.
+installer_handlers_erreurs(app)
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 

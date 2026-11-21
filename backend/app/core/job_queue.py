@@ -25,9 +25,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import socket
 import threading
-import uuid
 from datetime import timedelta
 from pathlib import Path
 
@@ -43,14 +41,10 @@ from .job_runner import (
     dossier_job_import,
     executer,
 )
+from .job_definitions import POLL_S, WORKER_ID
 from .logging_config import get_logger
 
 log = get_logger("job_queue")
-
-WORKER_ID = os.getenv("JOB_WORKER_ID") or (
-    f"{socket.gethostname()[:32]}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
-)
-POLL_S = max(0.2, float(os.getenv("JOB_WORKER_POLL_S", "2")))
 
 _MODELES = (
     (SauvegardeJobORM, "export"),
