@@ -61,8 +61,16 @@ Règle d'or : **une phase = une PR verte**, aucune URL ni paramètre de requête
 
 ## Phase 6 — Optionnel
 
-- [ ] Alembic si les évolutions de schéma deviennent fréquentes.
-- [ ] Supprimer les alias de compatibilité une fois tous les appels migrés.
+- [ ] Alembic si les évolutions de schéma deviennent fréquentes. **Non retenu** : les migrations restent rares et déjà couvertes par `core/schema_migrations.py` ; ajouter Alembic introduirait une dépendance sans bénéfice fonctionnel.
+- [ ] Supprimer les alias de compatibilité une fois tous les appels migrés. **Non retenu** : les tests et scripts historiques utilisent encore les anciens chemins (`app.core.*`, `app.routers.*`) ; les shims `sys.modules` garantissent qu'un seul objet module est partagé, sans duplication ni coût. Leur suppression sera décidée quand aucun appel externe ne les utilisera.
+
+## Bilan
+
+- PR #17 fondations, #18 domaine pilote `entrainement`, #19 suivi du plan, #20 domaines élèves, #21 domaines admin, #22 frontend `shared`/`features` — toutes fusionnées dans `refonte` avec CI verte.
+- Backend : 9 domaines à tranches verticales (`entrainement`, `catalogue`, `abonnements`, `comptes`, `epreuves_admin`, `banque`, `sauvegardes`, `communication`, `assistant`) + noyau `core` et contrat `routers.deps` partagés ; aucune inversion `core → routers`.
+- Frontend : `shared/{ui,lib,auth,theme}`, 9 `features/` avec `index.ts` public, `api/` contrat unique, garde-fou `check:boundaries` en CI, toutes les routes en lazy-loading.
+- Aucune URL ni paramètre de requête public modifié ; bundle initial JS 102,34 kB → 46,95 kB.
+- Validations finales : ruff, 995 tests backend (1 ignoré), 313 tests frontend, frontières backend/frontend, build, E2E 129/129 + 10/10, CI 4/4.
 
 ## Critères d'acceptation finaux
 
