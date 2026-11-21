@@ -11,32 +11,32 @@ Règle d'or : **une phase = une PR verte**, aucune URL ni paramètre de requête
 
 ## Phase 0 — Garde-fous
 
-- [ ] Créer un test de contrainte d'architecture backend (`backend/tests/test_architecture_boundaries.py`) : `core` n'importe pas `routers`, pas de cycle `job_runner ↔ job_queue`, `shared` n'importe pas de domaine (une fois créés).
-- [ ] Ajouter une contrainte frontend équivalente **sans nouvelle dépendance** : script de vérification des imports (`frontend/scripts/check-boundaries.mjs`, lancé via `npm run check:boundaries`) interdisant `features/* → features/*` et `shared/ui → features/*` ; l'étendre au fur et à mesure de la création des features.
-- [ ] Vérifier la baseline : `ruff`, pytest, `npm test`, `npm run build`, E2E.
+- [x] Créer un test de contrainte d'architecture backend (`backend/tests/test_architecture_boundaries.py`) : `core` n'importe pas `routers`, pas de cycle `job_runner ↔ job_queue`, `shared` n'importe pas de domaine (une fois créés).
+- [x] Ajouter une contrainte frontend équivalente **sans nouvelle dépendance** : script de vérification des imports (`frontend/scripts/check-boundaries.mjs`, lancé via `npm run check:boundaries`) interdisant `features/* → features/*` et `shared/ui → features/*` ; l'étendre au fur et à mesure de la création des features.
+- [x] Vérifier la baseline : `ruff`, pytest, `npm test`, `npm run build`, E2E.
 
 ## Phase 1 — Fondations backend (faible risque)
 
-- [ ] `core/settings.py` : vue typée et validée de la configuration (Pydantic `BaseModel` + `os.environ`, sans nouvelle dépendance), conservative et utilisable par le nouveau code ; les lectures existantes restent valides.
-- [ ] `core/errors.py` : erreurs applicatives typées avec `code` + statut HTTP par défaut ; handler global dans `main.py` ; migration progressive de `UploadImageError` en premier.
-- [ ] Casser le cycle `job_runner ↔ job_queue` : extraire `WORKER_ID` (et les constantes partagées) dans `core/job_definitions.py`, supprimer les imports différés de `job_runner.py`.
-- [ ] `shared/deps.py` : faire matter les dépendances partagées depuis `routers/deps.py` sans casser les imports existants (alias de compatibilité), étape préparatoire aux domaines. **Reporté en phase 2** : 17 routeurs importent `.deps` ; un simple alias ne créerait deux chemins pour la même fonction sans bénéfice. Le déplacement réel sera fait quand les premiers domaines en auront besoin.
-- [ ] Tester : ruff + suite backend complète + E2E.
+- [x] `core/settings.py` : vue typée et validée de la configuration (Pydantic `BaseModel` + `os.environ`, sans nouvelle dépendance), conservative et utilisable par le nouveau code ; les lectures existantes restent valides.
+- [x] `core/errors.py` : erreurs applicatives typées avec `code` + statut HTTP par défaut ; handler global dans `main.py` ; migration progressive de `UploadImageError` en premier.
+- [x] Casser le cycle `job_runner ↔ job_queue` : extraire `WORKER_ID` (et les constantes partagées) dans `core/job_definitions.py`, supprimer les imports différés de `job_runner.py`.
+- [ ] `shared/deps.py` : faire matter les dépendances partagées depuis `routers/deps.py` sans casser les imports existants (alias de compatibilité), étape préparatoire aux domaines. **Reporté sine die** : 17 routeurs importent `.deps` ; les domaines extraits depuis utilisent `routers.deps` comme contrat stable (aucune duplication). Un alias créerait deux chemins pour la même fonction sans bénéfice.
+- [x] Tester : ruff + suite backend complète + E2E.
 
 ## Phase 2 — Premier domaine pilote : `entrainement`
 
-- [ ] Créer `backend/app/domains/entrainement/` avec `api.py`, `schemas.py`, `moteur.py`, `use_cases.py`.
-- [ ] Déplacer `core/gabarits.py` → `moteur.py`, `routers/entrainement.py` + `routers/admin_gabarits.py` → `api.py` (deux routeurs inclus).
+- [x] Créer `backend/app/domains/entrainement/` avec `api.py`, `schemas.py`, `moteur.py`, `use_cases.py`.
+- [x] Déplacer `core/gabarits.py` → `moteur.py`, `routers/entrainement.py` + `routers/admin_gabarits.py` → `api.py` (deux routeurs inclus).
 - [ ] Déplacer `app/gabarits/*.json` sous le domaine, en conservant le chargeur et le cache. **Reporté** : les 19 JSON restent sous `app/gabarits` (le chargeur les résout via `parents[2]`) ; le déplacement n'apporte pas de bénéfice fonctionnel et toucherait les scripts de relecture.
-- [ ] Conserver **toutes** les URLs (`/api/entrainement/*`, `/api/admin/gabarits/*`) et les codes d'erreur.
-- [ ] Tester : tests entraînement + E2E entraînement + compatibilité des signalements.
+- [x] Conserver **toutes** les URLs (`/api/entrainement/*`, `/api/admin/gabarits/*`) et les codes d'erreur.
+- [x] Tester : tests entraînement + E2E entraînement + compatibilité des signalements.
 
 ## Phase 3 — Domaines élèves
 
-- [ ] `domains/catalogue/` : `routers/epreuves.py`, `core/seo.py`, vues catalogue et consultation.
-- [ ] `domains/abonnements/` : `routers/subscriptions.py`, `admin_plans.py`, `core/subscriptions.py`, `core/plans.py`, `core/ak.py`.
-- [ ] `domains/comptes/` : `routers/auth.py`, `me.py`, `avatar.py`, `core/avatar.py`, `core/store.py` (partie comptes).
-- [ ] Vérifier : E2E catalogue, abonnement, profil, avatar, confidentialité.
+- [x] `domains/catalogue/` : `routers/epreuves.py`, `core/seo.py`, vues catalogue et consultation.
+- [x] `domains/abonnements/` : `routers/subscriptions.py`, `admin_plans.py`, `core/subscriptions.py`, `core/plans.py`, `core/ak.py`.
+- [x] `domains/comptes/` : `routers/auth.py`, `me.py`, `avatar.py`, `core/avatar.py`. **Reporté** : `core/store.py` reste dans le noyau (sessions, TTL, stockage) — il n'a pas de frontière comptes autonome et ses imports sont partagés avec les autres domaines.
+- [x] Vérifier : E2E catalogue, abonnement, profil, avatar, confidentialité (129/129 et 10/10 scénarios).
 
 ## Phase 4 — Domaines admin
 

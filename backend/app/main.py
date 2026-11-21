@@ -29,12 +29,16 @@ from fastapi.staticfiles import StaticFiles
 
 from sqlalchemy.orm import Session
 
-from .core import seo, store
+from .domains.catalogue import seo
+from .core import store
 from .core.catalogue import seed_database_if_empty
 from .core.config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
 from .core.errors import installer_handlers as installer_handlers_erreurs
 from .core.logging_config import log_json_actif, get_logger, setup_logging
 from .db import IS_SQLITE, Base, SessionLocal, engine, get_db
+from .domains.abonnements import api as subscriptions, api_admin as admin_plans
+from .domains.catalogue import api as epreuves
+from .domains.comptes import api as me, api_auth as auth, api_avatar as avatar
 from .domains.entrainement import api as entrainement, api_admin as admin_gabarits
 from .routers import (
     admin_assistant,
@@ -48,17 +52,11 @@ from .routers import (
     admin_import,
     admin_misc,
     admin_notifications,
-    admin_plans,
     admin_referentiel,
     admin_sauvegardes,
     assistant,
-    auth,
-    avatar,
-    epreuves,
     files,
-    me,
     notifications,
-    subscriptions,
     ws,
 )
 

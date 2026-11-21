@@ -15,6 +15,19 @@ EN = json.loads((RACINE / "frontend" / "src" / "locales" / "en.json").read_text(
 # Routeurs que l'interface élève appelle (la console admin reste volontairement en français).
 ROUTEURS_ELEVE = ["auth", "me", "epreuves", "assistant", "subscriptions", "essais", "entrainement", "banque", "files", "notifications", "calendrier", "avatar", "ws", "deps"]
 
+# Depuis les phases 2/3 de la refonte, ces routeurs élève sont devenus des
+# shims : leurs messages sont émis depuis le domaine. On suit le code réel
+# pour que le contrat de traduction continue de porter sur les textes vus par
+# l'élève (les shims eux-mêmes ne contiennent aucun message).
+DOMAINES_ELEVE = {
+    "auth": "domains/comptes/api_auth.py",
+    "me": "domains/comptes/api.py",
+    "epreuves": "domains/catalogue/api.py",
+    "subscriptions": "domains/abonnements/api.py",
+    "avatar": "domains/comptes/api_avatar.py",
+    "entrainement": "domains/entrainement/api.py",
+}
+
 # Messages produits hors `HTTPException`/`message=` : évènement d'erreur du flux, session fermée, IA indisponible.
 HORS_ROUTEURS = [
     "Une erreur est survenue côté serveur.",
@@ -45,13 +58,19 @@ TECHNIQUES: dict[str, str] = {
 }
 
 
+def _fichier_eleve(nom: str) -> Path:
+    """Source portant réellement les messages d'un routeur élève (shim ou domaine)."""
+    return APP / DOMAINES_ELEVE.get(nom, f"routers/{nom}.py")
+
+
 def _litteraux(chemin: Path) -> set[str]:
-    return {n.value for n in ast.walk(ast.parse(chemin.read_text(encoding="utf-8"))) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+    # `utf-8-sig` : tolère un éventuel BOM sans casser l'analyse AST.
+    return {n.value for n in ast.walk(ast.parse(chemin.read_text(encoding="utf-8-sig"))) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
 
 
 def _messages(chemin: Path) -> set[str]:
     trouves = set()
-    for n in ast.walk(ast.parse(chemin.read_text(encoding="utf-8"))):
+    for n in ast.walk(ast.parse(chemin.read_text(encoding="utf-8-sig"))):
         if not isinstance(n, ast.Call):
             continue
         nom = getattr(n.func, "id", getattr(n.func, "attr", ""))
@@ -63,7 +82,7 @@ def _messages(chemin: Path) -> set[str]:
 def test_messages_serveur_eleve_traduits():
     messages = set()
     for nom in ROUTEURS_ELEVE:
-        messages |= _messages(APP / "routers" / f"{nom}.py")
+        messages |= _messages(_fichier_eleve(nom))
     for chemin in (APP / "core").glob("*.py"):
         messages |= _messages(chemin)
     manquants = sorted(m for m in messages - set(TECHNIQUES) if m not in EN)
@@ -80,7 +99,7 @@ def test_messages_hors_routeurs_existent_et_traduits():
 def test_exceptions_techniques_justifiees_et_encore_utiles():
     messages = set()
     for nom in ROUTEURS_ELEVE:
-        messages |= _messages(APP / "routers" / f"{nom}.py")
+        messages |= _messages(_fichier_eleve(nom))
     for chemin in (APP / "core").glob("*.py"):
         messages |= _messages(chemin)
     assert all(TECHNIQUES.values()), "chaque exception doit dire pourquoi"
@@ -93,7 +112,7 @@ def test_gabarits_d_activite_et_valeurs_traduisibles_traduits():
     from app.core.subscriptions import SCOPE_LABELS
 
     gabarits = set()
-    for n in ast.walk(ast.parse((APP / "routers" / "me.py").read_text(encoding="utf-8"))):
+    for n in ast.walk(ast.parse(_fichier_eleve("me").read_text(encoding="utf-8-sig"))):
         if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_activite_item" and len(n.args) >= 3:
             gabarits |= {c.value for c in ast.walk(n.args[2]) if isinstance(c, ast.Constant) and isinstance(c.value, str)}
     assert len(gabarits) >= 8, "gabarits introuvables : le contrôle ne vérifie plus rien"
