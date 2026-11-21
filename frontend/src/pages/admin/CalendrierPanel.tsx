@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import type { Evenement } from "../../api/types";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Skeleton } from "../../components/Skeleton";
-import { useToast } from "../../components/Toast";
-import { useContexteAdmin } from "../../lib/useAdminContexte";
+import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
+import { Skeleton } from "../../shared/ui/Skeleton";
+import { useToast } from "../../shared/ui/Toast";
+import { useContexteAdmin } from "../../features/admin-epreuves/lib/useAdminContexte";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 const champ = "w-full rounded border border-ink-soft/30 bg-paper px-2 py-1.5 text-sm";

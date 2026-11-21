@@ -1,0 +1,148 @@
+import React, { useEffect, useMemo, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { resolveMediaUrl } from "../../api/client";
+import { rehypeSourceOffsets, rehypeStripAnchorText } from "../lib/markdownSource";
+import { rehypeImageWidths } from "../lib/markdownImages";
+import { chargerExtensions, KATEX_OPTIONS, normaliserPourRendu } from "../lib/renduMath";
+import { ImageLightbox } from "./ImageLightbox";
+import { MolBlock, type StyleMol } from "./MolBlock";
+
+/** Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
+ * le backend — sans quoi les images d'une épreuve (ou d'un message
+ * assistant) apparaissent cassées en développement (frontend et backend
+ * sur des origines différentes). Voir `resolveMediaUrl` dans api/client.ts.
+ *
+ * Les liens `<a>` sont filtrés : seuls http, https, mailto et les chemins
+ * internes `/api/files/` sont autorisés — empêche les liens
+ * `javascript:...` injectés via le Markdown (XSS au clic). */
+const SAFE_HREF_RE = /^(https?:\/\/|mailto:|\/api\/files\/)/i;
+
+/** Rendu Markdown sécurisé (GFM, KaTeX, images redimensionnées) avec variantes éditeur, épreuve et chat. */
+export const MarkdownContent = React.memo(function MarkdownContent({
+  content,
+  variant,
+  trackSourcePositions = false,
+}: {
+  content: string;
+  variant: "epreuve" | "chat";
+  /**
+   * Si vrai, pose des attributs data-src-start/data-src-end (voir
+   * lib/markdownSource) permettant de retrouver le Markdown BRUT
+   * correspondant à une sélection de texte. Uniquement utilisé côté
+   * lecteur (ViewerPage) — jamais dans les bulles de discussion.
+   *
+   * Le Markdown reçu ici n'est JAMAIS pré-nettoyé au niveau chaîne de
+   * caractères (ce qui décalerait les offsets par rapport au texte
+   * d'origine) : les ancres {#id} sont retirées uniquement à l'affichage,
+   * via un plugin rehype qui ne touche pas aux positions (voir
+   * rehypeStripAnchorText).
+   */
+  trackSourcePositions?: boolean;
+}) {
+  // Visionneuse d'image (loupe) : l'image cliquée est retenue en local,
+  // recouverte par un overlay plein écran (voir ImageLightbox).
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  // Les extensions (mhchem) sont chargées à la demande : une fois prêtes, on
+  // re-rend pour que les formules \ce{…}/\pu{…} déjà présentes s'affichent.
+  const [extensionsPretes, setExtensionsPretes] = useState(false);
+  useEffect(() => {
+    let actif = true;
+    chargerExtensions()
+      .then(() => {
+        if (actif) setExtensionsPretes(true);
+      })
+      .catch(() => {
+        /* extension indisponible : le rendu de base reste fonctionnel */
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
+
+  const rehypePlugins = useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>>(
+    () =>
+      trackSourcePositions
+        ? [[rehypeKatex, KATEX_OPTIONS], rehypeImageWidths, rehypeSourceOffsets, rehypeStripAnchorText]
+        : [[rehypeKatex, KATEX_OPTIONS], rehypeImageWidths, rehypeStripAnchorText],
+    [trackSourcePositions, extensionsPretes]
+  );
+
+  // Réécrit les URL d'image relatives (`/media/...`) en URL absolues vers
+  // le backend — sans quoi les images d'une épreuve (ou d'un message
+  // assistant) apparaissent cassées en développement (frontend et backend
+  // sur des origines différentes). Voir `resolveMediaUrl` dans api/client.ts.
+  //
+  // Les liens `<a>` sont filtrés : seuls http, https, mailto et les chemins
+  // internes `/api/files/` sont autorisés — empêche les liens
+  // `javascript:...` injectés via le Markdown (XSS au clic).
+  const components = useMemo<Components>(
+    () => ({
+      img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
+        const src = props.src ? resolveMediaUrl(props.src) : props.src;
+        return (
+          // eslint-disable-next-line jsx-a11y/alt-text
+          <img
+            {...props}
+            src={src}
+            loading="lazy"
+            decoding="async"
+            // `cursor: zoom-in` est fusionné (PAS écrasé) avec la largeur
+            // éventuelle posée par rehypeImageWidths (`#w=NNN`).
+            style={{ ...(props.style ?? {}), cursor: "zoom-in" }}
+            onClick={() => {
+              if (!src) return;
+              setLightbox({ src, alt: typeof props.alt === "string" ? props.alt : "" });
+            }}
+          />
+        );
+      },
+      a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+        const href = props.href ?? "";
+        if (!SAFE_HREF_RE.test(href)) {
+          return <span {...props} />;
+        }
+        return <a {...props} />;
+      },
+      code: ({ node, ...props }) => {
+        const langage = /language-([\w-]+)/.exec(props.className ?? "")?.[1] ?? "";
+        if (langage.startsWith("mol")) {
+          const meta = node?.data?.meta ?? "";
+          const brut = (langage.slice(3) || meta.trim().split(/\s+/)[0] || "topologique").toLowerCase();
+          const style: StyleMol = brut === "developpee" || brut === "cram" ? brut : "topologique";
+          return <MolBlock contenu={typeof props.children === "string" ? props.children : String(props.children)} style={style} />;
+        }
+        return <code {...props} />;
+      },
+    }),
+    []
+  );
+
+  // Le lecteur suit les offsets du Markdown brut : on n'y convertit que les
+  // blocs `\[ ... \]` à longueur identique. Partout ailleurs (aperçus admin,
+  // banque, formulaires, bulles), aucun offset n'est suivi : on normalise
+  // aussi `\( ... \)` et les environnements nus, sans quoi les formules
+  // générées par l'assistant restent du texte brut illisible.
+  const normalized = useMemo(
+    () => normaliserPourRendu(content, { preserverOffsets: trackSourcePositions }),
+    [content, trackSourcePositions]
+  );
+
+  return (
+    <>
+      <div className={variant === "epreuve" ? "prose-exam" : "prose-chat"}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={rehypePlugins}
+          components={components}
+        >
+          {normalized}
+        </ReactMarkdown>
+      </div>
+      {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
+    </>
+  );
+});

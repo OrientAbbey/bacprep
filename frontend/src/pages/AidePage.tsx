@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useAuth } from "../auth/AuthProvider";
+import { useAuth } from "../shared/auth/AuthProvider";
 import { t } from "../i18n";
 import { sectionsAideUtilisateur } from "./aide/AideUtilisateur";
 import { SectionsAide } from "./aide/SectionsAide";

@@ -3,12 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { Consultation, Evenement, NavigationOut, NiveauNav, Revision } from "../api/types";
-import { useAuth } from "../auth/AuthProvider";
-import { joursAvant, prochainExamen } from "../lib/calendrier";
-import { listeHorsLigne } from "../lib/horsLigne";
-import { classeLabel } from "../lib/referentiel";
-import { formatRelativeTime } from "../lib/time";
-import { Logo } from "../components/Logo";
+import { useAuth } from "../shared/auth/AuthProvider";
+import { joursAvant, prochainExamen } from "../features/communication/lib/calendrier";
+import { listeHorsLigne } from "../shared/lib/horsLigne";
+import { classeLabel } from "../shared/lib/referentiel";
+import { formatRelativeTime } from "../shared/lib/time";
+import { Logo } from "../shared/ui/Logo";
 import { t, tDynamique } from "../i18n";
 
 /**

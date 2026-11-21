@@ -2,8 +2,8 @@ import { CalendarDays, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Evenement } from "../api/types";
-import { Skeleton } from "../components/Skeleton";
-import { formaterDate, joursAvant } from "../lib/calendrier";
+import { Skeleton } from "../shared/ui/Skeleton";
+import { formaterDate, joursAvant } from "../features/communication/lib/calendrier";
 import { t } from "../i18n";
 
 const TYPES: Record<Evenement["type"], string> = { examen: t("Examen"), resultats: t("Résultats"), inscription: t("Inscription") };

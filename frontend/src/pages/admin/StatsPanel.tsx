@@ -8,8 +8,8 @@ import {
   YAxis,
 } from "recharts";
 import { AdminStats } from "../../api/types";
-import { formatBytes } from "../../lib/format";
-import { classeLabel } from "../../lib/referentiel";
+import { formatBytes } from "../../shared/lib/format";
+import { classeLabel } from "../../shared/lib/referentiel";
 
 /** Tableau de bord du back-office : compteurs globaux + graphiques recharts
  * pour les revenus mensuels et les épreuves publiées par classe. Le donut

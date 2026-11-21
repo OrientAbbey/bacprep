@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { Ban, ShieldCheck } from "lucide-react";
 import { ApiError, api } from "../../api/client";
 import { AdminUtilisateur } from "../../api/types";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Skeleton } from "../../components/Skeleton";
-import { useToast } from "../../components/Toast";
-import { classeLabel } from "../../lib/referentiel";
-import { formatRelativeTime } from "../../lib/time";
+import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
+import { Skeleton } from "../../shared/ui/Skeleton";
+import { useToast } from "../../shared/ui/Toast";
+import { classeLabel } from "../../shared/lib/referentiel";
+import { formatRelativeTime } from "../../shared/lib/time";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 /** Table « Utilisateurs » : une ligne par compte (élèves ET admins — les

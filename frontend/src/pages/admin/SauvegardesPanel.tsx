@@ -2,17 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Download, HardDriveDownload, RotateCcw, Trash2 } from "lucide-react";
 import { api, resolveMediaUrl } from "../../api/client";
 import { SauvegardeInventaire, SauvegardeJob, SauvegardeResume } from "../../api/types";
-import { useToast } from "../../components/Toast";
-import { formatBytes } from "../../lib/format";
+import { useToast } from "../../shared/ui/Toast";
+import { formatBytes } from "../../shared/lib/format";
 import {
   choisirJobASuivre,
   dureeJob,
   dureeLisible,
   estActif,
   libellePhase,
-} from "../../lib/jobs";
-import { formatRelativeTime } from "../../lib/time";
-import { ecritureAutorisee, essaiConcerne, nombreAnomalies, pourcentage } from "../../lib/sauvegardes";
+} from "../../features/sauvegardes/lib/jobs";
+import { formatRelativeTime } from "../../shared/lib/time";
+import { ecritureAutorisee, essaiConcerne, nombreAnomalies, pourcentage } from "../../features/sauvegardes/lib/sauvegardes";
 import { authHeaders, erreurDetail, purgerSessionExpiree } from "./shared";
 
 /** Deux modes de restauration, dans l'ordre où l'admin doit les rencontrer.

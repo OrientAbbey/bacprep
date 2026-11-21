@@ -1,20 +1,14 @@
 import React, { Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
-import { AuthProvider, useAuth } from "./auth/AuthProvider";
-import { RequireAdmin } from "./auth/RequireAdmin";
-import { RequireAuth } from "./auth/RequireAuth";
-import { ConsentModal } from "./components/ConsentModal";
-import { ErrorBoundary } from "./components/ErrorBoundary";
-import { Layout } from "./components/Layout";
-import { ToastProvider } from "./components/Toast";
-import { ThemeProvider } from "./theme/ThemeProvider";
-import { CataloguePage } from "./pages/CataloguePage";
-import { HomePage } from "./pages/HomePage";
-import { Skeleton, ViewerSkeleton } from "./components/Skeleton";
-import { CalendrierPage } from "./pages/CalendrierPage";
-import { NotFoundPage } from "./pages/NotFoundPage";
-import { LoginPage } from "./pages/LoginPage";
-import { SubscribePage } from "./pages/SubscribePage";
+import { AuthProvider, useAuth } from "./shared/auth/AuthProvider";
+import { RequireAdmin } from "./shared/auth/RequireAdmin";
+import { RequireAuth } from "./shared/auth/RequireAuth";
+import { ConsentModal } from "./shared/ui/ConsentModal";
+import { ErrorBoundary } from "./shared/ui/ErrorBoundary";
+import { Layout } from "./shared/ui/Layout";
+import { ToastProvider } from "./shared/ui/Toast";
+import { ThemeProvider } from "./shared/theme/ThemeProvider";
+import { Skeleton, ViewerSkeleton } from "./shared/ui/Skeleton";
 import { t } from "./i18n";
 
 // Découpage de code : le back-office (utilisé par une poignée de personnes)
@@ -27,6 +21,12 @@ const AdminHelpPage = React.lazy(() => import("./pages/aide/AdminHelpPage").then
 const AProposPage = React.lazy(() => import("./pages/AProposPage").then((m) => ({ default: m.AProposPage })));
 const LegalPage = React.lazy(() => import("./pages/LegalPage").then((m) => ({ default: m.LegalPage })));
 const EntrainementPage = React.lazy(() => import("./pages/EntrainementPage").then((m) => ({ default: m.EntrainementPage })));
+const HomePage = React.lazy(() => import("./pages/HomePage").then((m) => ({ default: m.HomePage })));
+const CataloguePage = React.lazy(() => import("./pages/CataloguePage").then((m) => ({ default: m.CataloguePage })));
+const CalendrierPage = React.lazy(() => import("./pages/CalendrierPage").then((m) => ({ default: m.CalendrierPage })));
+const SubscribePage = React.lazy(() => import("./pages/SubscribePage").then((m) => ({ default: m.SubscribePage })));
+const LoginPage = React.lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
+const NotFoundPage = React.lazy(() => import("./pages/NotFoundPage").then((m) => ({ default: m.NotFoundPage })));
 
 function KickoutBanner() {
   const { kickoutMessage, clearKickoutMessage } = useAuth();
@@ -66,9 +66,30 @@ export default function App() {
             <Routes>
               {/* Routes avec Layout commun (Outlet) */}
               <Route element={<Layout />}>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/secondaire/:classe" element={<CataloguePage />} />
-                <Route path="/catalogue" element={<CataloguePage />} />
+                <Route
+                  path="/"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <HomePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/secondaire/:classe"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <CataloguePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/catalogue"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <CataloguePage />
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="/epreuve/:id"
                   element={
@@ -77,8 +98,22 @@ export default function App() {
                     </Suspense>
                   }
                 />
-                <Route path="/abonnement" element={<SubscribePage />} />
-                <Route path="/calendrier" element={<CalendrierPage />} />
+                <Route
+                  path="/abonnement"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <SubscribePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/calendrier"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <CalendrierPage />
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="/aide"
                   element={
@@ -111,11 +146,25 @@ export default function App() {
                     </Suspense>
                   }
                 />
-                <Route path="*" element={<NotFoundPage />} />
+                <Route
+                  path="*"
+                  element={
+                    <Suspense fallback={<Skeleton className="h-64" />}>
+                      <NotFoundPage />
+                    </Suspense>
+                  }
+                />
               </Route>
 
               {/* Routes sans Layout */}
-              <Route path="/connexion" element={<LoginPage />} />
+              <Route
+                path="/connexion"
+                element={
+                  <Suspense fallback={<Skeleton className="h-64" />}>
+                    <LoginPage />
+                  </Suspense>
+                }
+              />
 
               {/* Routes protégées auth avec Layout : l'entraînement est
                   réservé aux comptes connectés (les exercices ne sont ni

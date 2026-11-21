@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Pencil, Plus, Settings2, Trash2, X } from "lucide-react";
 import { ApiError, api } from "../../api/client";
 import { ReferentielOption, ReferentielOptions, ReferentielScope } from "../../api/types";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Skeleton } from "../../components/Skeleton";
-import { useToast } from "../../components/Toast";
-import { useContexteAdmin } from "../../lib/useAdminContexte";
+import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
+import { Skeleton } from "../../shared/ui/Skeleton";
+import { useToast } from "../../shared/ui/Toast";
+import { useContexteAdmin } from "../../features/admin-epreuves/lib/useAdminContexte";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 /** Métadonnées d'affichage par liste du référentiel (ordre du panneau). */

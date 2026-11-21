@@ -1,5 +1,5 @@
 import { t } from "../i18n";
-import { estErreurReseau, signalerReseau } from "../lib/connexion";
+import { estErreurReseau, signalerReseau } from "../shared/lib/connexion";
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 /** Erreur HTTP renvoyée par l'API, avec le statut et le détail serveur (pour afficher la vraie raison). */

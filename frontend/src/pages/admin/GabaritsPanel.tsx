@@ -1,9 +1,9 @@
 import { AlertTriangle, Check, Clock, Eye } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
-import { MarkdownContent } from "../../components/MarkdownContent";
-import { Spinner } from "../../components/Spinner";
-import { useToast } from "../../components/Toast";
+import { MarkdownContent } from "../../shared/ui/MarkdownContent";
+import { Spinner } from "../../shared/ui/Spinner";
+import { useToast } from "../../shared/ui/Toast";
 import {
   type ApercuVariante,
   type LigneGabarit,
@@ -11,9 +11,9 @@ import {
   type StatutGabarit,
   formaterPoints,
   graineAleatoire,
-} from "../../lib/entrainement";
-import { classeLabel } from "../../lib/referentiel";
-import { formatRelativeTime } from "../../lib/time";
+} from "../../features/entrainement/lib/entrainement";
+import { classeLabel } from "../../shared/lib/referentiel";
+import { formatRelativeTime } from "../../shared/lib/time";
 import { authHeaders, erreurDetail, purgerSessionExpiree } from "./shared";
 
 /**
