@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { AdminStats } from "../api/types";
-import { useToast } from "../components/Toast";
-import { Spinner } from "../components/Spinner";
-import { messageErreurConnexion } from "../lib/messageConnexion";
+import { useToast } from "../shared/ui/Toast";
+import { Spinner } from "../shared/ui/Spinner";
+import { messageErreurConnexion } from "../shared/lib/messageConnexion";
 import { AdminAssistantPanel } from "./admin/AdminAssistantPanel";
 import { BandeauOperations } from "./admin/BandeauOperations";
 import { CalendrierPanel } from "./admin/CalendrierPanel";

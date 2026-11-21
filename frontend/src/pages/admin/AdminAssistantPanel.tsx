@@ -10,9 +10,9 @@ import {
   INPUT_MAX_HEIGHT_PX,
   MessageComposer,
   type Message as MessageChat,
-} from "../../components/ChatParts";
-import { extraireActions, LIBELLES_OUTILS, type ActionProposee } from "../../lib/adminActions";
-import { appliquerChampsAdmin, lireContexteAdmin, ouvrirFormulaireAdmin } from "../../lib/adminContexte";
+} from "../../shared/ui/ChatParts";
+import { extraireActions, LIBELLES_OUTILS, type ActionProposee } from "../../features/admin-epreuves/lib/adminActions";
+import { appliquerChampsAdmin, lireContexteAdmin, ouvrirFormulaireAdmin } from "../../features/admin-epreuves/lib/adminContexte";
 import {
   aDesModifications,
   applicationAutoInitiale,
@@ -22,13 +22,13 @@ import {
   resumeEpreuveName,
   type AdminEpreuveSnapshot,
   type ModificationsEpreuve,
-} from "../../lib/adminAssistant";
+} from "../../features/assistant/lib/adminAssistant";
 import {
   chargerConversationAdmin,
   delaiReconnexion,
   effacerConversationAdmin,
   streamAdminAsk,
-} from "../../lib/streaming";
+} from "../../shared/lib/streaming";
 import { authHeaders } from "./shared";
 
 type EtatAction = "attente" | "en-cours" | "fait" | "ignoree" | "erreur";

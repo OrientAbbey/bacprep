@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BoutonInviter } from "../components/Invitation";
+import { BoutonInviter } from "../shared/ui/Invitation";
 import { t } from "../i18n";
 
 /** Adresse de contact affichée si elle est fournie à la compilation (`VITE_CONTACT_EMAIL`) ; sinon rien n'est affiché. */

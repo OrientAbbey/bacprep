@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { GoogleSignInButton } from "../components/GoogleSignInButton";
-import { IndicateurConnexion } from "../components/IndicateurConnexion";
-import { Logo } from "../components/Logo";
-import { useAuth } from "../auth/AuthProvider";
-import { Spinner } from "../components/Spinner";
+import { GoogleSignInButton } from "../shared/ui/GoogleSignInButton";
+import { IndicateurConnexion } from "../shared/ui/IndicateurConnexion";
+import { Logo } from "../shared/ui/Logo";
+import { useAuth } from "../shared/auth/AuthProvider";
+import { Spinner } from "../shared/ui/Spinner";
 import { LangSwitch } from "../i18nProvider";
 import { t } from "../i18n";
-import { messageErreurConnexion } from "../lib/messageConnexion";
+import { messageErreurConnexion } from "../shared/lib/messageConnexion";
 
 interface AuthConfig {
   mode: "mock" | "google";

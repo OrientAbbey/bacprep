@@ -4,11 +4,11 @@ import type { ComponentType, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { EpreuveListItem, Filtres } from "../api/types";
-import { useAuth } from "../auth/AuthProvider";
-import { Combobox } from "../components/Combobox";
-import { Skeleton } from "../components/Skeleton";
-import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
-import { detailServeur } from "../lib/detailServeur";
+import { useAuth } from "../shared/auth/AuthProvider";
+import { Combobox } from "../shared/ui/Combobox";
+import { Skeleton } from "../shared/ui/Skeleton";
+import { CLASSES_SECONDAIRE, classeLabel } from "../shared/lib/referentiel";
+import { detailServeur } from "../shared/lib/detailServeur";
 import { getLang, t } from "../i18n";
 
 /** Fait défiler doucement un élément nouvellement apparu dans le champ de

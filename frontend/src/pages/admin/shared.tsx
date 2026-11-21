@@ -1,12 +1,12 @@
-import { useClickOutside } from "../../components/Combobox";
+import { useClickOutside } from "../../shared/ui/Combobox";
 import React, { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, FileUp, Plus, Sparkles, X } from "lucide-react";
 import { ApiError, resolveMediaUrl } from "../../api/client";
-import { FormulesToolbar } from "../../components/FormulesToolbar";
-import { MarkdownContent } from "../../components/MarkdownContent";
-import { formatBytes } from "../../lib/format";
-import { foldText } from "../../lib/text";
-import { formatRelativeTime } from "../../lib/time";
+import { FormulesToolbar } from "../../shared/ui/FormulesToolbar";
+import { MarkdownContent } from "../../shared/ui/MarkdownContent";
+import { formatBytes } from "../../shared/lib/format";
+import { foldText } from "../../shared/lib/text";
+import { formatRelativeTime } from "../../shared/lib/time";
 
 /** Échappe un texte pour l'insérer dans une regex (caractères spéciaux). */
 export function escapeRegExp(text: string): string {

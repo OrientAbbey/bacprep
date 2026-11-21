@@ -8,14 +8,14 @@ import type {
   BanqueJournalEntry,
   BanquePartie,
 } from "../../api/types";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { FormulesToolbar } from "../../components/FormulesToolbar";
-import { MarkdownContent } from "../../components/MarkdownContent";
-import { Skeleton } from "../../components/Skeleton";
-import { useToast } from "../../components/Toast";
-import { formatRelativeTime } from "../../lib/time";
+import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
+import { FormulesToolbar } from "../../shared/ui/FormulesToolbar";
+import { MarkdownContent } from "../../shared/ui/MarkdownContent";
+import { Skeleton } from "../../shared/ui/Skeleton";
+import { useToast } from "../../shared/ui/Toast";
+import { formatRelativeTime } from "../../shared/lib/time";
 import { authHeaders, erreurDetail, purgerSessionExpiree } from "./shared";
-import { effacerContexteAdmin, enregistrerAppliqueurAdmin, enregistrerOuvreurAdmin, publierContexteAdmin } from "../../lib/adminContexte";
+import { effacerContexteAdmin, enregistrerAppliqueurAdmin, enregistrerOuvreurAdmin, publierContexteAdmin } from "../../features/admin-epreuves/lib/adminContexte";
 
 type PartieForm = { matiere: string; nom: string; ordre: string };
 type ExerciceForm = {

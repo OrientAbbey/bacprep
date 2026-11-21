@@ -3,12 +3,12 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { Consultation, EpreuveListItem, Filtres } from "../api/types";
-import { CatalogueGroupes } from "../components/CatalogueGroupes";
-import { Combobox } from "../components/Combobox";
-import { MetaBadge } from "../components/MetaBadge";
-import { CatalogueSkeleton } from "../components/Skeleton";
-import { CLASSES_SECONDAIRE, classeLabel } from "../lib/referentiel";
-import { formatRelativeTime } from "../lib/time";
+import { CatalogueGroupes } from "../shared/ui/CatalogueGroupes";
+import { Combobox } from "../shared/ui/Combobox";
+import { MetaBadge } from "../shared/ui/MetaBadge";
+import { CatalogueSkeleton } from "../shared/ui/Skeleton";
+import { CLASSES_SECONDAIRE, classeLabel } from "../shared/lib/referentiel";
+import { formatRelativeTime } from "../shared/lib/time";
 import { t, tDynamique } from "../i18n";
 
 type CorrigeFiltre = "tous" | "avec" | "sans";

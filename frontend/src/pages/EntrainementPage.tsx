@@ -4,14 +4,14 @@ import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { BanqueDifficulte, BanqueGenerationInput, BanqueGenerationOutput, BanqueMode } from "../api/types";
-import { useAuth } from "../auth/AuthProvider";
-import { Combobox } from "../components/Combobox";
-import { MarkdownContent } from "../components/MarkdownContent";
-import { prechargerMol } from "../components/MolBlock";
-import { Spinner } from "../components/Spinner";
-import { useToast } from "../components/Toast";
+import { useAuth } from "../shared/auth/AuthProvider";
+import { Combobox } from "../shared/ui/Combobox";
+import { MarkdownContent } from "../shared/ui/MarkdownContent";
+import { prechargerMol } from "../shared/ui/MolBlock";
+import { Spinner } from "../shared/ui/Spinner";
+import { useToast } from "../shared/ui/Toast";
 import { getLang, t } from "../i18n";
-import { detailServeur } from "../lib/detailServeur";
+import { detailServeur } from "../shared/lib/detailServeur";
 import {
   type CorrectionVariante,
   type ResumeGabarit,
@@ -23,9 +23,9 @@ import {
   graineDepuisUrl,
   matieresDe,
   regrouper,
-} from "../lib/entrainement";
-import { copierTexte } from "../lib/pressePapiers";
-import { classeLabel } from "../lib/referentiel";
+} from "../features/entrainement/lib/entrainement";
+import { copierTexte } from "../shared/lib/pressePapiers";
+import { classeLabel } from "../shared/lib/referentiel";
 
 /**
  * Entraînement : des exercices dont les valeurs changent à chaque fois, avec

@@ -3,10 +3,10 @@ import { Flag } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
 import { Signalement } from "../../api/types";
-import { useToast } from "../../components/Toast";
-import { MOTIF_LABELS } from "../../lib/motifs";
-import { classeLabel } from "../../lib/referentiel";
-import { formatRelativeTime } from "../../lib/time";
+import { useToast } from "../../shared/ui/Toast";
+import { MOTIF_LABELS } from "../../shared/lib/motifs";
+import { classeLabel } from "../../shared/lib/referentiel";
+import { formatRelativeTime } from "../../shared/lib/time";
 import { ListeAdmin } from "./ListeAdmin";
 import { authHeaders } from "./shared";
 

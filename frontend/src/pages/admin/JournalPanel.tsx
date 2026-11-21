@@ -1,7 +1,7 @@
 import { ScrollText } from "lucide-react";
 import { AdminEvent } from "../../api/types";
 import { t } from "../../i18n";
-import { formatRelativeTime } from "../../lib/time";
+import { formatRelativeTime } from "../../shared/lib/time";
 import { ListeAdmin } from "./ListeAdmin";
 
 /** Journal d'audit : chronologie des actions admin (login/logout, CRUD,

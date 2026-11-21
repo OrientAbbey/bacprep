@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Skeleton } from "../../components/Skeleton";
-import { useToast } from "../../components/Toast";
-import { useContexteAdmin } from "../../lib/useAdminContexte";
+import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
+import { Skeleton } from "../../shared/ui/Skeleton";
+import { useToast } from "../../shared/ui/Toast";
+import { useContexteAdmin } from "../../features/admin-epreuves/lib/useAdminContexte";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
 interface Plan {

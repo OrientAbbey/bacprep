@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../../api/client";
-import { Skeleton } from "../../components/Skeleton";
+import { Skeleton } from "../../shared/ui/Skeleton";
 import { t } from "../../i18n";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 

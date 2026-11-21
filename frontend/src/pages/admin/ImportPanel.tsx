@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { FileUp } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { ImportJob } from "../../api/types";
-import { useToast } from "../../components/Toast";
-import { choisirJobASuivre, dureeJob, dureeLisible, estActif } from "../../lib/jobs";
-import { formatRelativeTime } from "../../lib/time";
+import { useToast } from "../../shared/ui/Toast";
+import { choisirJobASuivre, dureeJob, dureeLisible, estActif } from "../../features/sauvegardes/lib/jobs";
+import { formatRelativeTime } from "../../shared/lib/time";
 import { Stat } from "./StatsPanel";
 import { authHeaders } from "./shared";
 

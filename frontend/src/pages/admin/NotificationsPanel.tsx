@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Bell, Plus, Trash2, X } from "lucide-react";
 import { api } from "../../api/client";
 import { NotificationAdmin } from "../../api/types";
-import { useToast } from "../../components/Toast";
-import { formatRelativeTime } from "../../lib/time";
-import { useContexteAdmin } from "../../lib/useAdminContexte";
+import { useToast } from "../../shared/ui/Toast";
+import { formatRelativeTime } from "../../shared/lib/time";
+import { useContexteAdmin } from "../../features/admin-epreuves/lib/useAdminContexte";
 import { ListeAdmin } from "./ListeAdmin";
 import { authHeaders, EditableSelect, Field, Select } from "./shared";
 

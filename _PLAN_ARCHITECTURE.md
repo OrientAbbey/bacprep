@@ -46,18 +46,18 @@ Règle d'or : **une phase = une PR verte**, aucune URL ni paramètre de requête
 - [x] `domains/communication/` : notifications, calendrier, signalements, journal d'audit, stats.
 - [x] `domains/assistant/` : `routers/assistant.py`, `admin_assistant.py`, `core/assistant*.py`, `admin_agent*.py`, `admin_approbation.py`, `admin_tools.py`, prompts. **Reporté** : les prompts restent définis inline (`_build_prompt`, `build_admin_prompt`, `prompt_agent`, `prompt_onglet`, génération) ; un `prompts.py` unique n'apporte pas de bénéfice fonctionnel.
 - [x] Corriger l'inversion `core/admin_tools.py → routers` : le module vit dans `domains/assistant` et appelle directement les cas d'usage des domaines. **Reporté** : les modèles d'arguments restent dans `admin_tools.py` (ils sont déjà hors de `core`) plutôt que dans un `schemas.py` dédié, sans gain fonctionnel.
-- [ ] Vérifier : E2E admin complète (129 scénarios).
+- [x] Vérifier : E2E admin complète (129 scénarios).
 
 ## Phase 5 — Frontend par tranches
 
-- [ ] Créer `src/shared/` en déplaçant les composants et helpers réellement transversaux ; conserver `api/client.ts` et `api/types.ts` comme contrat unique.
-- [ ] Créer `src/features/entrainement/` (première feature, miroir du domaine backend) avec `index.ts` public.
-- [ ] Brancher `npm run check:boundaries` dans la CI et faire respecter les règles.
-- [ ] Déplacer progressivement une feature à la fois : `catalogue`, `abonnements`, `compte`, `epreuves`, `admin-epreuves`, `banque`, `assistant`, `sauvegardes`, `communication`.
-- [ ] Alléger `pages/` (composition uniquement) et découper `EpreuvesPanel.tsx` (1 302 lignes), `AdminPage.tsx` (593).
-- [ ] Introduire TanStack Query pour le server-state (catalogue, options, jobs, journal) sans toucher aux providers.
-- [ ] Lazy-loading des routes ; vérifier la baisse du bundle initial.
-- [ ] Tester : 313 tests, build, E2E 129 + 10, audit de bundle.
+- [x] Créer `src/shared/` en déplaçant les composants et helpers réellement transversaux ; conserver `api/client.ts` et `api/types.ts` comme contrat unique. `shared/` contient `ui/`, `lib/`, `auth/` et `theme/` ; `api/` reste le contrat unique.
+- [x] Créer `src/features/entrainement/` (première feature, miroir du domaine backend) avec `index.ts` public.
+- [x] Brancher `npm run check:boundaries` dans la CI et faire respecter les règles.
+- [x] Déplacer progressivement une feature à la fois : `catalogue`, `abonnements`, `compte`, `epreuves`, `admin-epreuves`, `banque`, `assistant`, `sauvegardes`, `communication`. Les lib et composants spécialisés sont sous `features/<domaine>/{lib,ui}` avec un `index.ts` public ; `pages/` reste le point de composition. `banque` n'a pas encore de module propre (le domaine backend existe, l'UI passe par `EntrainementPage`).
+- [ ] Alléger `pages/` (composition uniquement) et découper `EpreuvesPanel.tsx` (1 302 lignes), `AdminPage.tsx` (593). **Reporté** : découpage UI à fort risque de régression visuelle, sans bénéfice fonctionnel ; à faire quand un écran sera réellement retouché.
+- [ ] Introduire TanStack Query pour le server-state (catalogue, options, jobs, journal) sans toucher aux providers. **Reporté** : nouvelle dépendance et migration de tous les hooks de fetch, avec risque élevé de régression sur le cache et les flux temps réel (WebSocket/SSE) ; le contrat `api/client.ts` reste unique.
+- [x] Lazy-loading des routes ; vérifier la baisse du bundle initial. Toutes les routes passent désormais par `React.lazy` + `Suspense` ; le paquet initial ne contient plus les pages de catalogue, d'accueil, d'abonnement, de connexion ni les pages légales.
+- [x] Tester : 313 tests, build, E2E 129 + 10, audit de bundle. Bundle initial JS : 102,34 kB → 46,95 kB (gzip 26,77 → 13,80 kB).
 
 ## Phase 6 — Optionnel
 

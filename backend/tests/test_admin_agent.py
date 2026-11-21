@@ -319,7 +319,7 @@ def test_libelles_outils_synchronises_avec_le_registre():
     import re
     from pathlib import Path
 
-    fichier = Path(__file__).resolve().parents[2] / "frontend/src/lib/adminActions.ts"
+    fichier = Path(__file__).resolve().parents[2] / "frontend/src/features/admin-epreuves/lib/adminActions.ts"
     texte = fichier.read_text(encoding="utf-8")
     noms = set(re.findall(r"^\s{2}(\w+):\s*\"", texte, re.MULTILINE))
     assert set(admin_tools.TOOLS) == noms

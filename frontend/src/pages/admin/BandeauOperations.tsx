@@ -8,7 +8,7 @@ import {
   operationsEnCours,
   type OngletOperation,
   type OperationEnCours,
-} from "../../lib/jobs";
+} from "../../features/sauvegardes/lib/jobs";
 import { authHeaders } from "./shared";
 
 /** Bandeau « Opérations en cours », visible quel que soit l'onglet.
