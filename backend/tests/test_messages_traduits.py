@@ -15,7 +15,7 @@ EN = json.loads((RACINE / "frontend" / "src" / "locales" / "en.json").read_text(
 # Routeurs que l'interface élève appelle (la console admin reste volontairement en français).
 ROUTEURS_ELEVE = ["auth", "me", "epreuves", "assistant", "subscriptions", "essais", "entrainement", "banque", "files", "notifications", "calendrier", "avatar", "ws", "deps"]
 
-# Depuis les phases 2/3 de la refonte, ces routeurs élève sont devenus des
+# Depuis les phases 2 à 4 de la refonte, ces routeurs élève sont devenus des
 # shims : leurs messages sont émis depuis le domaine. On suit le code réel
 # pour que le contrat de traduction continue de porter sur les textes vus par
 # l'élève (les shims eux-mêmes ne contiennent aucun message).
@@ -26,6 +26,10 @@ DOMAINES_ELEVE = {
     "subscriptions": "domains/abonnements/api.py",
     "avatar": "domains/comptes/api_avatar.py",
     "entrainement": "domains/entrainement/api.py",
+    "assistant": "domains/assistant/api.py",
+    "banque": "domains/banque/api.py",
+    "notifications": "domains/communication/api_notifications.py",
+    "calendrier": "domains/communication/api_calendrier.py",
 }
 
 # Messages produits hors `HTTPException`/`message=` : évènement d'erreur du flux, session fermée, IA indisponible.
