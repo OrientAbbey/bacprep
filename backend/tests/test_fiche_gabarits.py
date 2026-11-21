@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core import gabarits as g
+from app.domains.entrainement import moteur as g
 
 _SPEC = importlib.util.spec_from_file_location("fiche_gabarits", Path(__file__).resolve().parent.parent / "scripts_dev" / "fiche_gabarits.py")
 fiche = importlib.util.module_from_spec(_SPEC)

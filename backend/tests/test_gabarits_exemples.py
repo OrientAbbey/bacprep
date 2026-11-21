@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("sympy")
 
-from app.core import gabarits as g  # noqa: E402
+from app.domains.entrainement import moteur as g  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location("verif_gabarits", Path(__file__).resolve().parent.parent / "scripts_dev" / "verif_gabarits.py")
 verif = importlib.util.module_from_spec(_SPEC)

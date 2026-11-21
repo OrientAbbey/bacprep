@@ -30,7 +30,7 @@ AIDE = {
 
 
 def lignes() -> list[dict]:
-    from app.core import gabarits as g
+    from app.domains.entrainement import moteur as g
 
     valides, erreurs = g.charger_dossier()
     if erreurs:

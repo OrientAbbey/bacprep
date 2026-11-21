@@ -35,15 +35,14 @@ from .core.config import EXAMPLE_ADMIN_TOKEN, MIN_FILE_URL_SECRET_BYTES, is_prod
 from .core.errors import installer_handlers as installer_handlers_erreurs
 from .core.logging_config import log_json_actif, get_logger, setup_logging
 from .db import IS_SQLITE, Base, SessionLocal, engine, get_db
+from .domains.entrainement import api as entrainement, api_admin as admin_gabarits
 from .routers import (
     admin_assistant,
     admin_banque,
-    admin_gabarits,
     banque,
     admin_generation,
     calendrier,
     cron,
-    entrainement,
     essais,
     admin_epreuves,
     admin_import,
