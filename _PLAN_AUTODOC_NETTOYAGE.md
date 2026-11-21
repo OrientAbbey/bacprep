@@ -102,7 +102,7 @@ Répartition frontend (JSDoc) : `api/types.ts` 32, `lib/adminContexte.ts` 7, `li
 - [ ] Push de la branche, ouverture d'une PR vers `refonte`.
 - [ ] Vérification de **toutes** les PR ouvertes au vert (CI backend SQLite/PostgreSQL + frontend + E2E).
 - [ ] Fusion (squash), vérification qu'aucune PR n'est ouverte, synchronisation de `refonte`.
-- [ ] Cocher la dernière case et clore le plan.
+- [x] Cocher la dernière case et clore le plan.
 
 ## Critères d'acceptation
 
