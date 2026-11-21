@@ -27,7 +27,7 @@ Règle d'or : **une phase = une PR verte**, aucune URL ni paramètre de requête
 
 - [ ] Créer `backend/app/domains/entrainement/` avec `api.py`, `schemas.py`, `moteur.py`, `use_cases.py`.
 - [ ] Déplacer `core/gabarits.py` → `moteur.py`, `routers/entrainement.py` + `routers/admin_gabarits.py` → `api.py` (deux routeurs inclus).
-- [ ] Déplacer `app/gabarits/*.json` sous le domaine, en conservant le chargeur et le cache.
+- [ ] Déplacer `app/gabarits/*.json` sous le domaine, en conservant le chargeur et le cache. **Reporté** : les 19 JSON restent sous `app/gabarits` (le chargeur les résout via `parents[2]`) ; le déplacement n'apporte pas de bénéfice fonctionnel et toucherait les scripts de relecture.
 - [ ] Conserver **toutes** les URLs (`/api/entrainement/*`, `/api/admin/gabarits/*`) et les codes d'erreur.
 - [ ] Tester : tests entraînement + E2E entraînement + compatibilité des signalements.
 
