@@ -37,7 +37,6 @@ from .deps import get_epreuve_or_404, log_admin_event, require_admin
 router = APIRouter(prefix="/api/admin", tags=["admin-epreuves"])
 log = get_logger("admin_epreuves")
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 STATUTS_VALIDES = ("brouillon", "a_reviser", "publie")
 
@@ -579,17 +578,10 @@ def admin_upload_image(
     if cible not in ("sujet", "corrige"):
         raise HTTPException(400, "cible doit être 'sujet' ou 'corrige'")
     e = get_epreuve_or_404(db, epreuve_id)
-    if file.content_type not in epreuve_files.ALLOWED_IMAGE_MIME:
-        raise HTTPException(400, f"Type de fichier non autorisé: {file.content_type}")
-
-    raw = _read_bounded(file, MAX_IMAGE_BYTES)
-
     try:
-        data, mime, width, height = images.process_image(raw, file.content_type or "")
-    except images.InvalidImageError as exc:
-        raise HTTPException(415, f"Fichier image invalide : {exc}") from exc
-
-    ext = os.path.splitext(file.filename or "")[1] or ".png"
+        data, mime, width, height, ext = images.validate_upload_image(file)
+    except images.UploadImageError as exc:
+        raise HTTPException(exc.http_status, str(exc)) from exc
     row = epreuve_files.save_image(
         db, e, cible, f"{uuid.uuid4().hex[:8]}{ext}", data, mime, width=width, height=height
     )

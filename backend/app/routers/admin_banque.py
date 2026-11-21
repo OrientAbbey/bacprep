@@ -17,7 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..core import epreuve_files, images, referentiel_options
+from ..core import images, referentiel_options
 from ..core.banque_generation import DIFFICULTES, SPECIAL_AUCUNE
 from ..core.logging_config import get_logger
 from ..core.storage import get_storage
@@ -476,9 +476,6 @@ def definir_meta_classe(classe: str, payload: ClasseMetaIn, db: Session = Depend
     return result
 
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
-
-
 @router.post("/images")
 def upload_image_banque(
     file: UploadFile = File(...),
@@ -487,23 +484,14 @@ def upload_image_banque(
 ) -> dict:
     """Dépose une illustration (figure, graphique, schéma) pour un exercice.
 
-    Mêmes garde-fous que les images d'épreuve : types autorisés, 5 Mo maximum,
-    ré-encodage via Pillow. L'URL renvoyée s'insère directement dans le
-    Markdown de l'exercice : `![Légende](/api/banque/images/{id})`.
+    Validation partagée avec les images d'épreuve (types autorisés, 5 Mo
+    maximum, ré-encodage via Pillow). L'URL renvoyée s'insère directement
+    dans le Markdown : `![Légende](/api/banque/images/{id})`.
     """
-    if file.content_type not in epreuve_files.ALLOWED_IMAGE_MIME:
-        raise HTTPException(400, f"Type de fichier non autorisé: {file.content_type}")
-    brut = file.file.read(MAX_IMAGE_BYTES + 1)
-    if len(brut) > MAX_IMAGE_BYTES:
-        raise HTTPException(413, "Image trop volumineuse (5 Mo maximum)")
     try:
-        data, mime, width, height = images.process_image(brut, file.content_type or "")
-    except images.InvalidImageError as exc:
-        raise HTTPException(415, f"Fichier image invalide : {exc}") from exc
-
-    import os
-
-    ext = os.path.splitext(file.filename or "")[1] or ".png"
+        data, mime, width, height, ext = images.validate_upload_image(file)
+    except images.UploadImageError as exc:
+        raise HTTPException(exc.http_status, str(exc)) from exc
     cle = f"banque/images/{uuid.uuid4().hex[:8]}-{uuid.uuid4().hex[:8]}{ext}"
     from ..core.storage import get_storage
 

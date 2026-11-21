@@ -13,6 +13,7 @@ l'app).
 """
 from __future__ import annotations
 
+import os
 from io import BytesIO
 from typing import Optional
 
@@ -27,6 +28,9 @@ except Exception:  # pragma: no cover
     _PILLOW_OK = False
 
 MAX_IMAGE_WIDTH = 1600
+
+# Plafond d'un upload d'illustration, partagé par les endpoints Épreuves et Banque.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 # Garde-fou anti "decompression bomb" explicite (Pillow en a un par défaut,
 # ~178 Mpx, mais on le fixe ici pour ne pas dépendre de sa valeur ni de
@@ -44,6 +48,47 @@ if _PILLOW_OK:
 class InvalidImageError(ValueError):
     """Le contenu fourni n'est pas une image valide ou d'un format
     autorisé — le routeur répondra 415."""
+
+
+class UploadImageError(ValueError):
+    """Rejet d'un upload d'image : ``code`` vaut ``"type"`` (400),
+    ``"taille"`` (413) ou ``"contenu"`` (415) pour le mapping HTTP."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def http_status(self) -> int:
+        """Statut HTTP correspondant au motif de rejet."""
+        # 400 pour la taille : c'est le statut historique de l'upload d'image
+        # d'épreuve, conservé pour ne pas casser les clients existants.
+        return {"type": 400, "taille": 400, "contenu": 415}[self.code]
+
+
+def validate_upload_image(upload) -> tuple[bytes, str, Optional[int], Optional[int], str]:
+    """Valide et optimise une illustration uploadée, une seule fois pour tous
+    les endpoints (Épreuves et Banque).
+
+    ``upload`` est un objet ``UploadFile`` (duck-typé : ``content_type``,
+    ``filename`` et ``file.read``). Retourne ``(données, MIME, largeur,
+    hauteur, extension)``. Lève ``UploadImageError`` avec un code qui permet
+    au routeur de répondre 400 (type ou taille) ou 415 (contenu).
+    """
+    from .epreuve_files import ALLOWED_IMAGE_MIME
+
+    type_declare = getattr(upload, "content_type", None)
+    if type_declare not in ALLOWED_IMAGE_MIME:
+        raise UploadImageError("type", f"Type de fichier non autorisé: {type_declare}")
+    brut = upload.file.read(MAX_IMAGE_BYTES + 1)
+    if len(brut) > MAX_IMAGE_BYTES:
+        raise UploadImageError("taille", "Image trop volumineuse (5 Mo maximum)")
+    try:
+        donnees, mime, largeur, hauteur = process_image(brut, type_declare or "")
+    except InvalidImageError as exc:
+        raise UploadImageError("contenu", f"Fichier image invalide : {exc}") from exc
+    ext = os.path.splitext(getattr(upload, "filename", "") or "")[1] or ".png"
+    return donnees, mime, largeur, hauteur, ext
 
 
 AVATAR_TAILLE = 256
