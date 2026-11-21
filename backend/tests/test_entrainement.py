@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from app.core import gabarits as g
+from app.domains.entrainement import moteur as g
 
 GID = "derivee-polynome-degre-3"
 URL = "/api/entrainement/gabarits"

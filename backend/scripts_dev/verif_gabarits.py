@@ -25,7 +25,7 @@ def verifier(gab, graine: int) -> list[str]:
     """Liste des désaccords pour cette graine (vide = tout est cohérent)."""
     import sympy as sp
 
-    from app.core import gabarits as g
+    from app.domains.entrainement import moteur as g
 
     env = gab.tirer(graine)
     inst = gab.instancier(graine)
@@ -188,7 +188,7 @@ def verifier(gab, graine: int) -> list[str]:
 
 
 def verifier_tous(nb_graines: int = 100) -> dict[str, list[str]]:
-    from app.core import gabarits as g
+    from app.domains.entrainement import moteur as g
 
     valides, invalides = g.charger_dossier()
     resultat = {nom: [f"fichier invalide : {msg}"] for nom, msg in invalides.items()}

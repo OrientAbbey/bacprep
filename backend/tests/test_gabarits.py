@@ -9,7 +9,7 @@ from fractions import Fraction
 
 import pytest
 
-from app.core import gabarits as g
+from app.domains.entrainement import moteur as g
 
 
 def ev(expression: str, **valeurs):
