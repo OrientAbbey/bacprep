@@ -77,6 +77,7 @@ const PROVIDERS = [
  *   est interrogé ; s'il répond `true`, le moyen de paiement est masqué et
  *   remplacé par un message explicite (garde-fou dupliqué côté serveur).
  */
+/** Page d'abonnement : formules disponibles et simulation de paiement. */
 export function SubscribePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();

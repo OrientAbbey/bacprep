@@ -19,6 +19,7 @@ import type { Cle } from "../i18n";
  * - Catalogue : épreuves et corrigés déjà publiés ;
  * - Entraînement : exercices générés à la demande (et non « Exercices »).
  */
+/** Entrée de la navigation principale : route, clé de traduction, icône et correspondance exacte. */
 export interface NavItem {
   to: string;
   label: Cle;
@@ -26,6 +27,7 @@ export interface NavItem {
   end?: boolean;
 }
 
+/** Liste des entrées affichées dans la barre de navigation et le tiroir mobile. */
 export const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Accueil", Icon: Home, end: true },
   { to: "/catalogue", label: "Catalogue", Icon: BookOpen, end: false },

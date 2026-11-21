@@ -15,6 +15,7 @@ interface AuthConfig {
   google_client_id: string | null;
 }
 
+/** Page de connexion (mock ou Google) avec redirection vers la destinationInitiale. */
 export function LoginPage() {
   const [config, setConfig] = useState<AuthConfig | null>(null);
   const [configError, setConfigError] = useState(false);

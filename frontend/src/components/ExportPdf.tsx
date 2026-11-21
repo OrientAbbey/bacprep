@@ -5,6 +5,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { prechargerMol } from "./MolBlock";
 import { t } from "../i18n";
 
+/** Cible d'une impressions PDF : sujet, corrigé ou les deux à la fois. */
 export type ChoixPdf = "sujet" | "corrige" | "les-deux";
 
 /**

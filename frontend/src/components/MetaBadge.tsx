@@ -1,6 +1,8 @@
 import React from "react";
 
+/** Palette d'un badge : neutre, correction, validation ou mise en avant. */
 export type BadgeTone = "default" | "correction" | "valide" | "highlight";
+/** Forme d'un badge : étiquette rectangulaire ou pastille arrondie. */
 export type BadgeVariant = "tag" | "pill";
 
 const TONE_CLASSES: Record<BadgeTone, string> = {
@@ -21,6 +23,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
  *   et toute puce flottante en haut d'une carte.
  * Tous les badges de l'app doivent passer par ici (plus de badge inline).
  */
+/** Petit badge de métadonnées (statut, matière…) avec tone et variante configurables. */
 export function MetaBadge({
   children,
   tone = "default",

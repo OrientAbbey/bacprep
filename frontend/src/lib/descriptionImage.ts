@@ -30,6 +30,7 @@ export function nettoyerDescription(texte: string): string {
 
 const echapper = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Insère ou remplace la description alt d'une image Markdown dans un contenu. */
 export function appliquerDescription(markdown: string, fileId: string, description: string, ecraser = false): ResultatDescription {
   const re = reBalises(fileId);
   let remplacees = 0;

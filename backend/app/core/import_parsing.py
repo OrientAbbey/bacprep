@@ -35,6 +35,7 @@ def guess_cible(path: Path) -> str:
 
 
 def guess_serie(text: str) -> Optional[str]:
+    """Déduit la série d'une épreuve à partir de son nom ou de métadonnées quand elle n'est pas explicitement renseignée."""
     m = _SERIE_RE.search(text or "")
     return m.group(1).upper() if m else None
 

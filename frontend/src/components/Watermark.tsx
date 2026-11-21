@@ -1,5 +1,6 @@
 import { useId } from "react";
 
+/** Filigrane SVG répété, avec un identifiant de motif unique par instance. */
 export function Watermark({ label }: { label: string }) {
   // useId : id unique par instance — deux filigranes simultanés ne
   // partageraient plus le même id de pattern SVG (collision évitée).

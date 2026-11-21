@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Root } from "hast";
+import type { Element, Root } from "hast";
 import { rehypeImageWidths } from "./markdownImages";
 
 function treeWithImg(src: string, style?: string): Root {
@@ -27,7 +27,7 @@ function treeWithImg(src: string, style?: string): Root {
 function apply(src: string, style?: string): { src: unknown; style: unknown } {
   const tree = treeWithImg(src, style);
   rehypeImageWidths()(tree);
-  const img = (tree.children[0] as any).children[0];
+  const img = (tree.children[0] as Element).children[0] as Element;
   return { src: img.properties.src, style: img.properties.style };
 }
 

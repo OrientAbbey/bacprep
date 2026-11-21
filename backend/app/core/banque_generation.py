@@ -94,6 +94,7 @@ class ExerciceBanque:
 
 @dataclass(frozen=True)
 class Parametres:
+    """Paramètres du tirage d'une épreuve depuis la Banque : matière, classe, série, séquence, mode, difficulté et nombre d'exercices éventuellement forcé."""
     matiere: str
     classe: str
     serie: str | None = None
@@ -124,6 +125,7 @@ class Parametres:
 
     @property
     def n(self) -> int:
+        """Nombre d'exercices à tirer : valeur explicite si fournie, sinon barème associé à la difficulté demandée."""
         return self.nb_exercices if self.nb_exercices is not None else N_PAR_DIFFICULTE[self.difficulte]
 
 
@@ -163,30 +165,30 @@ def _derniere_sequence_connue(sequences_connues: Sequence[str]) -> int:
     return max(numeros, default=0)
 
 
-def _meta(p: Parametres, classe: str) -> ClasseMeta:
-    return p.classes_meta.get(classe, ClasseMeta())
+def _meta(parametres: Parametres, classe: str) -> ClasseMeta:
+    return parametres.classes_meta.get(classe, ClasseMeta())
 
 
-def _rangs_inferieurs(p: Parametres) -> list[int]:
+def _rangs_inferieurs(parametres: Parametres) -> list[int]:
     """Profondeurs de remontée autorisées (4.e / 4.k) : 2 niveaux si la classe
     demandée a un examen, 1 sinon, et AUCUNE pour une épreuve Difficile."""
-    if p.difficulte == "Difficile" or not p.classes:
+    if parametres.difficulte == "Difficile" or not parametres.classes:
         return []
     try:
-        rang = list(p.classes).index(p.classe)
+        rang = list(parametres.classes).index(parametres.classe)
     except ValueError:
         return []
-    profondeur = 2 if _meta(p, p.classe).a_examen else 1
+    profondeur = 2 if _meta(parametres, parametres.classe).a_examen else 1
     return [d for d in range(1, profondeur + 1) if rang - d >= 0]
 
 
-def classes_eligibles(p: Parametres) -> list[str]:
+def classes_eligibles(parametres: Parametres) -> list[str]:
     """Classe demandée puis classes inférieures autorisées, de la plus proche
     à la plus lointaine."""
-    if not p.classes or p.classe not in p.classes:
-        return [p.classe]
-    rang = list(p.classes).index(p.classe)
-    return [p.classe] + [p.classes[rang - d] for d in _rangs_inferieurs(p)]
+    if not parametres.classes or parametres.classe not in parametres.classes:
+        return [parametres.classe]
+    rang = list(parametres.classes).index(parametres.classe)
+    return [parametres.classe] + [parametres.classes[rang - d] for d in _rangs_inferieurs(parametres)]
 
 
 def _serie_ok(exercice: ExerciceBanque, serie: str | None) -> bool:
@@ -199,23 +201,23 @@ def _serie_ok(exercice: ExerciceBanque, serie: str | None) -> bool:
     return serie in exercice.series
 
 
-def _session_ok_demande(exercice: ExerciceBanque, p: Parametres) -> bool:
+def _session_ok_demande(exercice: ExerciceBanque, parametres: Parametres) -> bool:
     """Tableau 4.0 et 4.h pour la classe DEMANDÉE."""
     if exercice.session is None:
         # Session vide : éligible aux examens et aux épreuves sans séquence,
         # jamais à une épreuve de séquence (4.0).
-        return p.mode in ("examen", "examen_blanc", "vide")
-    if p.mode in ("examen", "examen_blanc"):
+        return parametres.mode in ("examen", "examen_blanc", "vide")
+    if parametres.mode in ("examen", "examen_blanc"):
         return exercice.tag_examen
-    if p.mode == "vide":
+    if parametres.mode == "vide":
         return True
     # mode == "sequence"
-    if p.sequence is None:
+    if parametres.sequence is None:
         return False
-    return exercice.session <= p.sequence
+    return exercice.session <= parametres.sequence
 
 
-def _session_ok_inferieure(exercice: ExerciceBanque, p: Parametres) -> bool:
+def _session_ok_inferieure(exercice: ExerciceBanque, parametres: Parametres) -> bool:
     """4.b / 4.c / 4.h / 4.k pour une classe INFÉRIEURE.
 
     4.b prime sur le tableau 4.0 : seules les dernières séquences sont
@@ -226,54 +228,54 @@ def _session_ok_inferieure(exercice: ExerciceBanque, p: Parametres) -> bool:
     """
     if exercice.session is None:
         return False
-    if p.mode in ("examen", "examen_blanc") and not exercice.tag_examen:
+    if parametres.mode in ("examen", "examen_blanc") and not exercice.tag_examen:
         return False
-    seuil = seuil_sequences_basses(p.sequences_connues)
-    if p.difficulte == "Moyen":
+    seuil = seuil_sequences_basses(parametres.sequences_connues)
+    if parametres.difficulte == "Moyen":
         # 4.k renforce : séquence la plus haute uniquement.
-        return exercice.session == _derniere_sequence_connue(p.sequences_connues)
+        return exercice.session == _derniere_sequence_connue(parametres.sequences_connues)
     return exercice.session >= seuil
 
 
-def classe_effective(exercice: ExerciceBanque, p: Parametres) -> str | None:
+def classe_effective(exercice: ExerciceBanque, parametres: Parametres) -> str | None:
     """Classe à laquelle cet exercice participe dans cette épreuve : la plus
     proche de la classe demandée parmi ses classes ciblées (4.e/4.f). None =
     hors périmètre de classes."""
-    return next((c for c in classes_eligibles(p) if c in exercice.classes), None)
+    return next((c for c in classes_eligibles(parametres) if c in exercice.classes), None)
 
 
-def _classe_inferieure_ok(exercice: ExerciceBanque, p: Parametres, classe: str) -> bool:
+def _classe_inferieure_ok(exercice: ExerciceBanque, parametres: Parametres, classe: str) -> bool:
     """4.l : une classe inférieure sans spécialité est exclue pour un élève qui
     en renseigne une, sauf exercice tagué « Aucune » (4.d prime sur 4.l)."""
-    if _meta(p, classe).specialite_obligatoire or p.serie is None:
+    if _meta(parametres, classe).specialite_obligatoire or parametres.serie is None:
         return True
     return SPECIAL_AUCUNE in exercice.series
 
 
-def eligibles(banque: Iterable[ExerciceBanque], p: Parametres) -> list[ExerciceBanque]:
+def eligibles(banque: Iterable[ExerciceBanque], parametres: Parametres) -> list[ExerciceBanque]:
     """Pool éligible : 4.0 + 4.b + 4.c + 4.d + 4.e + 4.k + 4.l."""
     out: list[ExerciceBanque] = []
     for e in banque:
-        if p.matiere not in e.matieres:
+        if parametres.matiere not in e.matieres:
             continue
-        classe = classe_effective(e, p)
+        classe = classe_effective(e, parametres)
         if classe is None:
             continue
-        if not _serie_ok(e, p.serie):
+        if not _serie_ok(e, parametres.serie):
             continue
-        if classe == p.classe:
-            if not _session_ok_demande(e, p):
+        if classe == parametres.classe:
+            if not _session_ok_demande(e, parametres):
                 continue
         else:
-            if not _session_ok_inferieure(e, p):
+            if not _session_ok_inferieure(e, parametres):
                 continue
-            if not _classe_inferieure_ok(e, p, classe):
+            if not _classe_inferieure_ok(e, parametres, classe):
                 continue
         out.append(e)
     return sorted(out, key=lambda e: e.id)
 
 
-def quotas_parties(parties: Sequence[str], n: int, rng: random.Random) -> dict[str, int]:
+def quotas_parties(parties: Sequence[str], nombre_exercices: int, rng: random.Random) -> dict[str, int]:
     """Règle 4.a et ses trois exceptions, sous forme de quota par partie.
 
     - une seule partie (exception 1) : tout vient d'elle ;
@@ -288,9 +290,9 @@ def quotas_parties(parties: Sequence[str], n: int, rng: random.Random) -> dict[s
     if not uniques:
         return {}
     if len(uniques) == 1:
-        return {uniques[0]: max(n, 1)}
-    if len(uniques) < n:
-        q, r = divmod(n, len(uniques))
+        return {uniques[0]: max(nombre_exercices, 1)}
+    if len(uniques) < nombre_exercices:
+        q, r = divmod(nombre_exercices, len(uniques))
         supplementaires = set(rng.sample(uniques, r)) if r else set()
         return {pa: q + (1 if pa in supplementaires else 0) for pa in uniques}
     return {pa: 1 for pa in uniques}
@@ -300,62 +302,65 @@ class _Tirage:
     """État d'un tirage sans remise : quotas de parties et plafond 4.f (un
     exercice au plus par niveau de classe inférieure)."""
 
-    def __init__(self, p: Parametres, pool: Sequence[ExerciceBanque], rng: random.Random) -> None:
-        self.p = p
-        self.quotas = quotas_parties([e.partie_id for e in pool], p.n, rng)
-        self.classe_de = {e.id: c for e in pool if (c := classe_effective(e, p)) is not None}
+    def __init__(self, parametres: Parametres, pool: Sequence[ExerciceBanque], rng: random.Random) -> None:
+        self.parametres = parametres
+        self.quotas = quotas_parties([e.partie_id for e in pool], parametres.n, rng)
+        self.classe_de = {e.id: c for e in pool if (c := classe_effective(e, parametres)) is not None}
         self.inferieures: dict[str, int] = {}
         self.tires: list[ExerciceBanque] = []
         self._ids: set[str] = set()
 
-    def ajouter(self, e: ExerciceBanque) -> None:
-        self.tires.append(e)
-        self._ids.add(e.id)
-        self.quotas[e.partie_id] = self.quotas.get(e.partie_id, 1) - 1
-        classe = self.classe_de.get(e.id)
-        if classe is not None and classe != self.p.classe:
+    def ajouter(self, exercice: ExerciceBanque) -> None:
+        """Enregistre l'exercice retenu, décrémente son quota de partie et met à jour le plafond d'exercices issus de classes inférieures (règle 4.f)."""
+        self.tires.append(exercice)
+        self._ids.add(exercice.id)
+        self.quotas[exercice.partie_id] = self.quotas.get(exercice.partie_id, 1) - 1
+        classe = self.classe_de.get(exercice.id)
+        if classe is not None and classe != self.parametres.classe:
             self.inferieures[classe] = self.inferieures.get(classe, 0) + 1
 
-    def disponible(self, e: ExerciceBanque) -> bool:
-        if e.id in self._ids:
+    def disponible(self, exercice: ExerciceBanque) -> bool:
+        """Indique si un exercice peut encore être tiré : pas déjà pris, quota de partie restant et plafond 4.f non atteint."""
+        if exercice.id in self._ids:
             return False
-        if self.quotas.get(e.partie_id, 1) <= 0:
+        if self.quotas.get(exercice.partie_id, 1) <= 0:
             return False
-        classe = self.classe_de.get(e.id)
-        if classe is not None and classe != self.p.classe and self.inferieures.get(classe, 0) >= 1:
+        classe = self.classe_de.get(exercice.id)
+        if classe is not None and classe != self.parametres.classe and self.inferieures.get(classe, 0) >= 1:
             return False  # 4.f : un seul exercice par niveau inférieur
         return True
 
-    def tirer(self, candidats: Sequence[ExerciceBanque], k: int, rng: random.Random) -> list[ExerciceBanque]:
+    def tirer(self, candidats: Sequence[ExerciceBanque], nombre: int, rng: random.Random) -> list[ExerciceBanque]:
+        """Tire jusqu'à ``nombre`` exercices disponibles, pondérés par la difficulté, en mettant à jour l'état du tirage."""
         pris: list[ExerciceBanque] = []
-        while len(pris) < k:
+        while len(pris) < nombre:
             pool = [e for e in candidats if self.disponible(e)]
             if not pool:
                 break
-            choix = rng.choices(pool, weights=[poids(self.p.difficulte, e.niveau) for e in pool], k=1)[0]
+            choix = rng.choices(pool, weights=[poids(self.parametres.difficulte, e.niveau) for e in pool], k=1)[0]
             self.ajouter(choix)
             pris.append(choix)
         return pris
 
 
 def composer(
-    pool: Sequence[ExerciceBanque], p: Parametres, rng: random.Random
+    pool: Sequence[ExerciceBanque], parametres: Parametres, rng: random.Random
 ) -> tuple[list[ExerciceBanque], list[str]]:
     """Une passe complète de l'algorithme 4.m. Renvoie les exercices tirés et
     les événements (`RULE_50_RELAXED`, `INCOMPLETE_EXAM`)."""
     evenements: list[str] = []
-    n = p.n
-    tirage = _Tirage(p, pool, rng)
+    n = parametres.n
+    tirage = _Tirage(parametres, pool, rng)
 
-    if p.mode == "sequence" and p.sequence is not None:
+    if parametres.mode == "sequence" and parametres.sequence is not None:
         cible = n // 2
-        exact = [e for e in pool if e.session == p.sequence]
+        exact = [e for e in pool if e.session == parametres.sequence]
         tirage.tirer(exact, cible, rng)
         deficit = cible - len(tirage.tires)
         if deficit > 0:
             evenements.append(RULE_50_RELAXED)
             # Phase 2a : compensation par la classe DEMANDÉE seulement (4.g).
-            compensation = [e for e in pool if tirage.classe_de.get(e.id) == p.classe]
+            compensation = [e for e in pool if tirage.classe_de.get(e.id) == parametres.classe]
             tirage.tirer(compensation, deficit, rng)
             if len(tirage.tires) < cible:
                 # La classe demandée ne suffit pas : épreuve incomplète, et
@@ -373,7 +378,7 @@ def composer(
 
 def generer(
     banque: Sequence[ExerciceBanque],
-    p: Parametres,
+    parametres: Parametres,
     rng: random.Random | None = None,
     historique: Iterable[tuple[str, ...]] = (),
     max_tentatives: int = MAX_TENTATIVES,
@@ -386,12 +391,12 @@ def generer(
     pédagogiques n'ont jamais été relâchées pour obtenir l'unicité.
     """
     rng = rng or random.Random()
-    pool = eligibles(banque, p)
+    pool = eligibles(banque, parametres)
     connues = set(historique)
     tires: list[ExerciceBanque] = []
     evenements: list[str] = []
     for _ in range(max(1, max_tentatives)):
-        tires, evenements = composer(pool, p, rng)
+        tires, evenements = composer(pool, parametres, rng)
         if canonique(e.id for e in tires) not in connues:
             return tires, evenements
     return tires, evenements + [UNIQUENESS_SATURATED]

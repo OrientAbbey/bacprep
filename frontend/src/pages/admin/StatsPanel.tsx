@@ -63,6 +63,7 @@ export function StatsPanel({ stats }: { stats: AdminStats }) {
   );
 }
 
+/** Carte affichant une statistique chiffrée avec son libellé et son complément. */
 export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-lg border border-ink-soft/15 bg-paper-raised p-3">

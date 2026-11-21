@@ -1,3 +1,4 @@
+/** Une rubrique du centre d'aide : identifiant d'ancre, titre, introduction et points clés. */
 export interface SectionAide {
   id: string;
   titre: string;

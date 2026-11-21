@@ -22,6 +22,7 @@ export function immersionInitiale(): boolean {
     return false;
   }
 }
+/** Mémorise le mode immersion (site masqué pendant la lecture). */
 export function memoriserImmersion(actif: boolean): void {
   try {
     localStorage.setItem(CLE_IMMERSION, actif ? "oui" : "non");
@@ -30,6 +31,7 @@ export function memoriserImmersion(actif: boolean): void {
   }
 }
 
+/** Mémorise l'affichage choisi pour les sujets (un seul, paginé, tous…). */
 export function memoriserAffichage(a: AffichageSujets): void {
   try {
     localStorage.setItem(CLE, a);

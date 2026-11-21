@@ -3,6 +3,7 @@
  * des routes `/api/entrainement/...` et `/api/admin/gabarits/...`, et petits
  * utilitaires. */
 
+/** Résumé d'un gabarit validé affiché dans la liste d'entraînement. */
 export interface ResumeGabarit {
   id: string;
   titre: string;
@@ -13,11 +14,13 @@ export interface ResumeGabarit {
   total_points: number;
 }
 
+/** Une question d'une variante : énoncé et barème en points. */
 export interface QuestionVariante {
   enonce: string;
   points: number;
 }
 
+/** Variante concrète d'un gabarit (graine fixe), avec son énoncé et ses questions mais sans réponses. */
 export interface Variante {
   id: string;
   titre: string;
@@ -27,11 +30,13 @@ export interface Variante {
   total_points: number;
 }
 
+/** Correction d'une question : réponse courte et étapes détaillées. */
 export interface CorrectionQuestion {
   reponse: string;
   etapes: string;
 }
 
+/** Corrections d'une variante, chargées séparément de l'énoncé. */
 export interface CorrectionVariante {
   id: string;
   graine: number;
@@ -41,6 +46,7 @@ export interface CorrectionVariante {
 /** Variante avec ses corrections (aperçu du back-office). */
 export type ApercuVariante = Variante & { corrections: CorrectionQuestion[] };
 
+/** Rapport du contrôle automatique d'un gabarit : tirages réussis, défauts et diversité des énoncés. */
 export interface RapportGabarit {
   n: number;
   echecs: number;
@@ -50,8 +56,10 @@ export interface RapportGabarit {
   ok: boolean;
 }
 
+/** État de publication d'un gabarit : validé, à valider ou modifié depuis sa validation. */
 export type StatutGabarit = "valide" | "a_valider" | "modifie";
 
+/** Gabarit du panneau admin avec son statut, son rapport et les signalements ouverts. */
 export interface LigneGabarit extends ResumeGabarit {
   statut: StatutGabarit;
   valide_par: string | null;
@@ -60,6 +68,7 @@ export interface LigneGabarit extends ResumeGabarit {
   signalements_ouverts: number;
 }
 
+/** Signalement élève sur une variante précise (gabarit + graine), repris par l'enseignant. */
 export interface SignalementGabarit {
   id: string;
   gabarit_id: string;
@@ -74,6 +83,7 @@ export interface SignalementGabarit {
 /** Plus grande graine acceptée par le serveur (2³¹ − 1). */
 export const GRAINE_MAX = 2 ** 31 - 1;
 
+/** Tire une graine aléatoire dans la plage acceptée par le serveur. */
 export function graineAleatoire(): number {
   if (typeof crypto !== "undefined" && crypto.getRandomValues) return crypto.getRandomValues(new Uint32Array(1))[0] % (GRAINE_MAX + 1);
   return Math.floor(Math.random() * (GRAINE_MAX + 1));
@@ -94,6 +104,7 @@ export function formaterPoints(n: number, lang: string): string {
 
 /** Matières présentes dans la liste, sans doublon, dans l'ordre d'arrivée
  * (le serveur trie déjà : l'ordre des filtres reste stable). */
+/** Extrait les matières distinctes d'une liste de gabarits (pour les filtres). */
 export function matieresDe(liste: ResumeGabarit[]): string[] {
   return [...new Set(liste.map((ex) => ex.matiere))];
 }
@@ -106,6 +117,7 @@ export function difficultesDe(liste: ResumeGabarit[]): number[] {
 /** Filtre les exercices par matière et par difficulté. Une valeur vide
  * (ou absente) ne filtre pas sur ce critère : c'est la valeur « Tous » du
  * Combobox. La difficulté est une chaîne car elle vient du sélecteur. */
+/** Filtre les gabarits par matière et difficulté ; un filtre vide est ignoré. */
 export function filtrerExercices(
   liste: ResumeGabarit[],
   { matiere = "", difficulte = "" }: { matiere?: string; difficulte?: string } = {}
@@ -117,6 +129,7 @@ export function filtrerExercices(
 
 /** Regroupe les exercices par matière puis chapitre (ordre d'arrivée conservé,
  * il est déjà trié par le serveur). */
+/** Regroupe les gabarits filtrés par matière puis par chapitre pour l'affichage en sections. */
 export function regrouper(liste: ResumeGabarit[]): { matiere: string; chapitres: { chapitre: string; exercices: ResumeGabarit[] }[] }[] {
   const matieres: { matiere: string; chapitres: { chapitre: string; exercices: ResumeGabarit[] }[] }[] = [];
   for (const ex of liste) {

@@ -494,8 +494,8 @@ def _activite_connexions(db: Session, user) -> list[dict]:
     return out
 
 
-def _contexte(e: EpreuveORM) -> dict:
-    return {"matiere": e.matiere, "classe": e.classe, "evaluation": e.evaluation, "annee": e.annee}
+def _contexte(epreuve: EpreuveORM) -> dict:
+    return {"matiere": epreuve.matiere, "classe": epreuve.classe, "evaluation": epreuve.evaluation, "annee": epreuve.annee}
 
 
 def _activite_consultations(consultations, epreuves) -> list[dict]:

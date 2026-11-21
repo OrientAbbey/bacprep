@@ -21,6 +21,7 @@ class JsonFormatter(logging.Formatter):
     _STD = set(vars(logging.LogRecord("", 0, "", 0, "", None, None))) | {"message", "asctime", "taskName"}
 
     def format(self, record: logging.LogRecord) -> str:
+        """Formate un enregistrement logging en une ligne JSON (horodatage, niveau, logger, message et champs structurés)."""
         d = {
             "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             "niveau": record.levelname,
@@ -34,6 +35,7 @@ class JsonFormatter(logging.Formatter):
 
 
 def log_json_actif() -> bool:
+    """Indique si le format de log JSON est activé par LOG_FORMAT=json (sinon format texte lisible)."""
     return os.getenv("LOG_FORMAT", "text").strip().lower() == "json"
 
 
@@ -46,6 +48,7 @@ class _AccessQuietFilter(logging.Filter):
     arguments du format d'uvicorn (version sensible)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Renvoie False uniquement pour les lignes d'accès bruyantes à filtrer (battement de cœur admin)."""
         try:
             message = record.getMessage()
         except Exception:

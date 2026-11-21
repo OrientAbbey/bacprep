@@ -28,6 +28,7 @@ const PAGE_SIZE = 24;
  *   catalogue, indépendamment de la classe (la carte affiche alors la
  *   classe de chaque épreuve).
  */
+/** Catalogue public des épreuves filtrables par classe, matière et année. */
 export function CataloguePage() {
   const navigate = useNavigate();
   const location = useLocation();

@@ -15,6 +15,7 @@ import { NotificationsBell } from "./NotificationsBell";
 import { NAV_ITEMS } from "./navItems";
 import { t } from "../i18n";
 
+/** Structure commune des pages : en-tête, navigation, bandeaux système et tiroir mobile. */
 export function Layout({ children }: { children?: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();

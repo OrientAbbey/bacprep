@@ -6,12 +6,14 @@ import type { AdminAskPayload } from "./streaming";
  * dans EpreuvesPanel (brouillon/a_reviser/publie). Le sujet principal est
  * l'index 0 ; les sujets supplémentaires suivent (chacun avec son corrigé
  * optionnel). */
+/** Un sujet de l'éditeur avec son contenu et son corrigé Markdown numérotés. */
 export interface AdminSujetContenu {
   index: number;
   contenu_markdown: string;
   corrige_markdown: string;
 }
 
+/** Instantané complet du formulaire d'épreuve, envoyé à chaque question de l'assistant. */
 export interface AdminEpreuveSnapshot {
   niveau: string;
   classe: string;
@@ -37,6 +39,7 @@ function sujetPrincipal(form: AdminEpreuveSnapshot): AdminSujetContenu | undefin
  * d'assistant encore VIDE (bulle pré-créée pendant le streaming) ou un
  * message réduit à des espaces n'ont rien à apprendre au modèle — ils
  * sont écartés. */
+/** Écarte les messages vides ou réduits à des espaces avant envoi au modèle. */
 export function nettoyerHistorique(
   messages: { role: string; content: string }[]
 ): { role: string; content: string }[] {
@@ -48,6 +51,7 @@ export function nettoyerHistorique(
  * `done.conversation` la restitue ; absent (épreuve pas encore enregistrée),
  * l'échange reste éphémère. Chaque envoi embarque un instantané FRAIS du
  * formulaire d'édition, lu à l'appel de `send()` (pas de prop figée). */
+/** Construit la charge utile de l'assistant en mode édition, avec l'historique nettoyé et le sujet actif. */
 export function buildAdminAskPayload(
   form: AdminEpreuveSnapshot,
   historique: { role: string; content: string }[],
@@ -88,6 +92,7 @@ export function buildAdminAskPayload(
 /** Libellé court de l'épreuve affiché dans le bandeau « Contexte : épreuve
  * en cours » du tiroir (ex. « Mathématiques · 2024 · Terminale · BAC »),
  * avec repli générique si aucun champ n'est rempli. */
+/** Libellé court du bandeau de contexte (matière · année · classe · évaluation). */
 export function resumeEpreuveName(form: AdminEpreuveSnapshot): string {
   const bits = [form.matiere, form.annee, form.classe, form.evaluation].filter((b) => b.trim());
   return bits.join(" · ") || "épreuve en cours";
@@ -97,6 +102,7 @@ export function resumeEpreuveName(form: AdminEpreuveSnapshot): string {
  * via son bloc `modification-form` (métadonnées + réglages, PAS les contenus
  * sujet/corrigé ni la liste des sujets). Valeurs prêtes à être affectées à
  * `AdminEpreuveSnapshot` (types convertis par `appliquerModifications`). */
+/** Nouveaux champs du formulaire proposés par l'assistant (un sous-ensemble des métadonnées). */
 export interface ModificationFormulaire {
   niveau?: string;
   classe?: string;
@@ -118,6 +124,7 @@ export interface PaireRemplacement {
 
 /** Modification visant un sujet ou un corrigé PRÉCIS (`numero` = rang, à partir de 1) : soit une
  * réécriture complète (`complet`), soit une liste de remplacements ciblés (`paires`). */
+/** Modification ciblée d'un sujet ou corrigé, par extrait ou réécriture complète. */
 export interface EditionSujet {
   cible: "sujet" | "corrige";
   /** Absent : le sujet actuellement affiché dans l'éditeur. */
@@ -131,6 +138,7 @@ export interface EditionSujet {
  * - « ```remplacer-sujet|corrige[:N] » : remplacements ciblés `<<<<<<< CHERCHER … ======= … >>>>>>> REMPLACER` ;
  * - « ```modification-form » : objet JSON de métadonnées.
  * `sujet`/`corrige` : réécritures SANS numéro (sujet affiché) ; `editions` : tout le reste. */
+/** Ensemble des modifications proposées par l'assistant pour une épreuve. */
 export interface ModificationsEpreuve {
   sujet?: string;
   corrige?: string;
@@ -145,6 +153,7 @@ const PAIRE_RE = /<<<<<<< CHERCHER[ \t]*\r?\n([\s\S]*?)\r?\n?=======[ \t]*\r?\n(
 /** Extrait les blocs de modification d'une réponse d'assistant (sans les marqueurs, lignes de fin
  * excédentaires retirées). Le bloc `form` est un JSON validé avant d'être pris en compte ; un bloc
  * invalide est ignoré (on n'applique jamais de données corrompues). Aucun bloc : `{}`. */
+/** Analyse la réponse Markdown et extrait les blocs de modification reconnus. */
 export function extraireModifications(markdown: string): ModificationsEpreuve {
   const out: ModificationsEpreuve = {};
   const editions: EditionSujet[] = [];
@@ -189,6 +198,7 @@ export function applicationAutoInitiale(): boolean {
     return true;
   }
 }
+/** Mémorise la préférence « appliquer automatiquement » dans localStorage (best-effort). */
 export function memoriserApplicationAuto(v: boolean): void {
   try {
     localStorage.setItem(CLE_AUTO, v ? "1" : "0");
@@ -199,8 +209,10 @@ export function memoriserApplicationAuto(v: boolean): void {
 
 /** Identifiant d'un brouillon (`brouillon:<id>` = clé de sa conversation) : 128 bits aléatoires, sans dépendre du
  * contexte sécurisé que demande `crypto.randomUUID`. */
+/** Génère un identifiant aléatoire pour une nouvelle épreuve non encore enregistrée. */
 export const nouvelIdBrouillon = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
 
+/** Indique si une réponse contient au moins une modification applicable. */
 export function aDesModifications(m: ModificationsEpreuve): boolean {
   return Object.values(m).some(Boolean);
 }
@@ -210,6 +222,7 @@ const CHAMPS_FORMULAIRE = ["niveau", "classe", "evaluation", "annee", "matiere",
 
 /** Clés des champs que `apres` change par rapport à `avant` : un champ du formulaire (« matiere »…),
  * « sujet:<index> » ou « corrige:<index> ». */
+/** Liste les champs dont la valeur a changé entre deux instantanés (pour le surlignage). */
 export function champsModifies(avant: FormulaireSansStatut, apres: FormulaireSansStatut): string[] {
   return [
     ...CHAMPS_FORMULAIRE.filter((c) => JSON.stringify(avant[c]) !== JSON.stringify(apres[c])),
@@ -223,6 +236,7 @@ export function champsModifies(avant: FormulaireSansStatut, apres: FormulaireSan
   ];
 }
 
+/** Résultat d'une paire chercher/remplacer : succès ou raison de l'échec (introuvable, ambigu). */
 export interface ResultatPaire {
   ok: boolean;
   raison?: "introuvable" | "ambigu";
@@ -231,6 +245,7 @@ export interface ResultatPaire {
 /** Applique les paires, dans l'ordre, sur `texte`. Le « chercher » doit exister UNE SEULE fois
  * (sinon la paire est refusée : on ne devine pas l'endroit) ; l'écart de fins de ligne ou
  * d'espaces en bout de ligne est toléré. « chercher » vide = ajout à la fin du contenu. */
+/** Applique les paires de remplacement sur un texte et renvoie le texte modifié avec le détail des résultats. */
 export function appliquerPaires(texte: string, paires: PaireRemplacement[]): { texte: string; resultats: ResultatPaire[] } {
   const resultats: ResultatPaire[] = [];
   let courant = texte;
@@ -284,6 +299,7 @@ function remplacerParLignes(texte: string, chercher: string, remplacer: string):
   return lignes.join("\n");
 }
 
+/** Résultat d'une modification ciblée : libellé lisible, succès et raison éventuelle. */
 export interface ResultatEdition {
   libelle: string;
   ok: boolean;
@@ -293,6 +309,7 @@ export interface ResultatEdition {
 
 /** Applique des éditions à une liste de sujets de formulaire (sans la modifier) : renvoie les
  * nouveaux sujets et un résultat par édition. `rangActif` : sujet visé quand `numero` est absent. */
+/** Applique une liste de modifications aux sujets/corrigés et renvoie les nouveaux tableaux avec leur résultat. */
 export function appliquerEditions<T extends { contenu_markdown: string; corrige_markdown: string }>(
   sujets: T[],
   editions: EditionSujet[],

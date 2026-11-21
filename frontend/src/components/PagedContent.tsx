@@ -26,6 +26,7 @@ import {
  *    grâce à une ancre (offset source du premier bloc de la page), la page où ce passage se trouve maintenant ;
  *  - nouveau contenu (autre sujet, corrigé…) : le parent change la `key` du composant → retour à la page 1 ;
  *  - `onPageChange` : le parent oublie par ex. la sélection en cours (elle est restée sur l'ancienne page). */
+/** Découpe le contenu en pages A4 pour l'affichage paginé et l'impression. */
 export function PagedContent({
   children,
   reflow,

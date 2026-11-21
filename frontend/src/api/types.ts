@@ -1,3 +1,4 @@
+/** Épreuve résumée pour les listes et le catalogue, sans son contenu Markdown. */
 export interface EpreuveListItem {
   id: string;
   niveau: string; // ex. "SECONDAIRE"
@@ -15,6 +16,7 @@ export interface EpreuveListItem {
   acces: "gratuit" | "ouvert" | "payant";
 }
 
+/** Fichier attaché à une épreuve : document Markdown ou image d'illustration, avec sa cible sujet/corrigé. */
 export interface EpreuveFile {
   id: string;
   cible: "sujet" | "corrige";
@@ -35,6 +37,7 @@ export interface SujetContent {
   corrige_disponible: boolean;
 }
 
+/** Détail complet d'une épreuve : tous ses sujets et corrigés, ses fichiers et ses métadonnées de catalogue. */
 export interface EpreuveDetail extends EpreuveListItem {
   contenu_markdown: string;
   corrige_markdown: string;
@@ -44,6 +47,7 @@ export interface EpreuveDetail extends EpreuveListItem {
   nb_sujets: number;
 }
 
+/** Valeurs disponibles pour les filtres du catalogue (séries, matières, années, évaluations). */
 export interface Filtres {
   filieres: string[];
   matieres: string[];
@@ -53,6 +57,7 @@ export interface Filtres {
 
 // ---------- Navigation (Accueil → Niveau → Classe) ----------
 
+/** Entrée de navigation par classe avec le nombre d'épreuves publiées et l'état actif. */
 export interface ClasseNav {
   code: string; // ex. "terminale"
   label: string; // ex. "Terminale"
@@ -60,6 +65,7 @@ export interface ClasseNav {
   actif: boolean;
 }
 
+/** Groupe de navigation par niveau scolaire, avec ses classes et son état actif. */
 export interface NiveauNav {
   code: string; // "SECONDAIRE" | "PRIMAIRE"
   label: string;
@@ -67,12 +73,14 @@ export interface NiveauNav {
   classes: ClasseNav[];
 }
 
+/** Arborescence de navigation du site : niveaux puis classes, alimentée par le serveur. */
 export interface NavigationOut {
   niveaux: NiveauNav[];
 }
 
 // ---------- Abonnements ----------
 
+/** Abonnement actif de l'utilisateur avec son périmètre résolu et ses libellés. */
 export interface SubscriptionOut {
   id: string;
   scope: string;
@@ -90,6 +98,7 @@ export interface SubscriptionOut {
   statut: string;
 }
 
+/** Consultation d'une épreuve par l'utilisateur, utilisée dans son activité et ses statistiques. */
 export interface Consultation {
   epreuve_id: string;
   matiere: string;
@@ -102,6 +111,7 @@ export interface Consultation {
 
 // ---------- Import massif (admin) ----------
 
+/** Rapport détaillé d'un job d'import : fichiers analysés, épreuves créées, images importées et erreurs. */
 export interface ImportJobReport {
   racine?: string;
   analyses?: number;
@@ -120,6 +130,7 @@ export interface ImportJobReport {
   metadonnees_manquantes?: { fichier: string; manquants: string[] }[];
 }
 
+/** Job d'import asynchrone exposé au back-office avec son statut et son rapport. */
 export interface ImportJob {
   id: string;
   filename: string;
@@ -137,6 +148,7 @@ export interface ImportJob {
 
 // ---------- Notes personnelles ----------
 
+/** Note privée d'un admin sur une cible sujet/corrigé, avec l'extrait de contexte auquel elle se rattache. */
 export interface Note {
   id: string;
   epreuve_id: string;
@@ -153,6 +165,7 @@ export interface Note {
 
 // ---------- Signalements ----------
 
+/** Liste fermée des motifs de signalement d'une épreuve ou d'un gabarit fautif. */
 export type MotifSignalement =
   | "contenu_illisible"
   | "erreur_enonce"
@@ -160,6 +173,7 @@ export type MotifSignalement =
   | "image_cassee"
   | "autre";
 
+/** Signalement utilisateur sur une épreuve, avec motif, message et état de traitement. */
 export interface Signalement {
   id: string;
   epreuve_id: string;
@@ -176,6 +190,7 @@ export interface Signalement {
 
 // ---------- Activité (profil) ----------
 
+/** Liste fermée des types d'événements affichés dans le journal d'activité de l'utilisateur. */
 export type TypeActivite =
   | "connexion"
   | "consultation"
@@ -184,6 +199,7 @@ export type TypeActivite =
   | "note"
   | "discussion_ia";
 
+/** Événement du journal d'activité : type, date, libellé et épreuve associée éventuelle. */
 export interface ActiviteItem {
   type: TypeActivite;
   date: string;
@@ -202,6 +218,7 @@ export interface ActiviteItem {
 
 /** Liste énumérative du référentiel (table `referentiel_options`,
  * onglet « Paramètres » du back-office). */
+/** Portées possibles d'une option du référentiel partagé. */
 export type ReferentielScope = "niveau" | "classe" | "evaluation" | "matiere" | "serie";
 
 /** Option d'une liste du référentiel. `label` est le libellé affiché
@@ -220,6 +237,7 @@ export interface ReferentielOption {
  * GET /api/admin/referentiel-options). */
 export type ReferentielOptions = Partial<Record<ReferentielScope, ReferentielOption[]>>;
 
+/** Comptage des épreuves par statut pour les onglets du back-office. */
 export interface AdminEpreuveCounts {
   tous: number;
   brouillon: number;
@@ -227,6 +245,7 @@ export interface AdminEpreuveCounts {
   publie: number;
 }
 
+/** Ligne du journal d'audit admin : action, auteur, cible et contexte. */
 export interface AdminEvent {
   id: string;
   action: string;
@@ -241,6 +260,7 @@ export interface AdminEvent {
 /** Ligne de la table « Utilisateurs » du back-office — volontairement
  * limitée aux informations de compte et compteurs d'usage (aucune donnée
  * sensible : pas de mot de passe, pas de code de paiement). */
+/** Utilisateur vu du back-office avec ses droits, abonnements et activité. */
 export interface AdminUtilisateur {
   id: string;
   nom: string;
@@ -275,6 +295,7 @@ export interface AdminUtilisateur {
   total_depense_fcfa: number;
 }
 
+/** Chiffres-clés affichés en tête du back-office (utilisateurs, revenus, épreuves, stockage). */
 export interface AdminStats {
   utilisateurs: number;
   abonnements_actifs: number;
@@ -295,6 +316,7 @@ export interface AdminStats {
 
 // ---------- Banque d'exercices V4.10 ----------
 
+/** Partie de la Banque : groupe logique d'exercices rattaché à une matière. */
 export interface BanquePartie {
   id: string;
   matiere: string;
@@ -302,6 +324,7 @@ export interface BanquePartie {
   ordre: number;
 }
 
+/** Exercice de la Banque avec son sujet, son corrigé et ses critères de ciblage. */
 export interface BanqueExercice {
   id: string;
   sujet: string;
@@ -318,11 +341,13 @@ export interface BanqueExercice {
   updated_at: string;
 }
 
+/** Métadonnées de classe pour le tirage : examen et caractère obligatoire de la spécialité. */
 export interface BanqueClasseMeta {
   a_examen: boolean;
   specialite_obligatoire: boolean;
 }
 
+/** Données complètes du panneau Banque : parties, exercices, référentiel, métadonnées et journal. */
 export interface BanqueAdminData {
   parties: BanquePartie[];
   exercices: BanqueExercice[];
@@ -335,6 +360,7 @@ export interface BanqueAdminData {
   };
 }
 
+/** Entrée du journal d'exploitation de la Banque (génération ou modification admin). */
 export interface BanqueJournalEntry {
   id: string;
   user_id: string;
@@ -345,9 +371,12 @@ export interface BanqueJournalEntry {
   created_at: string;
 }
 
+/** Mode de composition d'une épreuve : séquence, examen, examen blanc ou feuille vide. */
 export type BanqueMode = "sequence" | "examen" | "examen_blanc" | "vide";
+/** Niveau de difficulté demandé pour le tirage d'une épreuve. */
 export type BanqueDifficulte = "Facile" | "Moyen" | "Difficile";
 
+/** Choix de l'élève pour composer une épreuve depuis la Banque. */
 export interface BanqueGenerationInput {
   matiere: string;
   classe: string;
@@ -357,10 +386,7 @@ export interface BanqueGenerationInput {
   difficulte: BanqueDifficulte;
 }
 
-export interface BanqueClasseMeta {
-  specialite_obligatoire: boolean;
-}
-
+/** Options disponibles pour le formulaire de génération (matières, classes, séries, séquences). */
 export interface BanqueOptions {
   matieres: string[];
   classes: string[];
@@ -369,12 +395,14 @@ export interface BanqueOptions {
   sequences: number[];
 }
 
+/** Un exercice numéroté d'une épreuve générée, avec son sujet (ou son contenu). */
 export interface BanqueGenerationExercice {
   numero: number;
   sujet?: string;
   contenu?: string;
 }
 
+/** Épreuve générée : identifiant de référence, exercices et paramètres de tirage. */
 export interface BanqueGenerationOutput {
   generation_id: string;
   exercices: BanqueGenerationExercice[];
@@ -398,6 +426,7 @@ export interface BanqueGenerationOutput {
 
 /** Notification telle qu'affichée dans la cloche d'un élève : uniquement
  * les notifications ACTIVES, avec l'état « lu » propre à l'utilisateur. */
+/** Notification destinée à l'élève, affichée dans son fil avec son type et sa date. */
 export interface NotificationEleve {
   id: string;
   titre: string;
@@ -426,6 +455,7 @@ export interface NotificationAdmin extends Omit<NotificationEleve, "lue"> {
 /** Une partie d'archive : autonome, restaurable seule, avec son empreinte.
  *  `sha256` est la preuve d'intégrité affichée à l'admin — sans elle, la
  *  sauvegarde n'aurait qu'une taille, ce qui ne prouve rien. */
+/** Partie composant une sauvegarde : nom, taille, empreinte et nombre de fichiers. */
 export interface SauvegardePartie {
   nom: string;
   octets: number;
@@ -435,6 +465,7 @@ export interface SauvegardePartie {
 
 /** Récapitulatif d'une sauvegarde présente dans le stockage, lu depuis son
  *  index (et non recompté : l'index est la référence). */
+/** Sauvegarde disponible dans le stockage objet, avec sa date et sa taille. */
 export interface SauvegardeResume {
   cle: string;
   nom: string;
@@ -449,11 +480,13 @@ export interface SauvegardeResume {
 /** GET /api/admin/sauvegardes : l'inventaire et le volume total occupé. Aucun
  *  indicateur de santé ni de saturation : la suppression reste une décision
  *  humaine. */
+/** Objet de sauvegarde illisible ou inachevé, signalé mais non restaurable. */
 export interface SauvegardeIgnoree {
   cle: string;
   raison: string;
 }
 
+/** Inventaire des sauvegardes avec les objets ignorés et le volume total. */
 export interface SauvegardeInventaire {
   sauvegardes: SauvegardeResume[];
   total_octets: number;
@@ -471,6 +504,7 @@ export interface SauvegardeInventaire {
  *  provoque pas d'erreur de compilation — elle affiche `0` en silence, ce qui
  *  est pire : un export réussi s'afficherait « 0 fichier écrit ». D'où les deux
  *  formes, toutes deux optionnelles, et la discrimination par `dry_run`. */
+/** Rapport d'une opération de sauvegarde ou de restauration (dry-run compris). */
 export interface SauvegardeRapport {
   dry_run?: boolean;
   // -- restauration --
@@ -499,6 +533,7 @@ export interface SauvegardeRapport {
 
 /** Un job d'export ou de restauration. Les compteurs servent à la barre de
  *  progression ; `report` et `logs` ne sont remplis qu'en fin de course. */
+/** Job asynchrone d'export ou de restauration, suivi dans le back-office. */
 export interface SauvegardeJob {
   id: string;
   kind: "export" | "restore" | string;
@@ -525,6 +560,7 @@ export interface SauvegardeJob {
   finished_at: string | null;
 }
 
+/** Événement du calendrier : type, évaluation ciblée, dates, lien officiel et visibilité. */
 export interface Evenement {
   id: string;
   titre: string;
@@ -536,6 +572,7 @@ export interface Evenement {
   visible: boolean;
 }
 
+/** Échéance de révision calculée après un essai sur une épreuve. */
 export interface Revision {
   epreuve_id: string;
   matiere: string;

@@ -14,6 +14,7 @@ import { t } from "../i18n";
  * - édition depuis le profil : `note` est fourni (prérempli, modifiable).
  * Le contenu est du Markdown, avec aperçu rendu (formules LaTeX comprises).
  */
+/** Éditeur d'une note privée sur un sujet ou un corrigé. */
 export function NoteEditor({
   epreuveId,
   cible = "sujet",

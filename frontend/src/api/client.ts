@@ -2,6 +2,7 @@ import { t } from "../i18n";
 import { estErreurReseau, signalerReseau } from "../lib/connexion";
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
+/** Erreur HTTP renvoyée par l'API, avec le statut et le détail serveur (pour afficher la vraie raison). */
 export class ApiError extends Error {
   status: number;
   detail: unknown;
@@ -14,6 +15,7 @@ export class ApiError extends Error {
 
 /** Erreur « délai dépassé » : distincte d'une panne réseau pour que
  * l'interface puisse expliquer la cause au lieu d'afficher un échec opaque. */
+/** Erreur levée quand une requête dépasse le délai imparti (signalé comme réseau lent). */
 export class ApiTimeoutError extends Error {
   constructor(ms: number) {
     super(t("Le serveur n'a pas répondu dans le délai imparti ({s} s).", { s: Math.round(ms / 1000) }));
@@ -127,6 +129,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return text ? (JSON.parse(text) as T) : (undefined as T);
 }
 
+/** Petit client HTTP typé : get/post/put/patch/del, avec gestion du timeout et des erreurs réseau. */
 export const api = {
   // `signal` : AbortSignal pour annuler une requête devenue obsolète
   // (navigation, changement de filtre) — voir ViewerPage/CataloguePage.
@@ -187,6 +190,7 @@ export { BASE_URL };
  * cette fonction est un no-op (les chemins relatifs fonctionnent déjà
  * puisque tout est servi depuis la même origine).
  */
+/** Préfixe une URL relative du backend pour obtenir une URL absolue (utile pour les aperçus de partage). */
 export function resolveMediaUrl(url: string): string {
   if (!url) return url;
   if (/^https?:\/\//.test(url)) return url; // déjà absolue
@@ -201,6 +205,7 @@ export function resolveMediaUrl(url: string): string {
  * jamais bloquer une sauvegarde d'épreuve. `headers` doit porter
  * l'authentification admin (voir authHeaders) pour les voies admin.
  */
+/** Ajoute une option au référentiel si elle n'existe pas encore (auto-ajout à la saisie). */
 export async function ensureReferentielOption(
   scope: string,
   code: string,

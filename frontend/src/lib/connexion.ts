@@ -8,6 +8,7 @@ export type EtatConnexion = "ok" | "hors-ligne";
 let etat: EtatConnexion = typeof navigator !== "undefined" && !navigator.onLine ? "hors-ligne" : "ok";
 const abonnes = new Set<() => void>();
 
+/** Met à jour l'état global du réseau à chaque réponse HTTP (outil de diagnostic serveur lent). */
 export function signalerReseau(ok: boolean): void {
   // Hors-ligne déclaré par le navigateur : une réponse servie depuis le cache du service worker
   // (lecture hors-ligne) ne prouve PAS que le réseau marche ; seul l'évènement `online` le rétablit.

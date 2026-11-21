@@ -32,6 +32,7 @@ _gen_limiter = SlidingWindowLimiter(
 
 
 class MetaIn(BaseModel):
+    """Métadonnées d'épreuve transmises au générateur d'exercices IA (matière, classe, évaluation, séries)."""
     matiere: str = Field(default="", max_length=120)
     classe: str = Field(default="", max_length=60)
     evaluation: str = Field(default="", max_length=80)
@@ -39,6 +40,7 @@ class MetaIn(BaseModel):
 
 
 class GenerationIn(BaseModel):
+    """Demande de génération d'exercices : thème, nombre d'exercices, consignes et épreuve cible en brouillon."""
     theme: str = Field(min_length=3, max_length=300)
     nb_exercices: int = Field(default=3, ge=gen.NB_EXERCICES_MIN, le=gen.NB_EXERCICES_MAX)
     consignes: str = Field(default="", max_length=500)
@@ -52,6 +54,7 @@ def _sse(evenement: dict) -> str:
 
 @router.post("/generation-exercices")
 async def generer_exercices(payload: GenerationIn, request: Request, db: Session = Depends(get_db), lock=Depends(require_admin)):
+    """Flux SSE de génération d'un sujet par l'IA ; refuse toute génération sur une épreuve déjà publiée."""
     _gen_limiter.check(f"{lock.email}|{client_ip(request)}")
     if payload.epreuve_id:
         ep = db.get(EpreuveORM, payload.epreuve_id)
@@ -64,6 +67,7 @@ async def generer_exercices(payload: GenerationIn, request: Request, db: Session
     email, epreuve_id = lock.email, payload.epreuve_id
 
     async def flux():
+        """Émet les événements SSE de la génération d'exercices (étapes, texte, erreurs)."""
         assistant._nouvelle_mesure()
         try:
             async for evenement in gen.generer(meta, payload.theme.strip(), payload.consignes.strip(), payload.nb_exercices):

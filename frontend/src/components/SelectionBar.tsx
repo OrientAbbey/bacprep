@@ -12,6 +12,7 @@ import { t } from "../i18n";
  * concernées restent AFFICHÉES mais désactivées avec le motif du verrou en
  * info-bulle — on voit ce qui existe, on comprend ce qui le verrouille ;
  * seul le lanceur flottant de l'assistant disparaît entièrement. */
+/** Barre contextuelle qui apparaît près d'une sélection de texte (demander à l'assistant, annoter…). */
 export function SelectionBar({
   x,
   y,

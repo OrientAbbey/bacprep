@@ -15,6 +15,7 @@ _UNACCENT = False
 
 
 def activer_unaccent() -> None:
+    """Active (si disponible) l'extension PostgreSQL unaccent pour les recherches insensibles aux accents ; sans effet sur SQLite."""
     global _UNACCENT
     if engine.dialect.name != "postgresql":
         return
@@ -26,8 +27,8 @@ def activer_unaccent() -> None:
         log.warning("Extension unaccent indisponible : recherche sensible aux accents")
 
 
-def contient(colonne, q: str):
+def contient(colonne, requete: str):
     """Condition « la colonne contient q » (casse et accents ignorés)."""
     if _UNACCENT:
-        return func.lower(func.unaccent(colonne)).like(f"%{_fold_for_search(q)}%")
-    return colonne.ilike(f"%{q}%")
+        return func.lower(func.unaccent(colonne)).like(f"%{_fold_for_search(requete)}%")
+    return colonne.ilike(f"%{requete}%")

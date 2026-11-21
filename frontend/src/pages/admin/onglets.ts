@@ -24,4 +24,5 @@ export const GROUPES: { titre: string; ids: Onglet[] }[] = [
   { titre: "Système", ids: ["parametres", "sauvegardes", "journal"] },
 ];
 
+/** Registre des onglets du back-office avec leurs libellés et groupes d'affichage. */
 export const ONGLETS: Onglet[] = GROUPES.flatMap((g) => g.ids);

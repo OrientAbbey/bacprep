@@ -50,6 +50,7 @@ const LIBELLES_CONTROLE: Record<string, string> = {
  *
  * Console admin : textes en français uniquement (pas de `t()`).
  */
+/** Modale de génération d'exercices IA pour un enseignant, avec suivi des étapes en flux. */
 export function AtelierExercicesModal({
   meta,
   epreuveId,

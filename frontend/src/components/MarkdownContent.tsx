@@ -21,6 +21,7 @@ import { MolBlock, type StyleMol } from "./MolBlock";
  * `javascript:...` injectés via le Markdown (XSS au clic). */
 const SAFE_HREF_RE = /^(https?:\/\/|mailto:|\/api\/files\/)/i;
 
+/** Rendu Markdown sécurisé (GFM, KaTeX, images redimensionnées) avec variantes éditeur, épreuve et chat. */
 export const MarkdownContent = React.memo(function MarkdownContent({
   content,
   variant,

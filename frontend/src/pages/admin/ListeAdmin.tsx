@@ -5,6 +5,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { t } from "../../i18n";
 import { authHeaders, purgerSessionExpiree } from "./shared";
 
+/** Configuration d'un filtre de liste admin : clé de requête, libellé et options. */
 export interface FiltreListe {
   /** Nom du paramètre de requête. */
   cle: string;

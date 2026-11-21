@@ -92,6 +92,7 @@ ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
 
 def sha256_hex(data: bytes) -> str:
+    """Empreinte SHA-256 du contenu d'un fichier, utilisée pour détecter les doublons à l'import."""
     return hashlib.sha256(data).hexdigest()
 
 

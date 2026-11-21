@@ -90,6 +90,7 @@ function labelUnique(base: string, existantes: { label: string }[]): string {
   return `${base} ${n}`;
 }
 
+/** Tiroir de discussion de l'assistant élève, avec streaming, régénération et signalement. */
 export function AssistantPanel({
   epreuveId,
   pendingContext,

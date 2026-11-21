@@ -10,6 +10,7 @@ interface State {
   error: Error | null;
 }
 
+/** Limite d'erreur React : affiche un repli lisible au lieu d'une page blanche en production. */
 export class ErrorBoundary extends React.Component<Props, State> {
   state: State = { error: null };
 

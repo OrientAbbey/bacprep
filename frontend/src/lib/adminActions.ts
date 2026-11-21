@@ -5,6 +5,7 @@ export interface ActionProposee {
   args: Record<string, unknown>;
 }
 
+/** Libellés lisibles des outils de l'agent admin, affichés sur les cartes du plan. */
 export const LIBELLES_OUTILS: Record<string, string> = {
   signalement_resoudre: "Marquer un signalement comme résolu",
   utilisateur_bannir: "Bannir un élève",

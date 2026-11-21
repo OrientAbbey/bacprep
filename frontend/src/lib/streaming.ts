@@ -17,6 +17,7 @@ import { t } from "../i18n";
  * modifier des messages pour un composant démonté, et le serveur-State
  * recevait l'échange jusqu'au bout.
  */
+/** Envoie une requête POST et parcourt la réponse SSE, en transmettant chaque événement décodé au callback. */
 export async function streamEventSource<T>(
   url: string,
   body: unknown,
@@ -107,6 +108,7 @@ export async function streamEventSource<T>(
  * - éphémère : `epreuve_id` + `contexte` + `historique`, sans
  *   `conversation_id` (refus du consentement — rien n'est persisté,
  *   `done.conversation` vaut alors null). */
+/** Charge utile de l'assistant élève : question, contexte et historique borné. */
 export interface AssistantAskPayload {
   conversation_id?: string;
   epreuve_id?: string;
@@ -115,11 +117,13 @@ export interface AssistantAskPayload {
   message: string;
 }
 
+/** Événements du flux de l'assistant élève (fragment, fin, erreur). */
 export type AssistantStreamEvent =
   | { type: "chunk"; text: string }
   | { type: "done"; conversation: Conversation | null }
   | { type: "error"; message: string };
 
+/** Flux SSE de l'assistant élève, sans persistance serveur. */
 export async function streamAssistantAsk(
   payload: AssistantAskPayload,
   onEvent: (event: AssistantStreamEvent) => void,
@@ -136,6 +140,7 @@ export async function streamAssistantAsk(
 
 /** Délai d'attente (ms) avant une tentative de reconnexion, croissant avec
  * le numéro de l'essai (1 → 1200 ms, 2 → 2400 ms, …, plafonné à 8 s). */
+/** Délai avant une nouvelle tentative de connexion, croissant puis plafonné à 8 secondes. */
 export function delaiReconnexion(essai: number): number {
   return Math.min(1200 * 2 ** (essai - 1), 8000);
 }
@@ -145,6 +150,7 @@ export function delaiReconnexion(essai: number): number {
  * (email admin, épreuve). Restituée à la réouverture du tiroir (`id`,
  * `label`, `messages`) via `GET /api/admin/assistant/conversation/{epreuve_id}`.
  */
+/** Discussion admin persistée par clé (épreuve, brouillon ou onglet) avec ses messages horodatés. */
 export interface AdminConversation {
   id: string;
   epreuve_id: string;
@@ -157,8 +163,10 @@ export interface AdminConversation {
 /** Mémoire de l'assistant admin : une conversation par clé (`<id d'épreuve>`, `brouillon:<id>` ou `onglet:<nom>`).
  * Une panne réseau se traduit par « aucune conversation » : le tiroir s'ouvre vide, il ne bloque jamais. */
 const urlConversation = (cle: string) => `/api/admin/assistant/conversation/${cle}`;
+/** Charge une discussion admin ; une panne réseau est traitée comme « aucune conversation ». */
 export const chargerConversationAdmin = (cle: string) =>
   api.get<{ conversation: AdminConversation | null }>(urlConversation(cle)).then((r) => r.conversation, () => null);
+/** Supprime côté serveur la discussion d'une clé (bouton « Nouvelle conversation »). */
 export const effacerConversationAdmin = (cle: string) => api.del(urlConversation(cle)).catch(() => undefined);
 /** Rattache la discussion d'un brouillon à l'épreuve qui vient d'être enregistrée. */
 export const rattacherConversationAdmin = (de: string, vers: string) =>
@@ -179,6 +187,7 @@ export const rattacherConversationAdmin = (de: string, vers: string) =>
  * réconciliation) : les messages persistés doivent lui être ramenés avant
  * chaque tentative, ce qui neutralise les doublons d'une réponse interrompue.
  */
+/** Charge utile de l'assistant admin : instantané épreuve ou onglet + drapeau agent + contexte éventuel. */
 export interface AdminAskPayload {
   question: string;
   historique: { role: string; content: string }[];
@@ -192,6 +201,7 @@ export interface AdminAskPayload {
   agent?: boolean;
 }
 
+/** Événements du flux agent : étapes, ouverture/édition de formulaire, plan signé, fin et erreur. */
 export type AdminStreamEvent =
   | { type: "chunk"; text: string }
   | { type: "etape"; numero: number }
@@ -204,6 +214,7 @@ export type AdminStreamEvent =
 /** Flux de l'assistant admin (`POST /api/admin/assistant/ask`). Les erreurs
  * HTTP (ex. 401 sans session admin) se propagent par rejet du fetch ; les
  * erreurs applicatives arrivent en évènement `error` du flux. */
+/** Flux SSE de l'assistant admin (voie éphémère ou voie agent selon le payload). */
 export async function streamAdminAsk(
   payload: AdminAskPayload,
   onEvent: (event: AdminStreamEvent) => void,

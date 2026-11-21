@@ -77,10 +77,12 @@ PHASE_FINALISATION = "finalisation"
 
 
 def seuil_partie_octets() -> int:
+    """Seuil de découpage d'une sauvegarde en parties (configuration SAUVEGARDE_SEUILLE_PARTIE_OCTETS)."""
     return int(os.getenv("SAUVEGARDE_SEUILLE_PARTIE_OCTETS", str(TMOIS)))
 
 
 def taille_partie_octets() -> int:
+    """Taille maximale d'une partie de sauvegarde (configuration SAUVEGARDE_TAILLE_PARTIE_OCTETS)."""
     return int(os.getenv("SAUVEGARDE_TAILLE_PARTIE_OCTETS", str(PARTIE)))
 
 
@@ -203,6 +205,7 @@ def _televerser_et_hacher(stockage, cle: str, chemin: Path, mime_type: str) -> t
     compte = {"octets": 0}
 
     def flux():
+        """Itère sur le fichier par blocs pour l'envoyer dans la sauvegarde sans le charger entièrement."""
         with chemin.open("rb") as src:
             while True:
                 bloc = src.read(_BLOC)
@@ -484,10 +487,10 @@ def run_export(
         deja_vus = cumules["fichiers"]
         octets_deja = cumules["octets"]
 
-        def _sur_fichier(traites: int, octets: int, _i=i, _d=deja_vus, _o=octets_deja) -> None:
-            cumules["fichiers"] = _d + traites
-            cumules["octets"] = _o + octets
-            _annoncer(_i)
+        def _sur_fichier(traites: int, octets: int, indice=i, donnees=deja_vus, objet=octets_deja) -> None:
+            cumules["fichiers"] = donnees + traites
+            cumules["octets"] = objet + octets
+            _annoncer(indice)
 
         fiche = _ecrire_partie(
             prefixe,

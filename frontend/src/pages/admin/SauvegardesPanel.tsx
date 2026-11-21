@@ -157,6 +157,7 @@ function Anomalies({ job }: { job: SauvegardeJob }) {
  *     par le serveur — il n'y a pas de champ « dossier de destination », et
  *     c'est volontaire (voir `PLAN_SAUVEGARDES.md`).
  */
+/** Panneau d'export, de restauration et d'inventaire des sauvegardes. */
 export function SauvegardesPanel({ token }: { token: string }) {
   const { showToast } = useToast();
   const [inventaire, setInventaire] = useState<SauvegardeInventaire | null>(null);

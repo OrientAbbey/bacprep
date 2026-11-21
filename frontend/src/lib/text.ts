@@ -7,6 +7,7 @@
  * de base + un signe diacritique combinant) puis on retire ces signes
  * diacritiques (plage U+0300–U+036F).
  */
+/** Normalise une chaîne pour une recherche insensible aux accents et à la casse. */
 export function foldText(text: string): string {
   return text
     .normalize("NFD")

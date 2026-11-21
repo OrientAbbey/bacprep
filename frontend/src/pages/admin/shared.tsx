@@ -25,6 +25,7 @@ function urlSansJeton(url: string): string {
 /** Balise image Markdown d'une image donnée dans un bloc de texte :
  * extrait la largeur d'affichage `#w=NNN` éventuelle pour synchroniser
  * le sélecteur « Taille d'affichage » et détecter une double insertion. */
+/** Repère une image Markdown par son URL et lit son fragment #w= pour connaître la largeur affichée. */
 export function extraireBaliseImage(markdown: string, url: string): { presente: boolean; largeur: number } {
   const base = escapeRegExp(urlSansJeton(url));
   const re = new RegExp(`!\\[[^\\]]*\\]\\(${base}(?:\\?[^#)]*)?(?:#w=(\\d+))?\\)`);
@@ -40,6 +41,7 @@ export function extraireBaliseImage(markdown: string, url: string): { presente: 
  * de celui de `assets[].url`) est ignoré par le matching.
  * Le fragment est réinséré AVANT la parenthèse fermante `)` (un ajout
  * après provoquait `#w=640` hors balise — couvert par shared.test.ts). */
+/** Remplace (ou ajoute) le fragment #w= d'une image Markdown sans toucher au reste du contenu. */
 export function remplacerLargeur(markdown: string, url: string, width: number): string {
   const base = escapeRegExp(urlSansJeton(url));
   // {1} préfixe (jusqu'au premier `#` ou `)`) {2} largeur éventuelle {3} `)`.
@@ -69,6 +71,7 @@ export interface SujetFormData {
   corrige_markdown: string;
 }
 
+/** État du formulaire d'édition d'une épreuve dans le back-office. */
 export interface EpreuveForm {
   id?: string;
   niveau: string;
@@ -90,6 +93,7 @@ export interface EpreuveForm {
 
 /** Document Markdown attaché au sujet ou au corrigé (liste texte, pas une
  * vignette d'image). */
+/** Fichier joint à une épreuve, exposé au formulaire admin avec ses métadonnées. */
 export interface DocumentFile {
   id: string;
   cible: "sujet" | "corrige";
@@ -101,6 +105,7 @@ export interface DocumentFile {
 /** Formulaire d'épreuve à VIDE : la création ne préremplit AUCUN champ
  * (revue 2026-09-18) — les libellés « ex. … » accompagnent l'admin, le
  * serveur normalise au besoin à l'enregistrement. */
+/** Formulaire d'épreuve vide, utilisé à la création d'un brouillon. */
 export const EMPTY_FORM: EpreuveForm = {
   niveau: "",
   classe: "",
@@ -123,6 +128,7 @@ export const EMPTY_FORM: EpreuveForm = {
  * chaque requête même-origine (credentials: "include" du client API). Ce
  * helper ne renvoie donc plus d'en-tête : il est conservé pour ne pas
  * modifier les dizaines d'appels existants. */
+/** En-têtes d'authentification pour les appels admin (identité portée par le cookie de session). */
 export function authHeaders(_token?: string): Record<string, string> {
   return {};
 }
@@ -133,6 +139,7 @@ export function authHeaders(_token?: string): Record<string, string> {
  * sa session locale → la page repasse par la connexion au lieu d'afficher
  * une « liste vide » trompeuse. Retourne vrai si c'était un 401 (les
  * autres erreurs restent à la charge de l'appelant). */
+/** Détecte un 401 dans un panneau admin, prévient l'application et renvoie true si la session a expiré. */
 export function purgerSessionExpiree(err: unknown): boolean {
   if (!(err instanceof ApiError && err.status === 401)) return false;
   window.dispatchEvent(new Event("admin:session-expiree"));
@@ -144,6 +151,7 @@ export function purgerSessionExpiree(err: unknown): boolean {
  * exploitable, sinon le libellé générique fourni par l'appelant. Evite les
  * toasts trompeurs (« Échec de l'enregistrement ») quand le serveur sait
  * dire exactement ce qui coince (revue 2026-09-18). */
+/** Extrait le message lisible d'une erreur API (détail serveur) avec repli sur un texte par défaut. */
 export function erreurDetail(err: unknown, defaut: string): string {
   if (err instanceof ApiError) {
     const d = err.detail;
@@ -158,6 +166,7 @@ export function erreurDetail(err: unknown, defaut: string): string {
   return defaut;
 }
 
+/** Champ de formulaire labelisé avec sa valeur et son callback de modification. */
 export function Field({
   label,
   value,
@@ -194,6 +203,7 @@ export function Field({
  * (sujet et corrigé) : un résumé + un bloc dépliable listant le Markdown
  * accepté. Rédigée comme un prompt — un admin qui colle un document brut
  * comprend d'emblée ce que l'éditeur attend et ce qui sera filtré. */
+/** Aide pliable rappelant le format Markdown attendu dans les éditeurs d'épreuves. */
 export function FormatAttendu() {
   return (
     <details className="group rounded-lg border border-ink-soft/15 bg-paper/60 px-3 py-2">
@@ -238,6 +248,7 @@ export function FormatAttendu() {
 
 /** Élément d'une liste déroulante du back-office (code stocké + libellé
  * affiché). */
+/** Une option de liste déroulante (valeur technique et libellé affiché). */
 export interface OptionChoix {
   value: string;
   label: string;
@@ -314,6 +325,7 @@ interface ChampChoixProps {
 /** Liste déroulante NON modifiable du back-office : remplacer une valeur
  * connue par une autre. Entièrement customisée (bouton + panneau, comme le
  * Combobox du catalogue) : un SEUL chevron dessiné, aucune flèche système. */
+/** Liste déroulante labelisée avec options et valeur contrôlée. */
 export function Select({
   label,
   value,
@@ -446,6 +458,7 @@ export function Select({
  * notification). Choisir une suggestion la valide telle quelle ; taper
  * n'importe quoi reste possible (le serveur normalise au besoin et mémorise
  * les valeurs hors liste). Même apparence que `Select`, même chevron unique. */
+/** Liste déroulante dont l'utilisateur peut saisir une valeur hors référentiel. */
 export function EditableSelect({
   label,
   value,
@@ -611,6 +624,7 @@ export function EditableSelect({
 /** Texte seul, rendu seul, ou les deux côte à côte (le rendu suit la frappe en temps réel). */
 export type ModeEditeur = "texte" | "rendu" | "double";
 const CLE_MODE = "bacprep-admin-editeur-mode";
+/** Modes d'affichage de l'éditeur : texte, rendu ou côte à côte. */
 export const MODES_EDITEUR: [ModeEditeur, string][] = [
   ["texte", "Texte"],
   ["rendu", "Rendu"],
@@ -626,6 +640,7 @@ export function modeEditeurInitial(): ModeEditeur {
     return "texte";
   }
 }
+/** Mémorise le mode d'édition choisi dans localStorage (best-effort). */
 export function memoriserModeEditeur(m: ModeEditeur): void {
   try {
     localStorage.setItem(CLE_MODE, m);
@@ -647,6 +662,7 @@ function ApercuTempsReel({ markdown, grand }: { markdown: string; grand: boolean
   );
 }
 
+/** Bloc d'édition d'un contenu Markdown avec bascule texte/rendu et affichage des outils de formules. */
 export function ContentBlock({
   title,
   required,

@@ -20,6 +20,7 @@ export function lireAffichage(stockage: Pick<Storage, "getItem"> | null = typeof
   }
 }
 
+/** Mémorise le mode d'affichage (feuille/page) dans le stockage local. */
 export function ecrireAffichage(a: Affichage, stockage: Pick<Storage, "setItem"> | null = typeof localStorage === "undefined" ? null : localStorage) {
   try {
     stockage?.setItem(CLE, normaliserAffichage(a));

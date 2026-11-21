@@ -9,7 +9,7 @@ import os
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -105,7 +105,7 @@ def _has_any_sujet(db: Session, epreuve_id: str) -> bool:
 
 @router.get("/epreuves")
 def admin_list_epreuves(
-    q: Optional[str] = None,
+    requete: Optional[str] = Query(default=None, alias="q"),
     statut: Optional[str] = None,
     limit: int = 30,
     db: Session = Depends(get_db),
@@ -119,8 +119,8 @@ def admin_list_epreuves(
     query = db.query(EpreuveORM)
     if statut in STATUTS_VALIDES:
         query = query.filter(EpreuveORM.statut == statut)
-    if q:
-        query = query.filter(contient(EpreuveORM.matiere, q) | contient(EpreuveORM.annee, q))
+    if requete:
+        query = query.filter(contient(EpreuveORM.matiere, requete) | contient(EpreuveORM.annee, requete))
     epreuves = query.order_by(EpreuveORM.updated_at.desc()).limit(max(1, min(limit, 200))).all()
     return [
         {
@@ -394,7 +394,7 @@ def admin_update_epreuve(
     return {"ok": True}
 
 
-def _replace_sujets(db: Session, e: EpreuveORM, sujets: list[SujetIn]) -> list[EpreuveFileORM]:
+def _replace_sujets(db: Session, epreuve: EpreuveORM, sujets: list[SujetIn]) -> list[EpreuveFileORM]:
     """Remplace L'ENSEMBLE des documents Markdown d'une épreuve (sujets +
     corrigés) par ceux du tableau fourni : les documents absents du tableau
     sont supprimés (lignes en base), les présents sont réécrits à leur index
@@ -409,14 +409,14 @@ def _replace_sujets(db: Session, e: EpreuveORM, sujets: list[SujetIn]) -> list[E
     wanted: set[tuple[str, int]] = set()
     for s in sujets:
         wanted.add(("sujet", s.index))
-        epreuve_files.write_document(db, e, "sujet", s.contenu_markdown or "", s.index)
+        epreuve_files.write_document(db, epreuve, "sujet", s.contenu_markdown or "", s.index)
         if s.corrige_markdown:
             wanted.add(("corrige", s.index))
-            epreuve_files.write_document(db, e, "corrige", s.corrige_markdown, s.index)
+            epreuve_files.write_document(db, epreuve, "corrige", s.corrige_markdown, s.index)
 
     stale = [
         f
-        for f in list(e.files_rel)
+        for f in list(epreuve.files_rel)
         if f.format == epreuve_files.DOCUMENT_FORMAT and (f.cible, f.sujet_index) not in wanted
     ]
     for f in stale:
@@ -424,7 +424,7 @@ def _replace_sujets(db: Session, e: EpreuveORM, sujets: list[SujetIn]) -> list[E
     return stale
 
 
-def _relocate_files(db: Session, e: EpreuveORM) -> list[str]:
+def _relocate_files(db: Session, epreuve: EpreuveORM) -> list[str]:
     """Après un changement de niveau/classe/année, copie chaque fichier vers
     sa nouvelle clé canonique puis retourne les ANCIENNES clés à purger —
     la suppression effective n'a lieu qu'APRÈS le commit (deux phases :
@@ -432,9 +432,9 @@ def _relocate_files(db: Session, e: EpreuveORM) -> list[str]:
     tout au plus un objet orphelin dans le bucket, sans perte de contenu)."""
     storage = epreuve_files.get_storage()
     stale_keys: list[str] = []
-    for f in e.files_rel:
+    for f in epreuve.files_rel:
         if f.format == epreuve_files.DOCUMENT_FORMAT:
-            new_key = epreuve_files.document_key(e, f.cible, f.sujet_index)
+            new_key = epreuve_files.document_key(epreuve, f.cible, f.sujet_index)
         else:
             # Relocalisation d'une image : retirer les préfixes `{cible}-`
             # répétés des clés héritées (corrigé 2026-09 — l'ancienne
@@ -445,7 +445,7 @@ def _relocate_files(db: Session, e: EpreuveORM) -> list[str]:
             prefix = f"{f.cible}-"
             while basename.startswith(prefix):
                 basename = basename[len(prefix):]
-            new_key = epreuve_files.image_key(e, f.cible, basename)
+            new_key = epreuve_files.image_key(epreuve, f.cible, basename)
         if new_key == f.storage_key:
             continue
         try:

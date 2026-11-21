@@ -477,6 +477,7 @@ async def journal_requete(request: Request, call_next):
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    """Middleware qui ajoute les en-têtes de sécurité (nosniff, anti-frame, referrer, HSTS et CSP en rapport seul en production)."""
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
@@ -634,11 +635,13 @@ _ENTETES_SEO = {"Cache-Control": "public, max-age=3600"}
 
 @app.get("/robots.txt", include_in_schema=False)
 def robots_txt(request: Request) -> Response:
+    """Route /robots.txt : délègue la génération au module SEO avec les en-têtes de cache adaptés."""
     return Response(seo.robots_txt(request), media_type="text/plain", headers=_ENTETES_SEO)
 
 
 @app.get("/sitemap.xml", include_in_schema=False)
 def sitemap_xml(request: Request, db: Session = Depends(get_db)) -> Response:
+    """Route /sitemap.xml : renvoie le sitemap des épreuves publiées au format XML."""
     return Response(seo.sitemap_xml(db, request), media_type="application/xml", headers=_ENTETES_SEO)
 
 

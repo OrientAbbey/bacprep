@@ -51,17 +51,18 @@ def _valide_ou_404(db: Session, gabarit_id: str) -> gab.Gabarit:
     return g
 
 
-def instancier_ou_500(g: gab.Gabarit, graine: int) -> dict:
+def instancier_ou_500(gabarit: gab.Gabarit, graine: int) -> dict:
     """Un gabarit validé ne devrait jamais échouer : on le dit franchement
     plutôt que d'afficher un énoncé faux."""
     try:
-        return g.instancier(graine)
+        return gabarit.instancier(graine)
     except gab.GabaritError as exc:
         raise HTTPException(500, "Cet exercice est momentanément indisponible") from exc
 
 
 @router.get("/gabarits")
 def lister(request: Request, db: Session = Depends(get_db), user=Depends(require_user)) -> list[dict]:
+    """Liste les gabarits validés disponibles pour l'entraînement, triés par matière, chapitre et difficulté."""
     _limiter.check(client_ip(request))
     return sorted(
         (g.resume() for g in gabarits_valides(db).values()),
@@ -93,12 +94,14 @@ def correction(
     db: Session = Depends(get_db),
     user=Depends(require_user),
 ) -> dict:
+    """Renvoie la correction détaillée d'une variante validée, appelée séparément du sujet."""
     _limiter.check(client_ip(request))
     g = _valide_ou_404(db, gabarit_id)
     return gab.vue_correction(instancier_ou_500(g, graine))
 
 
 class SignalementIn(BaseModel):
+    """Signalement d'une variante fautive : graine exacte et message libre de l'élève."""
     graine: int = Field(ge=0, le=gab.GRAINE_MAX)
     message: str = Field(default="", max_length=1000)
 

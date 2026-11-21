@@ -46,11 +46,11 @@ def base_url(request: Request) -> str:
     return (os.getenv("PUBLIC_BASE_URL", "").strip() or str(request.base_url)).rstrip("/")
 
 
-def _titre(e: EpreuveORM) -> str:
+def _titre(epreuve: EpreuveORM) -> str:
     """« Mathématiques 2024 — BAC (Terminale) » : ce que lit un élève dans
     l'aperçu de partage, sans code technique (`terminale`)."""
-    classe = CLASSES_LABELS.get(e.classe, (e.classe or "").replace("_", " "))
-    return f"{e.matiere} {e.annee} — {e.evaluation} ({classe})"
+    classe = CLASSES_LABELS.get(epreuve.classe, (epreuve.classe or "").replace("_", " "))
+    return f"{epreuve.matiere} {epreuve.annee} — {epreuve.evaluation} ({classe})"
 
 
 def _absolue(valeur: str, base: str) -> str:
@@ -67,8 +67,9 @@ def render_index(template: str, request: Request, epreuve: EpreuveORM | None = N
     son titre et sa description."""
     base = base_url(request)
 
-    def image(m: re.Match[str]) -> str:
-        return f"{m[1]}{html.escape(_absolue(m[2], base))}{m[3]}"
+    def image(correspondance: re.Match[str]) -> str:
+        """Rend en absolu l'URL d'une image Markdown pour un aperçu de partage."""
+        return f"{correspondance[1]}{html.escape(_absolue(correspondance[2], base))}{correspondance[3]}"
 
     out = _OG_IMAGE_RE.sub(image, template)
     if epreuve is None:
@@ -105,6 +106,7 @@ def robots_txt(request: Request) -> str:
 
 
 def sitemap_xml(db: Session, request: Request) -> str:
+    """Génère le sitemap XML des épreuves publiées, avec URLs absolues et limite configurable."""
     base = base_url(request)
     ids = [
         eid

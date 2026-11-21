@@ -21,6 +21,7 @@ _limiteur = SlidingWindowLimiter(
 
 @router.get("")
 def lire(request: Request, db: Session = Depends(get_db), user=Depends(require_user)) -> Response:
+    """Sert la photo de profil WebP avec cache conditionnel ETag (304 si inchangée)."""
     av = db.get(AvatarORM, user.id)
     if av is None:
         raise HTTPException(404, "Pas de photo de profil")
@@ -33,6 +34,7 @@ def lire(request: Request, db: Session = Depends(get_db), user=Depends(require_u
 
 @router.post("")
 async def envoyer(file: UploadFile = File(...), db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
+    """Reçoit, valide et redimensionne une photo de profil, puis la remplace pour l'utilisateur courant."""
     _limiteur.check(user.id)
     brut = await file.read(MAX_OCTETS + 1)
     if len(brut) > MAX_OCTETS:
@@ -52,6 +54,7 @@ async def envoyer(file: UploadFile = File(...), db: Session = Depends(get_db), u
 
 @router.delete("")
 def supprimer(db: Session = Depends(get_db), user=Depends(require_user)) -> dict:
+    """Supprime la photo de profil de l'utilisateur courant."""
     db.query(AvatarORM).filter(AvatarORM.user_id == user.id).delete()
     db.commit()
     return {"ok": True}

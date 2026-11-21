@@ -9,17 +9,20 @@ from pydantic import BaseModel, Field, field_validator
 # ---------- Auth ----------
 
 class MockLoginIn(BaseModel):
+    """Charge utile d'une connexion simulée en développement : e-mail, nom affiché et plateforme."""
     email: str = Field(max_length=254)
     nom: str = Field(default="", max_length=120)
     platform: str = Field(default="web", max_length=20)
 
 
 class GoogleLoginIn(BaseModel):
+    """Charge utile d'une connexion Google : jeton d'identité vérifié côté serveur et plateforme d'origine."""
     id_token: str = Field(max_length=4096)
     platform: str = Field(default="web", max_length=20)
 
 
 class UserOut(BaseModel):
+    """Utilisateur exposé au frontend : identité, dates, droits admin calculés serveur et consentements."""
     id: str
     email: str
     nom: str
@@ -50,6 +53,7 @@ class ConsentementIn(BaseModel):
 
 
 class AuthConfigOut(BaseModel):
+    """Configuration d'authentification exposée au client : mode actif et identifiant client Google."""
     mode: str  # "mock" | "google"
     google_client_id: Optional[str] = None
 
@@ -57,6 +61,7 @@ class AuthConfigOut(BaseModel):
 # ---------- Epreuves ----------
 
 class EpreuveListItem(BaseModel):
+    """Épreuve résumée pour le catalogue et les listes : métadonnées sans le contenu Markdown."""
     id: str
     niveau: str
     classe: str  # code canonique du référentiel (ex. "terminale")
@@ -111,6 +116,7 @@ class EpreuveDetail(EpreuveListItem):
     # Champs historiques : l'index 0 (sujet principal) est exposé à plat
     # pour rétrocompatibilité — le tableau `sujets` fait autorité pour le
     # multi-sujets.
+    """Détail d'une épreuve avec tous ses sujets et corrigés, fichiers d'illustration et champs historiques à plat."""
     contenu_markdown: str
     corrige_markdown: Optional[str] = ""
     assets: list[EpreuveFileOut] = []  # images d'illustration uniquement
@@ -123,6 +129,7 @@ class EpreuveIn(BaseModel):
     # ses champs obligatoires (niveau, classe, évaluation…) garde des
     # valeurs VIDES — c'est l'interface qui bloque l'enregistrement tant
     # qu'elles manquent (revue 2026-09-18).
+    """Formulaire complet d'une épreuve enregistrée ; les champs obligatoires vides sont bloqués côté client."""
     niveau: str = ""
     classe: str = ""
     evaluation: str = ""
@@ -141,6 +148,7 @@ class EpreuveIn(BaseModel):
 
 
 class EpreuveUpdate(BaseModel):
+    """Mise à jour partielle d'une épreuve : seuls les champs présents sont modifiés."""
     niveau: Optional[str] = None
     classe: Optional[str] = None
     evaluation: Optional[str] = None
@@ -161,6 +169,7 @@ class EpreuveUpdate(BaseModel):
 # ---------- Subscriptions ----------
 
 class CheckoutIn(BaseModel):
+    """Demande de souscription : périmètre acheté, formule choisie et identifiants de ciblage."""
     scope: str  # epreuve|matiere_annee|matiere|annee|filiere
     filiere: Optional[str] = None
     matiere: Optional[str] = None
@@ -174,10 +183,10 @@ class CheckoutIn(BaseModel):
 
     @field_validator("provider")
     @classmethod
-    def _provider_connu(cls, v: str) -> str:
-        if v not in ("orange", "mtn"):
+    def _provider_connu(cls, valeur: str) -> str:
+        if valeur not in ("orange", "mtn"):
             raise ValueError("provider doit valoir 'orange' ou 'mtn'")
-        return v
+        return valeur
 
 
 class AchatAKIn(BaseModel):
@@ -198,6 +207,7 @@ class AchatAKIn(BaseModel):
 
 
 class SubscriptionOut(BaseModel):
+    """Souscription active exposée au client avec ses libellés et son périmètre résolu."""
     id: str
     scope: str
     scope_label: str
@@ -236,6 +246,7 @@ class AdminLoginIn(BaseModel):
     # comptes admin connectés (RequireAdmin), le serveur déduit donc l'identité
     # du cookie de session élève quand le champ est vide. Les clients directs
     # (curl, tests, scripts) peuvent continuer à l'envoyer.
+    """Ouverture d'une session admin : identifiant implicite du cookie ou e-mail explicite, jeton admin et option de force."""
     email: str = Field(default="", max_length=254)
     token: str = Field(min_length=1, max_length=256)
     force: bool = False
@@ -244,6 +255,7 @@ class AdminLoginIn(BaseModel):
 # ---------- Assistant ----------
 
 class ConversationCreateIn(BaseModel):
+    """Création d'une discussion IA : contexte initial et libellé affiché dans l'historique."""
     contexte: str = Field(default="", max_length=20000)
     label: str = Field(default="Nouvelle discussion", max_length=120)
 
@@ -263,18 +275,19 @@ class ConversationUpdateIn(BaseModel):
 
     @field_validator("messages")
     @classmethod
-    def _bornes_messages(cls, v: list[dict]) -> list[dict]:
-        if len(v) > cls.MAX_MESSAGES:
+    def _bornes_messages(cls, valeur: list[dict]) -> list[dict]:
+        if len(valeur) > cls.MAX_MESSAGES:
             raise ValueError(f"au maximum {cls.MAX_MESSAGES} messages")
-        for m in v:
+        for m in valeur:
             if not isinstance(m, dict) or not isinstance(m.get("content"), str):
                 raise ValueError("message invalide (dict avec role/content attendu)")
             if len(m["content"]) > cls.MAX_MESSAGE_CHARS:
                 raise ValueError(f"message trop long ({cls.MAX_MESSAGE_CHARS} caractères max)")
-        return v
+        return valeur
 
 
 class ConversationOut(BaseModel):
+    """Discussion IA exposée au client avec son contexte et la liste bornée de ses messages."""
     id: str
     epreuve_id: str
     label: str
@@ -302,13 +315,13 @@ class AskIn(BaseModel):
 
     @field_validator("historique")
     @classmethod
-    def _bornes_historique(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
-        for m in v:
+    def _bornes_historique(cls, valeur: list[dict[str, str]]) -> list[dict[str, str]]:
+        for m in valeur:
             role = m.get("role", "")
             content = m.get("content", "")
             if role not in ("user", "assistant") or not isinstance(content, str) or len(content) > 8000:
                 raise ValueError("entrée d'historique invalide (role user/assistant, content <= 8000)")
-        return v
+        return valeur
 
 
 # ---------- Profil élève ----------
@@ -324,17 +337,20 @@ class ProfilUpdateIn(BaseModel):
 
 
 class NoteIn(BaseModel):
+    """Création d'une note de l'admin sur un sujet ou un corrigé, avec extrait de contexte."""
     cible: str = "sujet"  # sujet|corrige
     contexte_extrait: str = Field(default="", max_length=2000)
     contenu: str = Field(min_length=1, max_length=20000)
 
 
 class NoteUpdateIn(BaseModel):
+    """Modification partielle d'une note : extrait et/ou contenu."""
     contexte_extrait: Optional[str] = Field(default=None, max_length=2000)
     contenu: Optional[str] = Field(default=None, min_length=1, max_length=20000)
 
 
 class NoteOut(BaseModel):
+    """Note exposée au client avec sa cible, son extrait et ses dates de création/modification."""
     id: str
     epreuve_id: str
     cible: str
@@ -355,11 +371,13 @@ class NoteWithEpreuveOut(NoteOut):
 
 
 class SignalementIn(BaseModel):
+    """Signalement d'une épreuve par un utilisateur : motif parmi une liste fermée et message libre."""
     motif: str  # contenu_illisible|erreur_enonce|corrige_manquant|image_cassee|autre
     message: str = Field(default="", max_length=1000)
 
 
 class BannirIn(BaseModel):
+    """Motif du bannissement d'un utilisateur, conservé dans le journal admin."""
     motif: str = Field(default="", max_length=500)
 
 

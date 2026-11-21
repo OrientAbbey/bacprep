@@ -13,6 +13,7 @@ import { t } from "../i18n";
  * signal visuel (rouge clignotant) + notification. La fenêtre est fermée à la
  * main ; le compte continue en arrière-plan tant qu'il est lancé.
  */
+/** Chronomètre d'examen avec alarme sonore et contrôles dédiés. */
 export function Chronometre({ dureeEpreuve }: { dureeEpreuve?: string | null }) {
   const { showToast } = useToast();
   const [panneauOuvert, setPanneauOuvert] = useState(false);
