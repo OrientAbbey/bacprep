@@ -1,6 +1,8 @@
 name: Keep-alive
 # Appelle /api/health (SELECT 1 en base) chaque jour : l'activité évite la mise
-# en pause du projet Supabase gratuit (inactif 1 semaine) et réveille Render.
+# en pause du projet Supabase gratuit (inactif 1 semaine). Render est maintenu
+# éveillé séparément par UptimeRobot (ping /api/health/live toutes les 5 min) :
+# son plan Free se met en pause après ~15 min sans requête.
 on:
   schedule:
     - cron: "17 6 * * *"

@@ -296,13 +296,26 @@ Les nouvelles variables sont déjà dans `render.yaml` (valeurs par défaut) ; s
    gratuit : 5 Go).
 5. **Keep-alive Supabase** : le workflow `keepalive.yml` appelle `/api/health` chaque jour (SELECT 1).
    Render, lui, interroge `/api/health/live` (sans base).
-6. **Déploiement après CI** : `autoDeployTrigger: checksPass` ne s'applique qu'à un service géré par le
+6. **Anti-sommeil Render (UptimeRobot)** : le plan Render Free met `bacprep-web` en pause après
+   ~15 min sans requête, et ce réglage n'est pas désactivable. Un ping externe régulier est donc
+   nécessaire tant qu'on reste sur ce plan :
+   - créer un compte gratuit sur <https://uptimerobot.com> (50 monitors, vérifications toutes les 5 min) ;
+   - **Add New Monitor** → type `HTTP(S)`, nom `Bacprep — keep-alive` ;
+   - URL : `https://<votre-domaine>/api/health/live` (ou l'URL `onrender.com` du service) ;
+   - intervalle : **5 minutes** ; ne pas utiliser `/api/health` (qui fait un `SELECT 1` et
+     réveillerait la base à chaque ping) ;
+   - garder le workflow `keepalive.yml` quotidien : c'est lui qui empêche Supabase de se mettre
+     en pause après 7 jours d'inactivité.
+   Un redéploiement Render ou un réveil après une longue pause peut provoquer un faux positif
+   `Down` (démarrage à froid ~1 min) : prévoir un délai de grâce avant l'alerte e-mail.
+   Seul le passage au plan **Render Starter** (~7 $/mois) évite le ping externe.
+7. **Déploiement après CI** : `autoDeployTrigger: checksPass` ne s'applique qu'à un service géré par le
    Blueprint ; sinon, dans le tableau de bord : Settings › Build & Deploy › Auto-Deploy = « After CI Checks Pass ».
-7. **Journaux** : `LOG_FORMAT=json` (une ligne JSON par requête, sans IP ni corps ; identifiant dans `X-Request-ID`).
-8. **Pilote PostgreSQL** : l'application utilise `psycopg` v3 (SQLAlchemy 2.1 le choisit pour `postgresql://`). Toute forme
+8. **Journaux** : `LOG_FORMAT=json` (une ligne JSON par requête, sans IP ni corps ; identifiant dans `X-Request-ID`).
+9. **Pilote PostgreSQL** : l'application utilise `psycopg` v3 (SQLAlchemy 2.1 le choisit pour `postgresql://`). Toute forme
    d'URL (`postgresql://`, `postgres://`, `postgresql+psycopg2://`) est acceptée et convertie ; les requêtes préparées sont
    désactivées pour le pooler « transaction » de Supabase (port 6543).
-9. **Paiement** : en pause, voir `PAIEMENT.md`. Laisser `DEMO_MODE=false` en production.
+10. **Paiement** : en pause, voir `PAIEMENT.md`. Laisser `DEMO_MODE=false` en production.
 
 ## Déploiement Render
 
