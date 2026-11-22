@@ -31,10 +31,9 @@ GAIN_JOURS_1_3 = 3
 GAIN_JOURS_4_6 = 7
 GAIN_JOURS_7_PLUS = 10
 
-# Absence de 7 jours pleins ou plus -> la série repart de zéro. En dessous,
-# la série continue de s'incrémenter (récompense de l'habitude, pas de la
-# connexion quotidienne stricte).
-RESET_APRES_JOURS = 7
+# Un seul jour manqué suffit à remettre la série au jour 1 : l'écart entre
+# deux gains ne doit jamais dépasser 1 jour (connexions consécutives).
+RESET_APRES_JOURS = 2
 
 
 def aujourd_hui_utc() -> str:
@@ -83,9 +82,12 @@ def calculer_gain_serie(
     dernier gain aujourd'hui       inchangée          0
     aucun historique               1                  3
     veille (écart 1 j)             série + 1          3/7/10
-    écart 2 à 6 jours              série + 1          3/7/10
-    écart ≥ 7 jours                1                  3
+    écart ≥ 2 j (jour manqué)      1                  3
     ============================  =================  =========
+
+    Une fois le jour 7 atteint, les connexions consécutives suivantes
+    restent à 10 AK (pas de nouvelle remise à zéro tant qu'aucun jour
+    n'est sauté).
     """
     if dernier_jour == jour:
         # Idempotence : plusieurs visites le même jour ne rapportent rien de
