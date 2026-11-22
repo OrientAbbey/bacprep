@@ -20,18 +20,48 @@ Livrée dans la PR #26.
 
 ## Étape 2 — Capacitor → Android APK (à faire en priorité)
 
-Approche : [Capacitor](https://capacitorjs.com/) enveloppe le build React existant (`frontend/dist`) dans une WebView native. Aucune réécriture de l'UI.
+Approche : [Capacitor](https://capacitorjs.com/) enveloppe le build React existant (`frontend/dist`) dans une WebView native. **Aucune réécriture de l'UI.** Charge estimée : 1 à 2 semaines, dont ~60 % sur l'authentification.
 
-Points bloquants à traiter **avant** de distribuer :
+### Les 5 points bloquants et leurs solutions
 
-1. **Authentification** — Google Identity Services refuse le login dans un WebView embarqué. Passer par le navigateur système (`@capacitor/browser` → Chrome Custom Tabs / `ASWebAuthenticationSession`) avec un deep link de retour (`appliquer://auth/callback`). Ajouter les origines natives (`capacitor://localhost`, `http://localhost`) à `CORS_ORIGINS` **et** à la vérification d'origine du WebSocket (`backend/app/routers/ws.py`).
-2. **Cookie de session** — `SameSite=Lax` posé sur le domaine web ; depuis l'origine native, prévoir soit un token Bearer pour le mobile, soit `SameSite=None; Secure` + CORS `credentials`.
-3. **Base de l'API** — `VITE_API_URL` doit être renseigné à la compilation (sinon `BASE_URL=""` = same-origin, faux dans une WebView).
-4. **Liens partagés** — vérifier `PUBLIC_BASE_URL` en prod, sinon les liens WhatsApp/Facebook pointent vers `capacitor://localhost`.
-5. **Hors-ligne** — `shared/lib/horsLigne.ts` utilise le Cache API + service worker ; le support dans WKWebView est à valider, prévoir un adaptateur `@capacitor/filesystem`.
-6. **Distribution** — APK en direct d'abord (contourne les règles IAP du Play Store) ; test interne Play ensuite.
+**1. Origine de l'API et build natif**
+- `frontend/src/api/client.ts:3` : `BASE_URL = import.meta.env.VITE_API_URL || ""`. Vide = same-origin. Dans Capacitor, l'origine est `capacitor://localhost` (iOS) / `http://localhost` (Android) → tous les appels partent dans la WebView et meurent en 404.
+- *Solution* : un build dédié `npm run build:native` avec `VITE_API_URL=https://<domaine>` et un drapeau `VITE_NATIVE=1`. Le build web garde ses variables vides et ses tests verts.
 
-Charge estimée : 1 à 2 semaines. À lancer dès que l'étape 1 est validée par les utilisateurs.
+**2. Session cross-origin — le point le plus dur**
+- `api_auth.py:65-72` pose `bacprep_session` en `HttpOnly; SameSite=Lax; Secure`. Depuis `capacitor://localhost` vers `https://domaine`, c'est cross-site : le cookie `Lax` n'est pas envoyé sur les `fetch` (`credentials: "include"` ne suffit pas). Le WebSocket (`routers/ws.py:30-32`) parse le cookie manuellement → même problème.
+- *Solutions écartées* : `SameSite=None; Secure` affaiblirait le CSRF de tout le site web ; servir la WebView depuis `https://domaine` (`server.url`) marche mais perd le hors-ligne et ressemble à un simple wrapper.
+- *Solution retenue* : **token Bearer pour le natif**. Le session store existe déjà : faire accepter `Authorization: Bearer <token>` par `store.resolve_session` en plus du cookie. `require_user`/`optional_user` gardent la même logique, zéro nouveau secret, le cookie web reste inchangé. Stocker le token via `@capacitor/preferences` (pas `localStorage`, exposé au XSS dans la WebView).
+
+**3. Google sign-in dans une WebView**
+- Google Identity Services refuse le login dans un WebView embarqué → le bouton GIS actuel ne fonctionnera pas dans l'app.
+- *Solution* : en mode natif, ouvrir le **navigateur système** via `@capacitor/browser` (Chrome Custom Tabs / `ASWebAuthenticationSession`) :
+  1. `GET /api/auth/native/start` → redirection Google avec `redirect_uri=https://domaine/api/auth/native/callback` ;
+  2. le callback backend vérifie le code avec le `google-auth` déjà utilisé (`verify_oauth2_token`), crée la session, redirige vers `bacprep://auth/callback#token=...` ;
+  3. `@capacitor/app` (`appUrlOpen`) récupère le token et le stocke.
+- À déclarer dans Google Console : l'URI de redirect callback. Alternative plus rapide : plugin Google natif renvoyant un ID token à `/api/auth/google-login` (déjà existant), mais il faut quand même la variante « répondre un token » pour le point 2.
+
+**4. CORS, WebSocket et liens partagés**
+- `main.py:515` (`CORS_ORIGINS`) et `ws.py:37-43` (`_origine_autorisee`) sont des listes fermées → ajouter explicitement `capacitor://localhost` et `http://localhost`. Pas de `*` : avec `credentials`, les navigateurs refusent. Un oubli sur le WS = kick-out non notifié.
+- `Invitation.tsx:22` fait `urlSite(window.location.origin)` → dans l'app, les messages WhatsApp/Facebook contiendraient `capacitor://localhost/`. `seo._url_publique` utilise déjà `PUBLIC_BASE_URL`. *Solution* : exposer `PUBLIC_BASE_URL` dans `/api/auth/config` (déjà appelé au démarrage) et l'utiliser pour `urlSite` en mode natif.
+
+**5. Hors-ligne, distribution et disponibilité**
+- `horsLigne.ts:40` teste `caches` + `serviceWorker`. Android WebView (Chromium) devrait fonctionner ; WKWebView (iOS, étape 4) est irrégulier. *Solution* : garder Cache API pour l'APK, prévoir un adaptateur `@capacitor/filesystem` derrière l'interface existante (`telecharger`, `retirer`, `estTelechargee`) — ne pas réécrire les écrans.
+- **APK en direct d'abord** (pas de Play Store → pas de règle IAP) ; test interne Play ensuite. Réutiliser `icon-512.png` / `icon-maskable-512.png`.
+- Render Free se réveille en ~1 min : le client a déjà `TIMEOUT_DEFAUT_MS = 60_000` et le bandeau `ServeurLent`, mais le plan Starter (~7 $/mois) est recommandé avant diffusion.
+
+### Ordre proposé pour le spike
+
+1. Installer Capacitor + `cap add android`, `npm run build:native`, ouvrir Android Studio, générer un APK debug **avec un écran vide** → valider la chaîne d'outils (½ jour).
+2. Ajouter les origines natives à CORS + WS, brancher `VITE_API_URL` → valider que les routes publiques répondent (½ jour).
+3. Implémenter le Bearer + l'adapter client (`api/client.ts`) → valider `/api/auth/me` connecté (2–3 jours). **60 % du travail.**
+4. Brancher le navigateur système + deep link Google (2–3 jours).
+5. Corriger `urlSite` et tester le hors-ligne (1 jour).
+6. APK signé + diffusion interne (1 jour).
+
+**Définition de done** : un APK installé sur un téléphone physique, connexion Google réussie, `/api/auth/me` OK, une épreuve lue hors-ligne, un lien de partage pointant sur le domaine HTTPS, et le build web inchangé (tests verts).
+
+Décision prise : **on ne lance pas maintenant** ; ce spike sera repris une autre fois.
 
 ---
 
