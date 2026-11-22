@@ -21,11 +21,12 @@ describe("gainProchaineConnexion", () => {
     expect(gainProchaineConnexion(6, "2026-11-13", "2026-11-14")).toBe(10); // -> jour 7
     expect(gainProchaineConnexion(9, "2026-11-13", "2026-11-14")).toBe(10);
   });
-  it("repart au gain du jour 1 après 7 jours d'absence (règle de reset)", () => {
+  it("repart au gain du jour 1 dès qu'un jour est manqué", () => {
+    expect(gainProchaineConnexion(9, "2026-11-12", "2026-11-14")).toBe(3); // 1 jour sauté
     expect(gainProchaineConnexion(9, "2026-11-07", "2026-11-14")).toBe(3);
     expect(gainProchaineConnexion(9, "2026-11-06", "2026-11-14")).toBe(3);
-    // 6 jours d'écart : la série continue.
-    expect(gainProchaineConnexion(9, "2026-11-08", "2026-11-14")).toBe(10);
+    // Écart d'un seul jour : la série continue, y compris au palier 7+.
+    expect(gainProchaineConnexion(9, "2026-11-13", "2026-11-14")).toBe(10);
   });
   it("traite une date illisible ou future comme une première connexion", () => {
     expect(gainProchaineConnexion(5, "pas-une-date", "2026-11-14")).toBe(3);

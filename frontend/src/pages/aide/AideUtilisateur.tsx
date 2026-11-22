@@ -92,7 +92,7 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
     points: [
       t("La page Abonnement présente les formules : une épreuve précise, une matière, une année ou une série complète, avec leur prix en FCFA et leur durée."),
       t("Un abonnement actif et les épreuves qu'il couvre apparaissent dans ton profil, onglet « Abonnements »."),
-      t("Les AK sont des crédits internes : la connexion quotidienne en crédite selon ta série, et certaines formules peuvent être payées avec ton solde AK. Le solde et les derniers mouvements sont visibles dans ton profil."),
+      t("Les AK sont des crédits internes : une connexion chaque jour en crédite selon ta série — 3 AK les jours 1 à 3, 7 AK les jours 4 à 6, puis 10 AK à partir du jour 7. Si tu sautes une journée, la série repart au jour 1. Certaines formules peuvent être payées avec ton solde AK, visible dans ton profil avec les derniers mouvements."),
     ],
   },
   {

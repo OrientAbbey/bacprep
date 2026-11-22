@@ -12,18 +12,19 @@ export interface MouvementAK {
   date: string;
 }
 
-// Règles du serveur (backend/app/core/ak.py) dupliquées ICI pour afficher le
-// gain de la prochaine connexion sans rappeler l'API. Toute modification du
-// barème doit être faite des deux côtés — les tests du frontend couvrent la
-// table de vérité, ceux du backend la leur.
+// Règles du serveur (backend/app/domains/abonnements/ak.py) dupliquées ICI
+// pour afficher le gain de la prochaine connexion sans rappeler l'API. Toute
+// modification du barème doit être faite des deux côtés — les tests du
+// frontend couvrent la table de vérité, ceux du backend la leur.
 /** Gain AK pour les trois premiers jours d'une série de connexions. */
 export const GAIN_JOURS_1_3 = 3;
 /** Gain AK pour les jours 4 à 6 d'une série de connexions. */
 export const GAIN_JOURS_4_6 = 7;
 /** Gain AK à partir du septième jour d'une série. */
 export const GAIN_JOURS_7_PLUS = 10;
-/** Nombre de jours sans connexion après lequel la série repart à zéro. */
-export const RESET_APRES_JOURS = 7;
+/** Écart entre deux gains à partir duquel la série repart au jour 1 :
+ * 1 jour = connexions consécutives, 2 jours = un jour manqué. */
+export const RESET_APRES_JOURS = 2;
 
 /** Gain en AK pour un jour de série donné (1 = première connexion). */
 export function gainPourSerie(serie: number): number {
@@ -41,9 +42,12 @@ export function jourUTC(maintenant: Date = new Date()): string {
   return maintenant.toISOString().slice(0, 10);
 }
 
-/** Gain crédité à la PROCHAINE connexion, compte tenu de la série en cours et
- * de l'éventuelle remise à zéro après `RESET_APRES_JOURS` jours d'absence. */
-/** Gain à créditer à la prochaine connexion compte tenu de la série et du dernier jour. */
+/** Gain crédité à la PROCHAINE connexion, compte tenu de la série en cours.
+ *
+ * Un seul jour manqué (écart ≥ 2 jours) remet la série au jour 1 côté serveur
+ * ; le prochain gain annoncé est donc celui du jour 1. Tant que les connexions
+ * restent consécutives, le palier 7+ continue de rapporter 10 AK.
+ */
 export function gainProchaineConnexion(
   serie: number,
   dernierJour: string | null,
@@ -51,14 +55,13 @@ export function gainProchaineConnexion(
 ): number {
   if (!dernierJour) return GAIN_JOURS_1_3;
   const ecart = (Date.parse(jour) - Date.parse(dernierJour)) / 86_400_000;
-  // Date illisible, dans le futur ou absence trop longue : la série repart de
-  // zéro côté serveur, donc le prochain gain est celui du jour 1.
+  // Date illisible, dans le futur ou jour manqué : la série repart au jour 1.
   if (!Number.isFinite(ecart) || ecart < 0 || ecart >= RESET_APRES_JOURS) return GAIN_JOURS_1_3;
   return gainPourSerie(Math.max(serie, 0) + 1);
 }
 
 /** Phrase lisible d'un motif technique. Les motifs sont produits par
- * `core/ak.py` (`connexion_j1` … `connexion_j7plus`, `achat:<plan_id>`) et
+ * `domains/abonnements/ak.py` (`connexion_j1` … `connexion_j7plus`, `achat:<plan_id>`) et
  * par les crédits manuels (`ajustement_admin`) ; un motif inconnu (nouvelle
  * règle serveur) s'affiche tel quel plutôt que de disparaître. */
 /** Libellé lisible d'un motif de mouvement AK (connexion, achat, ajustement admin). */

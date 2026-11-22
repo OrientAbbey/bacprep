@@ -70,15 +70,20 @@ def test_meme_jour_ne_rapporte_rien():
     assert ak.calculer_gain_serie(4, "2026-11-14", "2026-11-14") == (4, 0)
 
 
-def test_absence_de_7_jours_remet_la_serie_a_zero():
-    assert ak.calculer_gain_serie(6, "2026-11-07", "2026-11-14") == (1, 3)
+def test_un_jour_manque_remet_la_serie_au_jour_1():
+    # Le moindre jour sauté (écart ≥ 2) remet la série à zéro, quelle que
+    # soit la série atteinte avant la pause.
+    assert ak.calculer_gain_serie(3, "2026-11-12", "2026-11-14") == (1, 3)
+    assert ak.calculer_gain_serie(6, "2026-11-12", "2026-11-14") == (1, 3)
+    assert ak.calculer_gain_serie(9, "2026-11-07", "2026-11-14") == (1, 3)
     assert ak.calculer_gain_serie(9, "2026-01-01", "2026-11-14") == (1, 3)
 
 
-def test_absence_courte_poursuit_la_serie():
-    # 2 à 6 jours d'écart : la série continue (habitude, pas quotidien strict).
-    assert ak.calculer_gain_serie(3, "2026-11-12", "2026-11-14") == (4, 7)
-    assert ak.calculer_gain_serie(3, "2026-11-08", "2026-11-14") == (4, 7)
+def test_seul_un_ecart_d_un_jour_poursuit_la_serie():
+    # Connexions consécutives : la série continue, y compris au-delà du jour 7.
+    assert ak.calculer_gain_serie(3, "2026-11-13", "2026-11-14") == (4, 7)
+    assert ak.calculer_gain_serie(7, "2026-11-13", "2026-11-14") == (8, 10)
+    assert ak.calculer_gain_serie(19, "2026-11-13", "2026-11-14") == (20, 10)
 
 
 def test_date_illisible_ou_future_repart_a_un():
@@ -107,6 +112,26 @@ def test_deux_connexions_le_meme_jour_ne_crediten_qu_une_fois(visiteur):
     visiteur.post("/api/auth/mock-login", json={"email": "ak-idem@test.cm", "nom": "Idem"})
     second = visiteur.post("/api/auth/mock-login", json={"email": "ak-idem@test.cm", "nom": "Idem"})
     assert second.json()["solde_ak"] == 3
+
+
+def test_un_jour_saute_remet_la_serie_en_base(db):
+    """Régression : sauter une seule journée doit ramener la série au jour 1."""
+    from app.core import store
+
+    user = store.get_or_create_user(db, "ak-serie@test.cm", "Serie")
+
+    # Jours 1 et 2 consécutifs : 3 AK par jour, série 2.
+    assert ak.recompenser_connexion(db, user, "2026-11-01") == {"gain": 3, "serie": 1, "solde_ak": 3}
+    assert ak.recompenser_connexion(db, user, "2026-11-02") == {"gain": 3, "serie": 2, "solde_ak": 6}
+
+    # Jour 3 sauté : retour le 4 -> série 1, gain 3 AK (et non 7).
+    resultat = ak.recompenser_connexion(db, user, "2026-11-04")
+    assert resultat == {"gain": 3, "serie": 1, "solde_ak": 9}
+
+    # Le lendemain, la série reprend à 2 ; le journal reste cohérent.
+    assert ak.recompenser_connexion(db, user, "2026-11-05")["serie"] == 2
+    solde, total = _invariant(db, user.id)
+    assert solde == total == 12
 
 
 def test_le_matricule_est_unique_par_compte(visiteur):

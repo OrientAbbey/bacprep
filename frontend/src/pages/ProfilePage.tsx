@@ -605,6 +605,7 @@ function CarteSoldeAK({
         {serie > 1 ? t("Série de connexion : {n} jours", { n: serie }) : t("Série de connexion : {n} jour", { n: serie })}
       </p>
       <p className="text-xs text-ink-soft">{t("Prochaine connexion : +{n} AK", { n: prochainGain })}</p>
+      <p className="mt-1 text-xs text-ink-soft">{t("Un jour manqué remet la série au jour 1.")}</p>
 
       <h3 className="mt-4 font-mono-tag text-[10px] uppercase text-ink-soft">{t("Derniers mouvements AK")}</h3>
       {mouvements.length === 0 ? (

@@ -23,7 +23,7 @@ export function AProposPage() {
           <li>{t("Un lecteur confortable : feuille A4, taille du texte réglable, mode immersion, lecture hors-ligne.")}</li>
           <li>{t("Le Tuteur IA, les notes personnelles, le chronomètre, l'examen blanc et la révision espacée.")}</li>
           <li>{t("Des exercices types à refaire et un compositeur d'épreuves personnalisées, selon les matières et les accès disponibles.")}</li>
-          <li>{t("Des crédits AK gagnés lors des connexions quotidiennes et utilisables pour certaines formules.")}</li>
+          <li>{t("Des crédits AK gagnés en te connectant chaque jour (3, puis 7, puis 10 AK), utilisables pour certaines formules ; la série repart au jour 1 dès qu'un jour est manqué.")}</li>
           <li>{t("Un calendrier avec les dates saisies par l'équipe et les liens officiels disponibles, en français et en anglais.")}</li>
         </ul>
       </section>
