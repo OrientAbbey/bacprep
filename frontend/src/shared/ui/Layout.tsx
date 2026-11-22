@@ -365,6 +365,9 @@ export function Layout({ children }: { children?: React.ReactNode }) {
           <Link to="/aide" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink">
             {t("Aide")}
           </Link>
+          <Link to="/aide#installer" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink">
+            {t("Installer l'application")}
+          </Link>
           <BoutonInviter variante="lien" className="inline-flex min-h-[32px] items-center underline underline-offset-2 hover:text-ink" />
         </nav>
         <p className="mt-0.5">{t("Copies & Corrigés — Épreuves et corrigés du secondaire camerounais (6e → Terminale)")}</p>

@@ -2414,11 +2414,11 @@ console.log("\nInvitation, À propos et Aide");
     await c.close();
   });
 
-  await test("aide d'un élève : onze rubriques, sommaire cliquable, rien de l'administration, pas de bascule", async () => {
+  await test("aide d'un élève : douze rubriques, sommaire cliquable, rien de l'administration, pas de bascule", async () => {
     const { c, pg } = await session("aide-eleve");
     await pg.goto("/aide");
     await pg.getByRole("heading", { level: 1, name: "Aide" }).waitFor({ timeout: 10000 });
-    ok((await pg.locator("main section h2").count()) === 11, `rubriques : ${await pg.locator("main section h2").count()}`);
+    ok((await pg.locator("main section h2").count()) === 12, `rubriques : ${await pg.locator("main section h2").count()}`);
     await pg.getByRole("navigation", { name: "Sommaire" }).getByRole("link", { name: "Le Tuteur IA" }).click();
     await pg.waitForFunction(() => location.hash === "#tuteur");
     const r = await pg.locator("#tuteur").boundingBox();
