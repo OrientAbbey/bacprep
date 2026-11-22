@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 /** Une rubrique du centre d'aide : identifiant d'ancre, titre, introduction et points clés. */
 export interface SectionAide {
   id: string;
@@ -5,6 +7,8 @@ export interface SectionAide {
   intro?: string;
   points?: string[];
   astuce?: string;
+  /** Action facultative (ex. bouton d'installation PWA), placée après les points. */
+  action?: ReactNode;
 }
 
 /** Sommaire cliquable puis sections de l'aide (titre, introduction, liste de points, astuce). */
@@ -36,6 +40,7 @@ export function SectionsAide({ sections, sommaire, libelleAstuce }: { sections: 
               ))}
             </ul>
           )}
+          {s.action}
           {s.astuce && (
             <p className="mt-3 rounded-lg bg-highlight-soft px-3 py-2 text-sm">
               <strong>{libelleAstuce} : </strong>

@@ -1,4 +1,5 @@
 import { t } from "../../i18n";
+import { InstallerApplication } from "../../shared/ui/InstallerApplication";
 import type { SectionAide } from "./SectionsAide";
 
 /** Aide des élèves : une section par thème (français ci-dessous, anglais dans `locales/en.json`). */
@@ -117,6 +118,19 @@ export const sectionsAideUtilisateur = (): SectionAide[] => [
       t("Tu peux installer l'application sur l'écran d'accueil de ton téléphone depuis le menu de ton navigateur."),
       t("La cloche affiche les notifications de l'équipe : nouvelles épreuves, annonces."),
     ],
+  },
+  {
+    id: "installer",
+    titre: t("Installer l'application"),
+    intro: t("Copies & Corrigés peut s'installer sur ton téléphone ou ton ordinateur : elle s'ouvre alors depuis l'écran d'accueil, en plein écran, sans barre d'adresse."),
+    points: [
+      t("Android / Chrome : ouvre le menu ⋮ de Chrome puis « Installer l'application » ou « Ajouter à l'écran d'accueil ». Le bouton ci-dessous lance directement l'installation si ton navigateur la propose."),
+      t("iPhone / iPad : ouvre cette page dans Safari, touche le bouton Partager puis « Sur l'écran d'accueil ». Chrome sur iOS ne propose pas cette option : utilise Safari."),
+      t("Ordinateur : Chrome et Edge affichent une icône d'installation dans la barre d'adresse ; le menu du navigateur contient aussi « Installer l'application »."),
+      t("Une fois installée, l'application démarre plus vite et les épreuves que tu as téléchargées restent lisibles même sans connexion."),
+      t("Pour la retirer, maintiens l'icône sur l'écran d'accueil puis choisis « Supprimer l'application »."),
+    ],
+    action: <InstallerApplication />,
   },
   {
     id: "inviter",
